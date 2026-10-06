@@ -547,10 +547,10 @@ def auth(
     try:
         if brand.leer_secreto(platform).get("auth_mode") == "broker":
             _fallar("a shared connection already exists; run socialcli disconnect for this platform before independent-app auth")
-    
+
         if management and platform is not Platform.YOUTUBE:
             _fallar("--management is only available for YouTube")
-    
+
         if platform in (Platform.FACEBOOK, Platform.INSTAGRAM):
             _auth_meta(brand, platform)
         else:
