@@ -1,0 +1,13 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Guía de publicación · SocialCli</title><meta name="description" content="SocialCli: CLI público para gestionar contenido propio y cuentas de redes sociales."><link rel="stylesheet" href="style.css"></head><body><header><a class="logo" href="index.html">SocialCli</a><nav><a href="installation.html">Instalar</a><a href="guide.html">Guía</a><a href="platforms.html">Plataformas</a><a href="security.html">Seguridad</a><a href="https://github.com/engels-florentino/SocialCli">GitHub</a></nav></header><main><h1>De tu archivo al preview</h1><ol><li>Crea una marca y configura sus cuentas.</li><li>Autoriza tus cuentas con socialcli auth RED --brand MiMarca.</li><li>Guarda el archivo ya producido bajo MiMarca/media/mi-video.mp4.</li><li>Crea MiMarca/posts/mi-video/post.yml con el contenido de la publicación.</li><li>Muestra el preview con --dry-run y confirma el envío si es correcto.</li><li>Verifica el resultado en la plataforma antes de reintentar.</li></ol><h2>Ejemplo para el buzón de TikTok</h2><pre><code>slug: mi-video
+campaign: clip-vertical
+platforms:
+  tiktok:
+    body: "Una historia que vale la pena contar."
+    hashtags: []
+    media: ["mi-video.mp4"]</code></pre><pre><code>socialcli publish mi-video --brand MiMarca --only tiktok --dry-run
+socialcli publish mi-video --brand MiMarca --only tiktok</code></pre><p>El primer comando no publica. El segundo solicita confirmación. En inbox, pending_confirmation significa que debes completar el post en TikTok; no confirma una publicación pública.</p><h2>Diagnóstico y contenido</h2><pre><code>socialcli auth status --brand MiMarca --platform tiktok --json
+socialcli doctor --brand MiMarca --json
+socialcli capabilities --brand MiMarca --json
+socialcli content --help
+socialcli stats --help
+socialcli native-schedule --help</code></pre><p>Los permisos de gestión, catálogo y métricas pueden ser distintos de los de publicación. Usa --help en cada comando para consultar sus opciones. Una conexión válida no acredita todos los permisos ni disponibilidad para todas las cuentas.</p></main><footer><p>SocialCli · Engels Florentino · Proyecto público MIT</p><a href="privacy.html">Política de privacidad</a><a href="terms.html">Términos de uso</a><a href="security.html">Seguridad</a><a href="https://github.com/engels-florentino/SocialCli/issues">Soporte</a></footer></body></html>
