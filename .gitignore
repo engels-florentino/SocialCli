@@ -29,3 +29,6 @@ build/
 *.mov
 *.wav
 *.mp3
+
+.worktrees/
+.superpowers/
