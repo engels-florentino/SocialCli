@@ -601,3 +601,23 @@ def test_un_fallo_en_una_pagina_posterior_no_se_traga(brand):
 
     assert lectura.estado is EstadoLectura.ERROR
     assert TOKEN not in (lectura.error or "")
+
+@respx.mock
+def test_facebook_insights_survive_missing_comment_read_permission(brand):
+    respx.get(f'{GRAFO}/987654321098765').respond(200, json={'followers_count':31})
+    def listing(request):
+        if 'comments.summary(true)' in request.url.params['fields']:
+            return httpx.Response(400, json={'error':{'code':10,'message':"This endpoint requires the 'pages_read_user_content' permission"}})
+        assert 'insights.metric(' in request.url.params['fields']
+        return httpx.Response(200, json={'data':[{
+            'id':'604_2','created_time':'2026-10-06T13:00:00+0000',
+            'attachments':{'data':[{'media_type':'video'}]},
+            'insights':{'data':[{'name':'post_video_views','values':[{'value':127}]}]}
+        }]})
+    respx.get(f'{GRAFO}/987654321098765/posts').mock(side_effect=listing)
+    with httpx.Client() as client:
+        result = FacebookLector().leer(brand, client, None)
+    assert result.estado is EstadoLectura.OK
+    assert result.piezas[0].acumulado.vistas == 127
+    assert result.piezas[0].acumulado.comentarios is None
+    assert 'pages_read_user_content' in result.piezas[0].especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO]

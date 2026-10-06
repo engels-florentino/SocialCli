@@ -209,6 +209,17 @@ def pedir_listado_con_insights(
         "access_token": token,
     }
     r = client.get(url, params=params_con_insights)
+    if platform is Platform.FACEBOOK and "comments.summary(true)" in campos_base and r.status_code in (400, 403):
+        try:
+            error = r.json().get("error") or {}
+        except (ValueError, AttributeError):
+            error = {}
+        if isinstance(error, dict) and error.get("code") in (10, 200) and "pages_read_user_content" in str(error.get("message", "")):
+            # Comment counts need a separate permission; preserve authorized insights.
+            reduced_fields = ",".join(field for field in campos_base.split(",") if field != "comments.summary(true)")
+            data, other_reason = pedir_listado_con_insights(client, url, reduced_fields, metricas, extra, platform, scope, token)
+            reason = "Comment counts unavailable: pages_read_user_content permission not granted."
+            return data, reason + (" " + other_reason if other_reason else "")
     if r.status_code == 400 and es_metrica_invalida(r):
         motivo = mensaje_de_error(r, token)
         params_sin_insights = {**extra, "fields": campos_base, "access_token": token}
