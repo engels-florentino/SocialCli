@@ -111,3 +111,86 @@ def test_provider_errors_never_expose_response_or_secret(tmp_path):
     with pytest.raises(ValueError) as exc:
         p.exchange('youtube','code','verifier')
     assert 'fictional-' not in str(exc.value)
+
+
+def meta_empty_pages_handler(platform='facebook', debug=None, page=None):
+    permissions = ['pages_show_list', 'pages_read_engagement'] + (
+        ['pages_manage_posts'] if platform == 'facebook' else ['instagram_basic', 'instagram_content_publish'])
+    metadata = {'is_valid': True, 'app_id': 'fictional-client', 'type': 'USER',
+                'scopes': permissions, 'granular_scopes': [
+                    {'scope': scope, 'target_ids': ['123']} for scope in permissions if scope.startswith('pages_')]}
+    if debug is not None:
+        metadata.update(debug)
+    row = page or {'id': '123', 'name': 'Example Page', 'access_token': 'page-a',
+                   'instagram_business_account': {'id': '456', 'username': 'example'}}
+
+    def handler(request):
+        path = request.url.path
+        if path.endswith('/oauth/access_token'):
+            return httpx.Response(200, json={'access_token': 'user-a', 'expires_in': 5184000})
+        if path.endswith('/me/permissions'):
+            return httpx.Response(200, json={'data': [{'permission': scope, 'status': 'granted'} for scope in permissions]})
+        if path.endswith('/me/accounts'):
+            return httpx.Response(200, json={'data': []})
+        if path.endswith('/debug_token'):
+            assert request.url.params['input_token'] == 'user-a'
+            assert request.headers['authorization'] == 'Bearer fictional-client|fictional-app-secret'
+            return httpx.Response(200, json={'data': metadata})
+        assert path == '/v26.0/123', 'must only retrieve the explicitly authorized Page'
+        assert request.headers['authorization'] == 'Bearer user-a'
+        if platform == 'facebook':
+            assert request.url.params['fields'] == 'id,name,access_token'
+        return httpx.Response(200, json=row)
+
+    return handler
+
+
+@pytest.mark.parametrize('platform, expected_id', [('facebook', '123'), ('instagram', '456')])
+def test_meta_discovers_explicitly_authorized_page_when_accounts_edge_is_empty(tmp_path, platform, expected_id):
+    grant = setup(tmp_path, meta_empty_pages_handler(platform)).exchange(platform, 'code', 'verifier')
+    assert grant['accounts'][0]['id'] == expected_id
+    assert grant['accounts'][0]['page_id'] == '123'
+    assert grant['accounts'][0]['access_token'] == 'page-a'
+
+
+@pytest.mark.parametrize('debug', [
+    {'is_valid': False}, {'app_id': 'another-app'}, {'type': 'APP'},
+    {'granular_scopes': []},
+    {'granular_scopes': [{'scope': 'pages_show_list', 'target_ids': ['123']}]},
+    {'granular_scopes': [
+        {'scope': 'pages_show_list', 'target_ids': ['123']},
+        {'scope': 'pages_read_engagement', 'target_ids': ['999']},
+        {'scope': 'pages_manage_posts', 'target_ids': ['123']}]},
+    {'granular_scopes': [
+        {'scope': scope, 'target_ids': ['../me']} for scope in ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts']]},
+    {'granular_scopes': [
+        {'scope': scope, 'target_ids': [str(i) for i in range(101)]} for scope in ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts']]},
+])
+def test_meta_empty_accounts_cannot_fall_back_to_unverified_or_unbounded_targets(tmp_path, debug):
+    with pytest.raises(ValueError):
+        setup(tmp_path, meta_empty_pages_handler(debug=debug)).exchange('facebook', 'code', 'verifier')
+
+
+def test_meta_rejects_different_page_returned_for_authorized_target(tmp_path):
+    with pytest.raises(ValueError):
+        setup(tmp_path, meta_empty_pages_handler(page={'id': '999', 'name': 'Wrong Page', 'access_token': 'wrong-a'})).exchange('facebook', 'code', 'verifier')
+
+
+@pytest.mark.parametrize('first_empty', [True, False])
+def test_meta_pagination_never_uses_empty_edge_fallback(tmp_path, first_empty):
+    permissions = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts']
+    row = {'id': '123', 'name': 'Example Page', 'access_token': 'page-a'}
+
+    def handler(request):
+        if request.url.path.endswith('/oauth/access_token'):
+            return httpx.Response(200, json={'access_token': 'user-a', 'expires_in': 5184000})
+        if request.url.path.endswith('/me/permissions'):
+            return httpx.Response(200, json={'data': [{'permission': scope, 'status': 'granted'} for scope in permissions]})
+        assert request.url.path.endswith('/me/accounts'), 'paginated discovery must not use debug-token fallback'
+        if 'after' not in request.url.params:
+            return httpx.Response(200, json={'data': [] if first_empty else [row],
+                'paging': {'next': 'https://graph.facebook.com/next', 'cursors': {'after': 'next-page'}}})
+        return httpx.Response(200, json={'data': [row] if first_empty else []})
+
+    accounts = setup(tmp_path, handler).exchange('facebook', 'code', 'verifier')['accounts']
+    assert accounts == [{'id': '123', 'name': 'Example Page', 'page_id': '123', 'access_token': 'page-a'}]

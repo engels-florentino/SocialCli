@@ -128,6 +128,38 @@ class Providers:
             result['refresh_expires_at'] = previous['refresh_expires_at']
         return result
 
+    def meta_selected_pages(self, credentials, user_token, required, fields):
+        """Recover only explicitly approved Pages when Meta omits its accounts edge."""
+        metadata = self.request('GET', f'{GRAPH}/debug_token',
+            headers={'Authorization': f'Bearer {credentials.client_id}|{credentials.client_secret}'},
+            params={'input_token': user_token}).get('data')
+        if (not isinstance(metadata, dict) or metadata.get('is_valid') is not True
+                or metadata.get('app_id') != credentials.client_id or metadata.get('type') != 'USER'):
+            raise ValueError('account discovery failed; provider token could not be verified')
+        granular = metadata.get('granular_scopes')
+        if not isinstance(granular, list):
+            raise ValueError('account discovery failed; explicit Page authorization is required')
+        authorized = None
+        for scope in (s for s in required if s.startswith('pages_')):
+            entries = [g for g in granular if isinstance(g, dict) and g.get('scope') == scope]
+            if len(entries) != 1 or not isinstance(entries[0].get('target_ids'), list):
+                raise ValueError('account discovery failed; explicit Page authorization is required')
+            targets = entries[0]['target_ids']
+            if (not targets or len(targets) > 100 or any(
+                    not isinstance(t, str) or not re.fullmatch(r'[0-9]{1,32}', t) for t in targets)):
+                raise ValueError('account discovery failed; select a bounded list of Pages')
+            authorized = set(targets) if authorized is None else authorized & set(targets)
+        if not authorized:
+            raise ValueError('account discovery failed; Page permissions do not match')
+        rows = []
+        for page_id in sorted(authorized):
+            row = self.request('GET', f'{GRAPH}/{page_id}',
+                headers={'Authorization': f'Bearer {user_token}'}, params={'fields': fields})
+            if row.get('id') != page_id:
+                raise ValueError('account discovery failed; Page identity does not match authorization')
+            rows.append(row)
+        return rows
+
     def exchange(self, platform, code, verifier, *, management=False, analytics=False):
         credentials = self.settings.providers[platform]
         required = self.scopes(platform, management=management, analytics=analytics)
@@ -174,12 +206,17 @@ class Providers:
                 raise ValueError('required permissions were not granted')
             grant = {'access_token': user_token, 'expires_at': time.time() + lifetime(body.get('expires_in', 60 * 86400)), 'granted_scopes': granted}
             accounts = []
-            params = {'fields':'id,name,access_token,instagram_business_account{id,username,name}', 'limit':100}
+            fields = 'id,name,access_token'
+            if platform == 'instagram':
+                fields += ',instagram_business_account{id,username,name}'
+            params = {'fields':fields, 'limit':100}
             for page in range(5):
                 result = self.request('GET', f'{GRAPH}/me/accounts', headers=headers, params=params)
                 rows = result.get('data')
                 if not isinstance(rows, list):
                     raise ValueError('account discovery failed')
+                if page == 0 and not rows and not (result.get('paging') or {}).get('next'):
+                    rows = self.meta_selected_pages(credentials, user_token, required, fields)
                 for row in rows:
                     page_id = identifier(row.get('id'))
                     ig = row.get('instagram_business_account')
