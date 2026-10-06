@@ -32,3 +32,5 @@ build/
 
 .worktrees/
 .superpowers/
+
+**/service.env

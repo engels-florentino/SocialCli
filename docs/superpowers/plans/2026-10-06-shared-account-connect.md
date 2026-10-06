@@ -56,7 +56,7 @@
 
 **Files:** deploy/connection-service/*; docs/{connections.md,privacy.html,terms.html,index.html}; README.md; SETUP.md; docs/tiktok-review.md.
 - [ ] Document exact service/CLI setup, data handling, revocation limits and independent-app compatibility.
-- [ ] Create an isolated server release/environment/state and user systemd service, with loopback binding and query-free logs. Back up reverse-proxy/web configuration before adding routes.
+- [ ] Create an isolated server release/environment/state and container service with no published host port and query-free logs. Back up reverse-proxy/web configuration before adding routes.
 - [ ] Deploy to social.florentino.pro, preserve media/private executor behavior, verify external health and TLS, register available provider callbacks and test browser authorization read-only.
 - [ ] Run all tests and secret scans, obtain fresh whole-branch code review, fix material findings, push reviewed public changes and verify CI.
 - [ ] Record any provider approval or credential-dependent blockers. Do not claim a completed creator pilot without a real authorization, nor send content without its approved preview.

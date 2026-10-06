@@ -55,7 +55,7 @@ socialcli auth tiktok --brand MyBrand
 socialcli auth status --brand MyBrand --platform tiktok --json
 ```
 
-Enter credentials through the local setup flow; they are stored in `MyBrand/.secrets/`. No other user's credentials are included. Each operator supplies their own provider application credentials. This release does not offer a shared SocialCli OAuth backend.
+Choose shared browser connections with `socialcli connect` when the service has configured your platform, or independent-app credentials with `socialcli auth`. Shared capabilities live in the OS keyring; independent credentials remain in `MyBrand/.secrets/`. No other creator’s credentials are included. See [account connections](docs/connections.md) for availability and provider-review status.
 
 ## Review and publish
 
@@ -99,3 +99,15 @@ Metrics and management permissions are separate from publishing permissions. A v
 Read [CONTRIBUTING.md](CONTRIBUTING.md). For questions or bugs, open an [issue](https://github.com/engels-florentino/SocialCli/issues) without tokens, keys, `.env` files or private logs. Report vulnerabilities through the private channel described in [SECURITY.md](SECURITY.md).
 
 [MIT license](LICENSE). SocialCli is not affiliated with the platforms it integrates.
+
+## Browser account connections
+
+The shared connection mode lets creators authorize their accounts without their own provider developer registration. Availability depends on the operator configuring and obtaining approval for each integration; implementation alone does not establish public production access.
+
+```sh
+socialcli connect youtube --brand MyBrand
+socialcli connections --brand MyBrand --json
+socialcli disconnect youtube --brand MyBrand
+```
+
+[Connection guide](docs/connections.md) · [Self-host the connection service](deploy/connection-service/README.md). Independent-app `socialcli auth` remains supported.

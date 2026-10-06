@@ -1,6 +1,12 @@
+# Account connection modes
+
+Creators can use `socialcli connect PLATFORM --brand MyBrand` with a configured shared service, without developer credentials. See [browser account connections](docs/connections.md) for availability, account confirmation and OS keyring requirements.
+
+The instructions below describe the separate independent-app mode for operators registering their own provider applications.
+
 # Set up SocialCli with your accounts
 
-SocialCli is a desktop command-line application. This release does not distribute shared developer credentials: each operator configures their own provider applications, including the required permissions and reviews. Do not copy another person's credentials or publish them on GitHub.
+SocialCli is a desktop command-line application with shared-service and independent-app connection modes. Shared application secrets remain on the service; creators never receive them. The independent setup below requires your own provider applications, permissions and reviews. Never copy another person’s credentials or publish them on GitHub.
 
 ## Workspace
 

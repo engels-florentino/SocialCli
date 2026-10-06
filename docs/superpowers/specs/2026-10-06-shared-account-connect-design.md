@@ -24,7 +24,7 @@ Connecting never publishes. Existing complete dry-run preview and explicit appro
 
 ## Deployment
 
-Use the existing social.florentino.pro server and reverse proxy. Run the connection service independently of the private Histopast executor, on loopback, with separate code, environment, state and user service. Preserve existing media routes and retain web/legal backups. Serve matching SocialCli branding and policies on the connection domain. Register HTTPS callbacks only after the service passes local tests and a remote health probe. Do not rotate existing provider secrets or migrate creator tokens automatically.
+Use the existing social.florentino.pro server and reverse proxy. Run the connection service independently of the private Histopast executor, in a container with no published host port on the existing proxy network, with separate code, environment and state. Preserve existing media routes and retain web/legal backups. Serve matching SocialCli branding and policies on the connection domain. Register HTTPS callbacks only after the service passes local tests and a remote health probe. Do not rotate existing provider secrets or migrate creator tokens automatically.
 
 ## Acceptance
 

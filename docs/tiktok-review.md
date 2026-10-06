@@ -4,7 +4,9 @@ SocialCli is a public project that other creators can install to manage their ac
 
 ## Architecture of this distribution
 
-Each operator uses their own provider application and stores secrets locally. No other creator's client secret is included. This distributes the software without sharing credentials, but does not provide a shared SocialCli OAuth backend. Such a product requires an authorization service that keeps the secret outside the CLI, with updated architecture, policies and demonstration before it can be presented as available.
+The shared connection service is implemented at `https://social.florentino.pro`. It owns OAuth callbacks and encrypted refresh credentials; creators connect through the browser and confirm the discovered account in the CLI. The CLI holds a connection capability in its OS keyring and retrieves access tokens only into process memory. Creator media and publication execution remain local. Independent-app authentication is retained as a separate option.
+
+The TikTok connector uses Web Login Kit with `https://social.florentino.pro/oauth/tiktok/callback`. It remains disabled until matching provider credentials, callback configuration and test-account authorization are verified. A real sandbox recording and external-creator acceptance are still required; mocked tests do not establish a completed live pilot or production approval.
 
 ## Current production draft
 
@@ -44,11 +46,11 @@ Official sources: [App Review Guidelines](https://developers.tiktok.com/docs/en/
 Record the actual English CLI and TikTok interfaces, without showing secrets:
 
 1. Open the public product website and the installed `socialcli --help`.
-2. Explain that this distribution currently requires each operator to register their own provider application. Do not present a shared authorization service as implemented.
+2. Show the shared service and its actual configuration. Creators use browser authorization; the service operator owns the provider app. Do not present a disabled connector or mocked flow as an approved public integration.
 3. Use the sandbox application and an authorized test account. Show OAuth consent for the two requested scopes and the local callback completing successfully.
 4. Show the selected brand/account and an existing creator-owned local video.
 5. Run the complete dry-run preview, then obtain explicit approval for this exact upload. Do not resend an earlier pilot solely to make a recording.
 6. Execute the approved inbox upload, show its pending-confirmation result, and verify arrival in the creator's TikTok inbox. Show the creator-facing completion flow.
 7. Keep the recording within the portal limits (MP4/MOV, at most 50 MB per file) and verify that all selected products/scopes appear.
 
-A future shared SocialCli application requires a secure authorization service and an updated demonstration. Creators would then authorize on TikTok directly; SocialCli must never collect their TikTok passwords.
+The shared service needs a current real sandbox demonstration before submission. Creators authorize directly on TikTok; SocialCli never collects their TikTok passwords.
