@@ -65,3 +65,15 @@ def test_rate_limit_is_bounded_and_persistent(tmp_path):
         assert store.admit(db, 'other', now=60, limit=5)
         assert store.admit(db, 'address', now=120, limit=5)
     assert b'address' not in store.path.read_bytes()
+
+
+@pytest.mark.parametrize('column,value',[('credential_hash','attacker-hash'),('expires',9999999999)])
+def test_vault_rejects_capability_hash_and_expiry_tampering(tmp_path,column,value):
+    Store=store_type()
+    store=Store(tmp_path/'vault.sqlite3',Fernet.generate_key())
+    with store.transaction() as db:
+        store.put(db,'connection','victim',{'access_token':'victim-token'},expires=1000,credential_hash='owner-hash')
+        db.execute(f'UPDATE records SET {column}=? WHERE id=?',(value,'victim'))
+    with pytest.raises(ValueError,match='credential storage is invalid'):
+        with store.transaction() as db:
+            store.get(db,'connection','victim')

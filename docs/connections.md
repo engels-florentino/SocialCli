@@ -54,3 +54,13 @@ A terminal-enabled assistant can run `socialcli connections --brand MyBrand --js
 `socialcli auth PLATFORM --brand MyBrand` remains available for operators who own their provider applications. Disconnect a shared connection before replacing it with independent credentials. This mode keeps existing files and behavior; no credentials are automatically migrated and provider secrets are never exported from the shared service.
 
 For self-hosting, see [connection service deployment](../deploy/connection-service/README.md). `--service https://your-service.example` selects your own trusted service; `--dev-local` permits HTTP only on loopback during local development. Never use an untrusted service: its operator handles the permissions you authorize.
+
+## Interrupted installation
+
+Catchable cancellation and installation failures restore the previous account configuration and credentials. Keep a private backup before replacing independent-app credentials: forced process termination, power loss or a filesystem failure can interrupt the local installation between file replacements. In that case, restore `accounts.yml` and the affected `.secrets/<platform>.json` from that backup before retrying. An uninstalled server connection expires after ten minutes; a connection activated immediately before a forced termination may need operator cleanup. Do not store backups in git.
+
+## Hosted pilot status (October 6, 2026)
+
+The HTTPS service is deployed at https://social.florentino.pro. Google is configured with a web OAuth client and is in Testing: access is restricted to the project's authorized test users. A real Histopast pilot verified account selection, OS keyring installation, provider identity, Google refresh and service disconnection. A second connection with `--analytics` successfully retrieved an authorized channel report. This does not establish approval for public access or a successful second independent creator test. Meta and TikTok shared connectors remain disabled pending matching application credentials, callbacks and live tests.
+
+The service's daily retention timer is installed and its first manual run succeeded. No media was uploaded during these checks.

@@ -539,18 +539,27 @@ def auth(
         validas = ", ".join(p.value for p in Platform)
         _fallar(f'unknown platform: {red!r}. Valid platforms: {validas}')
 
-    if brand.leer_secreto(platform).get("auth_mode") == "broker":
-        _fallar("a shared connection already exists; run socialcli disconnect for this platform before independent-app auth")
-
-    if management and platform is not Platform.YOUTUBE:
-        _fallar("--management is only available for YouTube")
-
-    if platform in (Platform.FACEBOOK, Platform.INSTAGRAM):
-        _auth_meta(brand, platform)
-    else:
-        _auth_oauth_redireccion(
-            brand, platform, youtube_management=management
-        )
+    from socialctl.connections.cli import acquire_brand_lock
+    try:
+        lock_fd = acquire_brand_lock(brand)
+    except ValueError as exc:
+        _fallar(str(exc))
+    try:
+        if brand.leer_secreto(platform).get("auth_mode") == "broker":
+            _fallar("a shared connection already exists; run socialcli disconnect for this platform before independent-app auth")
+    
+        if management and platform is not Platform.YOUTUBE:
+            _fallar("--management is only available for YouTube")
+    
+        if platform in (Platform.FACEBOOK, Platform.INSTAGRAM):
+            _auth_meta(brand, platform)
+        else:
+            _auth_oauth_redireccion(
+                brand, platform, youtube_management=management
+            )
+    finally:
+        import os
+        os.close(lock_fd)
 
 
 @app.command()

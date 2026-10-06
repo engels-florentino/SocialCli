@@ -42,7 +42,7 @@ class Store:
             db.close()
 
     def put(self, db, kind: str, record_id: str, payload: dict, *, expires: float, credential_hash: str = ''):
-        envelope = json.dumps({'kind': kind, 'id': record_id, 'payload': payload}, separators=(',', ':')).encode()
+        envelope = json.dumps({'kind': kind, 'id': record_id, 'payload': payload, 'expires': expires, 'credential_hash': credential_hash}, separators=(',', ':')).encode()
         encrypted = self.cipher.encrypt(envelope)
         db.execute('INSERT OR REPLACE INTO records VALUES (?,?,?,?,?)', (kind, record_id, expires, credential_hash, encrypted))
 
@@ -52,7 +52,7 @@ class Store:
             return None
         try:
             value = json.loads(self.cipher.decrypt(row['payload']))
-            if value['kind'] != kind or value['id'] != record_id or not isinstance(value['payload'], dict):
+            if value['expires'] != row['expires'] or value['credential_hash'] != row['credential_hash'] or value['kind'] != kind or value['id'] != record_id or not isinstance(value['payload'], dict):
                 raise ValueError()
         except (InvalidToken, ValueError, TypeError, KeyError):
             raise ValueError('credential storage is invalid') from None

@@ -40,7 +40,29 @@ def atomic_bytes(path:Path,content:bytes,mode=0o600):
         Path(name).unlink(missing_ok=True)
 
 
+def acquire_brand_lock(brand):
+    brand.dir_secretos.mkdir(exist_ok=True,mode=0o700)
+    brand.dir_secretos.chmod(0o700)
+    fd=os.open(brand.dir_secretos/'connection.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    try:
+        fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except BaseException:
+        os.close(fd)
+        raise ValueError('another account connection is in progress for this brand') from None
+    return fd
+
+
+def validate_binding(brand,platform,account):
+    value=yaml.safe_load((brand.raiz/'accounts.yml').read_text()) or {}
+    current_page=(value.get('facebook') or {}).get('page_id')
+    requested=account.get('page_id') if platform is Platform.INSTAGRAM else account.get('id')
+    other=Platform.FACEBOOK if platform is Platform.INSTAGRAM else Platform.INSTAGRAM
+    if platform in (Platform.FACEBOOK,Platform.INSTAGRAM) and brand.leer_secreto(other) and str(current_page)!=str(requested):
+        raise ValueError('Facebook Page differs from an existing linked connection; disconnect that connection or use another brand')
+
+
 def bind_account(brand,platform,account):
+    validate_binding(brand,platform,account)
     path=brand.raiz/'accounts.yml'
     text=path.read_text()
     value=yaml.safe_load(text) or {}
@@ -91,13 +113,7 @@ def register(app):
         lock_fd=None
         try:
             brand=cargar_brand(root,brand_name)
-            brand.dir_secretos.mkdir(exist_ok=True,mode=0o700)
-            brand.dir_secretos.chmod(0o700)
-            lock_fd=os.open(brand.dir_secretos/'connection.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
-            try:
-                fcntl.flock(lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise ValueError('another account connection is in progress for this brand') from None
+            lock_fd=acquire_brand_lock(brand)
             if platform is not Platform.YOUTUBE and (management or analytics):
                 raise ValueError('optional permissions are YouTube-only')
             previous=brand.leer_secreto(platform)
@@ -137,6 +153,7 @@ def register(app):
                 if not 1<=selection<=len(accounts):
                     raise ValueError('invalid account selection')
                 account=accounts[selection-1]
+                validate_binding(brand,platform,account)
                 if previous:
                     typer.echo('Confirming will replace the existing independent-app credentials for this platform.')
                 if platform is Platform.INSTAGRAM:
@@ -174,12 +191,15 @@ def register(app):
                     # Activate only after both keyring and local binding are durable.
                     # The returned provider token is discarded, never persisted.
                     broker.request('POST',f"/v1/connections/{metadata['connection_id']}/token",secret=capability)
-                except Exception:
-                    atomic_bytes(config_path,original_config,config_path.stat().st_mode&0o777)
-                    if original_secret is None:
-                        secret_path.unlink(missing_ok=True)
-                    else:
-                        atomic_bytes(secret_path,original_secret)
+                except BaseException:
+                    try:
+                        atomic_bytes(config_path,original_config,config_path.stat().st_mode&0o777)
+                        if original_secret is None:
+                            secret_path.unlink(missing_ok=True)
+                        else:
+                            atomic_bytes(secret_path,original_secret)
+                    except BaseException:
+                        raise ValueError('Credential restoration could not be completed; restore the brand from your private backup before retrying') from None
                     raise
                 typer.echo(f'{platform.value} connected for {visible(brand.nombre)}. Credentials are held in your OS keyring.')
                 connected=None  # Successfully installed: do not cancel in finally.
@@ -190,8 +210,6 @@ def register(app):
         except Exception:
             fail('Could not connect safely; existing credentials were preserved.')
         finally:
-            if lock_fd is not None:
-                os.close(lock_fd)
             if auth_id or connected:
                 try:
                     with http_client() as transport:
@@ -204,6 +222,8 @@ def register(app):
                         keychain.delete(brand,platform,metadata)
                 except Exception:
                     typer.echo('Cleanup could not be confirmed. Contact the service operator before retrying.',err=True)
+            if lock_fd is not None:
+                os.close(lock_fd)
 
     @app.command('connections')
     def connections(brand_name:str=typer.Option(...,'--brand'),
@@ -240,8 +260,10 @@ def register(app):
     @app.command('disconnect')
     def disconnect(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root')):
         """Delete a shared connection and its local capability after confirmation."""
+        lock_fd=None
         try:
             brand=cargar_brand(root,brand_name)
+            lock_fd=acquire_brand_lock(brand)
             metadata=brand.leer_secreto(platform)
             if metadata.get('auth_mode')!='broker':
                 raise ValueError('no shared connection exists for this platform')
@@ -258,3 +280,7 @@ def register(app):
             fail(str(exc))
         except Exception:
             fail('Could not confirm disconnection; retry after checking service and keyring availability.')
+
+        finally:
+            if lock_fd is not None:
+                os.close(lock_fd)

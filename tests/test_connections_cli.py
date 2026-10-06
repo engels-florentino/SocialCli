@@ -149,3 +149,57 @@ def test_legacy_auth_requires_disconnect_before_replacing_a_shared_connection(tm
     assert result.exit_code==1
     assert 'disconnect' in result.output.lower()
     assert 'client_id' not in result.output
+
+
+def test_ctrl_c_during_installation_restores_existing_account_and_credentials(tmp_path,monkeypatch):
+    server,store,ring=wire(tmp_path,monkeypatch)
+    from socialctl.connections import cli as cli_module
+    brand=crear_brand(tmp_path,'Example')
+    brand.guardar_secreto(Platform.YOUTUBE,{'access_token':'existing-token'})
+    before=(brand.raiz/'accounts.yml').read_bytes()
+    real=cli_module.atomic_bytes
+    interrupted=[False]
+    def write_then_interrupt(path,content,mode=0o600):
+        real(path,content,mode)
+        if path==brand.dir_secretos/'youtube.json' and not interrupted[0]:
+            interrupted[0]=True
+            raise KeyboardInterrupt()
+    monkeypatch.setattr(cli_module,'atomic_bytes',write_then_interrupt)
+    result=runner.invoke(app,['connect','youtube','--brand','Example','--root',str(tmp_path),'--service','https://social.example'],input='y\n')
+    assert result.exit_code==1
+    assert brand.leer_secreto(Platform.YOUTUBE)=={'access_token':'existing-token'}
+    assert (brand.raiz/'accounts.yml').read_bytes()==before
+    assert not ring.values
+
+
+@pytest.mark.parametrize('platform',['instagram','facebook'])
+def test_linked_meta_account_binding_cannot_break_an_existing_connection(tmp_path,platform):
+    from socialctl.connections.cli import bind_account
+    brand=crear_brand(tmp_path,'Example')
+    data={'facebook':{'page_id':'123'},'instagram':{'ig_user_id':'456','media_url_base':''}}
+    import yaml
+    (brand.raiz/'accounts.yml').write_text(yaml.safe_dump(data))
+    brand=cargar_brand(tmp_path,'Example')
+    brand.guardar_secreto(Platform.FACEBOOK,{'auth_mode':'broker','account_id':'123'})
+    brand.guardar_secreto(Platform.INSTAGRAM,{'auth_mode':'broker','account_id':'456'})
+    before=(brand.raiz/'accounts.yml').read_bytes()
+    with pytest.raises(ValueError,match='Facebook Page'):
+        bind_account(brand,Platform(platform),{'id':'789' if platform=='facebook' else '999','page_id':'789','name':'Other'})
+    assert (brand.raiz/'accounts.yml').read_bytes()==before
+
+
+@pytest.mark.parametrize('command',['disconnect','auth'])
+def test_all_credential_writers_share_the_brand_lock(tmp_path,monkeypatch,command):
+    import fcntl,os
+    wire(tmp_path,monkeypatch)
+    brand=crear_brand(tmp_path,'Example')
+    brand.guardar_secreto(Platform.YOUTUBE,{'auth_mode':'broker','version':1,'service_url':'https://social.example','connection_id':'one','account_id':'UC-one'})
+    fd=os.open(brand.dir_secretos/'connection.lock',os.O_RDWR|os.O_CREAT,0o600)
+    try:
+        fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        result=runner.invoke(app,[command,'youtube','--brand','Example','--root',str(tmp_path)],input='y\n')
+        assert result.exit_code==1
+        assert 'in progress' in result.output
+        assert brand.leer_secreto(Platform.YOUTUBE)['connection_id']=='one'
+    finally:
+        os.close(fd)
