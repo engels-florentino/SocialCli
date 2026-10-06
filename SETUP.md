@@ -37,7 +37,7 @@ Set `facebook.page_id` and `instagram.ig_user_id`. Instagram media must have HTT
 
 1. Create your desktop application in [TikTok for Developers](https://developers.tiktok.com/).
 2. Configure Login Kit, Content Posting API and the redirect `http://localhost:8723/callback`.
-3. Request `user.info.basic` and `video.upload` for inbox. Enable only the extra permissions you actually need.
+3. Request `user.info.basic` and `video.upload` for inbox. This release requests exactly these two permissions during authorization. TikTok analytics and Direct Post permissions are deferred; a newly authorized token cannot use those features.
 4. In sandbox, add your account as a target user.
 5. Run `socialcli auth tiktok --brand MyBrand` and enter **your application's** credentials locally.
 

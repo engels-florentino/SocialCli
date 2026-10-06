@@ -31,30 +31,9 @@ SCOPES = {
         " https://www.googleapis.com/auth/yt-analytics.readonly"
         " https://www.googleapis.com/auth/youtube.readonly"
     ),
-    # video.publish permite publicar directamente (mode: direct, con la
-    # app auditada); video.upload es lo mínimo para subir al buzón del
-    # creador (mode: inbox). Se piden ambos para que un mismo secreto sirva
-    # con cualquiera de los dos modos de tiktok.py sin tener que reautenticar
-    # al cambiar de uno a otro. user.info.basic es el scope asociado a
-    # consultar el perfil (GET /v2/user/info/) y, según la documentación,
-    # el `open_id` de la cuenta viaja de todos modos en la propia respuesta
-    # del canje (ver `canjear_codigo`); se pide igualmente aquí porque es
-    # el scope declarado para ese dato y porque sin él una llamada futura a
-    # /v2/user/info/ (por ejemplo, para volver a obtener el open_id de un
-    # token ya existente) sería rechazada. El separador es una coma sin
-    # espacios, igual que `video.upload,video.publish` ya usaba este
-    # proyecto: confirmado con Context7
-    # (developers.tiktok.com/docs/en/silent-login y /docs/en/minis-oauth,
-    # cuyo campo `scope` de respuesta llega como "user.info.basic,video.list";
-    # y los propios ejemplos de las SDKs nativas -Android, iOS- que listan
-    # varios scopes separados por coma).
-    # A los de subida se suman los de lectura, que usa `socialctl stats`:
-    # `user.info.stats` da seguidores, likes totales y numero de videos;
-    # `video.list` da los videos con sus vistas, likes, comentarios y
-    # compartidos. Los dos son de la Display API -no de la Research API, que
-    # exige aprobacion como investigador- y se piden junto a los de subida
-    # para no autenticar dos veces.
-    Platform.TIKTOK: "user.info.basic,user.info.stats,video.upload,video.publish,video.list",
+    # The public TikTok authorization flow is inbox-only. Request only the
+    # permissions submitted for review; analytics and Direct Post are deferred.
+    Platform.TIKTOK: "user.info.basic,video.upload",
 }
 
 YOUTUBE_MANAGEMENT_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"

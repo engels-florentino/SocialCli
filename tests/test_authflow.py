@@ -53,22 +53,15 @@ def test_url_de_youtube_pide_el_scope_de_subida_y_lleva_pkce_y_state():
     assert parametros["code_challenge"] == esperado
 
 
-def test_url_de_tiktok_pide_los_tres_scopes_y_usa_client_key_no_client_id():
-    """Incluye `user.info.basic` -el scope que permite consultar el perfil
-    y obtener el `open_id`- además de los dos de publicación. Confirmado
-    con Context7 (developers.tiktok.com/docs/en/silent-login,
-    /docs/en/minis-oauth y /docs/en/oauth-user-access-token-management):
-    el propio nombre del scope es `user.info.basic`, y tanto la respuesta
-    del canje de token como los ejemplos de las SDKs nativas lo separan de
-    los demás scopes con una coma, igual que ya hacía este proyecto con
-    `video.upload,video.publish`."""
+def test_tiktok_authorization_requests_only_inbox_scopes():
+    """The actual OAuth URL must match the two permissions under review."""
     url = construir_url_autorizacion(
         Platform.TIKTOK, "ck", REDIRECT, state="est4do", code_verifier=VERIFIER
     )
     parametros = _params(url)
 
     assert url.startswith("https://www.tiktok.com/v2/auth/authorize/")
-    assert parametros["scope"] == "user.info.basic,user.info.stats,video.upload,video.publish,video.list"
+    assert parametros["scope"] == "user.info.basic,video.upload"
     assert parametros["client_key"] == "ck"
     assert "client_id" not in parametros
     assert parametros["state"] == "est4do"

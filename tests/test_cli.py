@@ -1060,7 +1060,7 @@ def _auth_tiktok_con_respuesta(tmp_path, monkeypatch, cuerpo_respuesta: dict):
 
 
 @respx.mock
-def test_auth_tiktok_pide_tambien_el_scope_user_info_basic(tmp_path, monkeypatch):
+def test_tiktok_auth_cli_requests_only_inbox_scopes(tmp_path, monkeypatch):
     crear_brand(tmp_path, "Histopast")
 
     _resultado, capturado = _auth_tiktok_con_respuesta(tmp_path, monkeypatch, {
@@ -1069,7 +1069,7 @@ def test_auth_tiktok_pide_tambien_el_scope_user_info_basic(tmp_path, monkeypatch
     })
 
     parametros_url = dict(urllib.parse.parse_qsl(capturado["url"].split("?", 1)[1]))
-    assert parametros_url["scope"] == "user.info.basic,user.info.stats,video.upload,video.publish,video.list"
+    assert parametros_url["scope"] == "user.info.basic,video.upload"
 
 
 @respx.mock
