@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/socialcli-logo.png" width="128" height="128" alt="SocialCli logo: S and terminal prompt &gt;_"></p>
+
 # SocialCli
 
 **A social media CLI for AI agents and the people who supervise them.** Use a terminal-enabled assistant to inspect your accounts, draft posts and prepare user-approved actions on YouTube, Facebook, Instagram and TikTok. SocialCli provides concrete commands, validation, previews and local records for creators and teams.

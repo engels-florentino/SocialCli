@@ -1,0 +1,3 @@
+Generated with the built-in image generation tool.
+
+Use case: logo-brand. Create one polished square app logo for SocialCli, a social media command-line tool for AI agents. The entire design is a bold uppercase S and the exact terminal prompt characters >_ integrated into a single clean, balanced emblem. Use a dark navy rounded-square tile, a crisp white geometric S on the left and a bright blue >_ on the right, all very legible at small icon sizes. Flat vector-like graphic, generous safe margins, precise simple shapes, high contrast. Only characters S and >_, no wordmark, no additional text, no gradients, shadows, mockup, watermark, or third-party logos. The tile should fill most of the square canvas. Transparent background outside the rounded-square tile.
