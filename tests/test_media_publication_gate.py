@@ -39,7 +39,7 @@ def test_live_publish_gate_blocks_ingress_and_allows_queue_callback(tmp_path, mo
     thread.start()
     try:
         assert entered.wait(5)
-        with pytest.raises(ValueError, match="ejecución"):
+        with pytest.raises(ValueError, match='running concurrently'):
             ingress().receive(server, wire(local, manifest), preview_update=True)
         assert path.read_bytes() == b"approved text"
     finally:
@@ -48,7 +48,7 @@ def test_live_publish_gate_blocks_ingress_and_allows_queue_callback(tmp_path, mo
     assert not thread.is_alive() and outcomes[0].status is PostStatus.PUBLICADO
     # Even before guardar_resultado, a completed/uncertain start is non-draft.
     assert not (path.parent / "resultado.json").exists()
-    with pytest.raises(ValueError, match="publicación"):
+    with pytest.raises(ValueError, match='publication'):
         ingress().receive(server, wire(local, manifest), preview_update=True)
 
 

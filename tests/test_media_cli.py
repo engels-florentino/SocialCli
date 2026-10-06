@@ -240,7 +240,7 @@ def test_ssh_timeout_kills_and_reaps_without_disclosing_output(tmp_path, monkeyp
         return process
     monkeypatch.setattr(subprocess, "Popen", factory)
     try:
-        with pytest.raises(MediaRegistryError, match="tiempo"):
+        with pytest.raises(MediaRegistryError, match='time'):
             media_cli._capture(["fake-ssh"], io.BytesIO(), timeout=0.01)
     finally:
         release.set()

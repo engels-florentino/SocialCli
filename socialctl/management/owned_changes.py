@@ -63,14 +63,14 @@ class OwnedStore(ResourceStore):
 
 def complete(report):
     if not report["complete"]:
-        raise ResourceError("lista incompleta; no se puede preparar/aplicar: " + str(report.get("error")))
+        raise ResourceError("incomplete list; cannot prepare/apply: " + str(report.get("error")))
     return report["items"]
 
 
 def ordered(rows):
     rows = sorted(copy.deepcopy(rows), key=lambda r: r["snippet"]["position"])
     if [r["snippet"]["position"] for r in rows] != list(range(len(rows))):
-        raise ResourceError("lista incompleta: posiciones no contiguas o duplicadas")
+        raise ResourceError("incomplete list: noncontiguous or duplicate positions")
     return rows
 
 
@@ -95,55 +95,55 @@ def baseline(client, edit):
         before["collection"] = ordered(complete(client.list_items(edit.playlist_id)))
         if edit.action == "item-insert":
             if any(r["snippet"]["resourceId"]["videoId"] == edit.video_id for r in before["collection"]):
-                raise ResourceConflict("ya existe membresía con este videoId; no se deduplica por título")
+                raise ResourceConflict("membership with this videoId already exists; no title-based deduplication")
             if edit.position > len(before["collection"]):
-                raise ResourceError("posición de inserción fuera de la lista")
+                raise ResourceError("insertion position outside list")
     if resource == "playlistImages":
         before["parent"] = client.one("playlists", edit.playlist_id)
         before["collection"] = complete(client.list_images(edit.playlist_id))
         if edit.action == "image-insert" and any(r["snippet"]["type"] == edit.image_type for r in before["collection"]):
-            raise ResourceConflict("ya existe imagen con ese tipo; requiere image-update explícito")
+            raise ResourceConflict("image with this type already exists; explicit image-update required")
     if edit.action == "playlist-create":
         before["collection"] = complete(client.list_playlists())
     if edit.action == "playlist-update" and isinstance(edit.patch.get("status"), dict) and edit.patch["status"].get("podcastStatus") == "enabled":
         before["image_eligibility"] = complete(client.list_images(edit.playlist_id))
         if not before["image_eligibility"]:
-            raise ResourceError("podcastStatus=enabled requiere una imagen existente; no se crea automáticamente")
+            raise ResourceError("podcastStatus=enabled requires existing image; not created automatically")
     if edit.action == "section-create":
         before["collection"] = complete(client.list_sections())
         if len(before["collection"]) >= 10:
-            raise ResourceError("máximo documentado de 10 secciones")
+            raise ResourceError("documented maximum of 10 sections")
     return before
 
 
 def effects_for(edit):
-    notes = ["Se aprueba solo la marca/cuenta, IDs y valores completos mostrados; permisos/eligibilidad efectivos dependen del proveedor."]
+    notes = ["Approval covers only displayed brand/account, IDs and complete values; effective permissions/eligibility depend on provider."]
     if edit.action.endswith("-delete"):
-        notes.append("Eliminación irreversible del ID exacto; el snapshot es evidencia, no backup restaurable ni restauración automática.")
+        notes.append("Irreversible deletion of exact ID; snapshot is evidence, not a restorable backup or automatic restoration.")
     if edit.action in {"playlist-delete", "item-delete"}:
-        notes.append("La eliminación de playlist/membresía no elimina sus vídeos subyacentes.")
+        notes.append("Deleting playlist/membership does not delete underlying videos.")
     if edit.action in {"item-insert", "items-reorder", "item-update"}:
-        notes.append("playlistItemId, playlistId y videoId son IDs distintos; los cambios de posición desplazan otras membresías. ManualSortRequired requiere ajuste explícito externo; nunca se altera automáticamente.")
+        notes.append("playlistItemId, playlistId and videoId are distinct IDs; position changes shift other memberships. ManualSortRequired requires explicit external adjustment; never changed automatically.")
     if edit.action == "item-update":
-        notes.append("startAt/endAt obsoletos solo se reenvían si ya existen al preservar contentDetails; YouTube los ignora. Su edición está deshabilitada y no se promete restauración ni retención.")
+        notes.append("Deprecated startAt/endAt are forwarded only if already present when preserving contentDetails; YouTube ignores them. Editing disabled; restoration or retention not promised.")
     if edit.action == "items-reorder":
-        notes.append("Ordenación de múltiples elementos NO atómica: resultados parciales durables por elemento; reconcile solo relee y nunca continúa escrituras.")
+        notes.append("Multi-item ordering is NOT atomic: durable partial results per item; reconcile only rereads and never continues writes.")
     if edit.action == "channel-audience":
-        notes.append("Declaración explícita de audiencia selfDeclaredMadeForKids; no inferida. Una discrepancia de documentación o rechazo de status se conserva, sin afirmar éxito.")
+        notes.append("Explicit selfDeclaredMadeForKids audience declaration; not inferred. Documentation mismatch or status rejection preserved without claiming success.")
     if edit.action.startswith("image-"):
-        notes.append("playlistImage no documenta ETag: comprobación previa de valores/propietario, con carrera remota lectura-escritura; sin garantía condicional. Nunca se usa el ETag del playlist como ETag de imagen.")
+        notes.append("playlistImage does not document ETag: preflight value/owner checks with remote read-write race; no conditional guarantee. Playlist ETag is never used as image ETag.")
     if edit.file:
-        notes.append("Bytes suministrados exactos, sin generación/conversión. Validación local de contenedor/dimensiones; proveedor valida procesamiento. El readback de metadatos no prueba igualdad visual o de bytes.")
+        notes.append("Exact supplied bytes without generation/conversion. Local container/dimension validation; provider validates processing. Metadata readback does not prove visual or byte equality.")
     if edit.action == "image-update" and edit.file:
-        notes.append("Media update: JPEG/PNG cuadrado suministrado hasta 52428800 bytes (50MiB), límite de Discovery. Image insert conserva el límite documentado de 2MiB.")
+        notes.append("Media update: supplied square JPEG/PNG up to 52428800 bytes (50MiB), Discovery limit. Image insert retains documented 2MiB limit.")
     if edit.action == "banner-upload":
-        notes.append("Solo sube el banner y guarda duramente su URL; no aplica branding. banner-apply prepara otra aprobación exacta con esa URL.")
+        notes.append("Only uploads banner and durably stores URL; does not apply branding. banner-apply prepares separate exact approval for that URL.")
     if edit.action == "banner-apply":
-        notes.append("Aplica la URL del recibo durable de subida con un channels.update separado; no cambia el título del canal.")
+        notes.append("Applies durable upload receipt URL via separate channels.update; does not change channel title.")
     if edit.action.startswith("watermark-"):
-        notes.append("Estado anterior del watermark DESCONOCIDO: no hay método público de lectura y channels.list no admite invideoBranding. Freshness/propiedad del canal no prueba estado del watermark ni ofrece condición If-Match. Un 204 solo da accepted_unverifiable, nunca prueba bytes, metadatos ni ausencia.")
+        notes.append("Previous watermark state UNKNOWN: no public read method and channels.list does not accept invideoBranding. Channel freshness/ownership does not prove watermark status or provide If-Match condition. A 204 yields only accepted_unverifiable, never proves bytes, metadata or absence.")
     if edit.action == "watermark-set":
-        notes.append("Reemplazo completo explícito del watermark con archivo/timing/targetChannelId aprobados; no se conservan valores anteriores desconocidos. durationMs='omit' ordena omitir ese campo intencionalmente, no preservarlo.")
+        notes.append("Explicit full watermark replacement with approved file/timing/targetChannelId; unknown previous values are not preserved. durationMs='omit' intentionally omits that field rather than preserving it.")
     return notes
 
 
@@ -151,12 +151,12 @@ def watermark_after(edit, before):
     timing = dict(mapping(edit.timing, {"type", "offsetMs", "durationMs"}, "timing"))
     if (set(timing) != {"type", "offsetMs", "durationMs"} or not isinstance(timing.get("type"), str)
         or timing["type"] not in {"offsetFromStart", "offsetFromEnd"}):
-        raise ResourceError("reemplazo exige timing type/offsetMs/durationMs explícitos; durationMs='omit' indica omisión intencional")
+        raise ResourceError("replacement requires explicit timing type/offsetMs/durationMs; durationMs='omit' means intentional omission")
     if timing["durationMs"] == "omit":
         del timing["durationMs"]
     for key in {"offsetMs", "durationMs"} & set(timing):
         if not isinstance(timing[key], str) or not re.fullmatch(r"\d{1,20}", timing[key]) or int(timing[key]) > 18446744073709551615:
-            raise ResourceError("timing requiere uint64 decimal como texto")
+            raise ResourceError("timing requires decimal uint64 as text")
     target_channel = resource_id(edit.target_channel_id)
     return {"timing": timing, "targetChannelId": target_channel}
 
@@ -166,7 +166,7 @@ def reorder_plan(edit, before):
     positions = [p.model_dump() for p in edit.positions]
     if ({p["item_id"] for p in positions} != {r["id"] for r in rows}
         or len(positions) != len(rows) or sorted(p["position"] for p in positions) != list(range(len(rows)))):
-        raise ResourceError("reorder exige cada playlistItemId exacto una vez y todas las posiciones contiguas")
+        raise ResourceError("reorder requires each exact playlistItemId once and all positions contiguous")
     plan = []
     for wanted in sorted(positions, key=lambda p: p["position"]):
         row = next(r for r in rows if r["id"] == wanted["item_id"])
@@ -197,10 +197,10 @@ def expected_body(edit, resource, rid, before, account, asset):
         explicit_dimensions = (edit.patch or {}).get("snippet", {})
         for field in ("width", "height"):
             if field in explicit_dimensions and explicit_dimensions[field] != asset[field]:
-                raise ResourceError("dimensiones explícitas no coinciden con los bytes suministrados")
+                raise ResourceError("explicit dimensions do not match supplied bytes")
             after["snippet"][field] = asset[field]
     if edit.action == "item-update" and "collection" in before and after["snippet"]["position"] >= len(before["collection"]):
-        raise ResourceError("posición de update fuera de la lista")
+        raise ResourceError("update position outside list")
     return after, plan
 
 
@@ -213,7 +213,7 @@ def prepare_owned(client, store, edit):
         uploaded = store.load(edit.upload_change_id)
         if (uploaded.edit["action"] != "banner-upload" or uploaded.target_brand != client.brand.nombre
             or uploaded.target_account != account or uploaded.status != "accepted_unverifiable" or not uploaded.receipt):
-            raise ResourceError("banner-apply requiere recibo durable de upload de la misma marca/cuenta")
+            raise ResourceError("banner-apply requires durable upload receipt from same brand/account")
         url = banner_url(uploaded.receipt.get("url"))
         before["upload_receipt"] = {"change_id": uploaded.id, "fingerprint": uploaded.fingerprint, "url": url}
     asset = None
@@ -233,9 +233,9 @@ def prepare_owned(client, store, edit):
 
 def identity(client, change):
     if client.brand.nombre != change.target_brand or client.configured_channel_id != change.target_account:
-        raise ResourceError("marca/cuenta no coincide con la propuesta")
+        raise ResourceError("brand/account does not match proposal")
     if client.identity() != change.target_account:
-        raise ResourceError("canal autenticado distinto")
+        raise ResourceError("authenticated channel mismatch")
 
 
 def operation_key(change):
@@ -315,7 +315,7 @@ def readback(client, store, change):
                 else:
                     change.status, change.verified = "verified", True
         else:
-            _event(change, "identity_unresolved", limitation="No se infiere identidad de títulos ni de candidatos; no se repite el create.")
+            _event(change, "identity_unresolved", limitation="Identity is not inferred from titles or candidates; create is not repeated.")
     except ResourceError as exc:
         _event(change, "readback_unavailable", error=str(exc))
     store.save(change)
@@ -339,9 +339,9 @@ def apply_owned(client, store, change_id, approval_digest):
         change = store.load(change_id)
         edit = validate_edit(change.edit)
         if target(edit) != (change.resource, change.target_id) or bool(edit.file) != bool(change.asset):
-            raise ResourceError("propuesta no coincide con el esquema de recurso/archivo")
+            raise ResourceError("proposal does not match resource/file schema")
         if not hmac.compare_digest(approval_digest, change.fingerprint):
-            raise ApprovalMismatch("la aprobación no coincide con la huella exacta")
+            raise ApprovalMismatch("approval does not match exact fingerprint")
         key = operation_key(change)
         locks.enter_context(store.apply_lock(str(uuid.uuid5(uuid.NAMESPACE_URL, key))))
         identity(client, change)
@@ -355,18 +355,18 @@ def apply_owned(client, store, change_id, approval_digest):
             other = store.load(path.stem)
             unresolved_steps = any(s.get("status") in {"applying", "uncertain"} for s in other.steps)
             if other.id != change.id and operation_key(other) == key and (other.status in {"applying", "uncertain"} or unresolved_steps):
-                raise ResourceError(f"resultado incierto pendiente en {other.id}; otra UUID no permite repetir la escritura")
+                raise ResourceError(f"uncertain outcome pending in {other.id}; another UUID does not allow repeating write")
         try:
             current = baseline(client, edit)
             expected = {k: v for k, v in change.before.items() if k != "upload_receipt"}
             if current != expected:
-                raise ResourceConflict("conflict: el recurso/listado cambió desde el preview")
+                raise ResourceConflict("conflict: resource/listing changed since preview")
             if edit.action == "banner-apply":
                 uploaded = store.load(edit.upload_change_id)
                 binding = change.before["upload_receipt"]
                 if (uploaded.fingerprint != binding["fingerprint"] or not uploaded.receipt or uploaded.receipt.get("url") != binding["url"]
                     or uploaded.status != "accepted_unverifiable" or uploaded.target_account != change.target_account or uploaded.target_brand != change.target_brand):
-                    raise ResourceConflict("conflict: cambió el recibo del banner")
+                    raise ResourceConflict("conflict: banner receipt changed")
         except ResourceConflict:
             change.status = "conflict"
             _event(change, "pre_write_conflict")
@@ -376,10 +376,10 @@ def apply_owned(client, store, change_id, approval_digest):
         if change.asset:
             asset, data = inspect_owned_asset(edit.file, edit.action)
             if asset != change.asset:
-                raise ResourceError("archivo/bytes cambiaron desde la huella aprobada")
+                raise ResourceError("file/bytes changed since approved fingerprint")
         after, plan = expected_body(edit, change.resource, change.target_id, change.before, change.target_account, change.asset)
         if after != change.after or plan != change.plan or effects_for(edit) != change.effects:
-            raise ResourceError("cuerpo/plan/efectos no coincide con el esquema de la propuesta")
+            raise ResourceError("body/plan/effects do not match proposal schema")
         if edit.action == "items-reorder":
             from socialctl.management.owned_reorder import apply_order
             return apply_order(client, store, change, edit, approval_digest)

@@ -31,19 +31,19 @@ class ExecutionPolicy(BaseModel):
         try:
             ZoneInfo(value)
         except (ValueError, ZoneInfoNotFoundError) as exc:
-            raise ValueError("zona IANA inválida") from exc
+            raise ValueError("invalid IANA timezone") from exc
         return value
 
     @field_validator("slots")
     @classmethod
     def valid_slots(cls, value):
         if len(set(value)) != len(value) or any(not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", slot) for slot in value):
-            raise ValueError("slots deben ser HH:MM únicos")
+            raise ValueError("slots must be unique HH:MM values")
         return sorted(value)
 
     def active_slot(self, moment: datetime) -> str | None:
         if moment.utcoffset() is None:
-            raise ScheduleError("el reloj necesita zona horaria")
+            raise ScheduleError("the clock requires a timezone")
         zone = ZoneInfo(self.timezone)
         instant = moment.astimezone(timezone.utc)
         today = instant.astimezone(zone).date()
@@ -72,14 +72,14 @@ def load_state(store: ScheduleStore) -> dict:
                 raise ValueError()
         return state
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise ScheduleError("estado del ejecutor ilegible; revisión requerida") from exc
+        raise ScheduleError("executor state is unreadable; review required") from exc
 
 
 def save_state(store: ScheduleStore, state: dict) -> None:
     try:
         write_json(store.root / "executor-state.json", state)
     except OSError as exc:
-        raise ScheduleError("no se pudo guardar el estado del ejecutor") from exc
+        raise ScheduleError("could not save executor state") from exc
 
 
 def heartbeat(store: ScheduleStore, state: str, moment: datetime) -> None:
@@ -99,7 +99,7 @@ def admitted_groups(store: ScheduleStore, moment: datetime, *,
         try:
             policy = ExecutionPolicy.model_validate_json(policy_path.read_bytes())
         except (OSError, ValueError) as exc:
-            raise ScheduleError("política del ejecutor inválida") from exc
+            raise ScheduleError("invalid executor policy") from exc
     groups: dict[tuple[str, datetime], list[ScheduleEntry]] = {}
     for entry in sorted(store.due(moment), key=lambda e: e.scheduled_at.astimezone(timezone.utc)):
         groups.setdefault((entry.slug, entry.scheduled_at.astimezone(timezone.utc)), []).append(entry)

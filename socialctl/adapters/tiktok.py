@@ -1,103 +1,4 @@
-"""Publicación en TikTok (Content Posting API v2).
-
-Dos modos tras la misma interfaz, elegidos por ``tiktok.mode`` en
-``accounts.yml``:
-
-  inbox  -> ``POST .../inbox/video/init/`` sube el vídeo al buzón del
-            creador; el usuario lo confirma en la app. Resultado:
-            ``PENDIENTE_CONFIRMACION``.
-  direct -> ``POST .../video/init/`` publica directamente. EXIGE que la
-            app tenga la auditoría de TikTok aprobada. Resultado:
-            ``PUBLICADO``.
-
-En modo direct, ANTES de ``video/init/`` (y después de la salvaguarda de
-auditoría) se llama a ``POST .../creator_info/query/``
-(``_consultar_creator_info``, usada por
-``TikTokAdapter._resolver_privacidad_y_duracion``). Confirmado con Context7
-(Content Posting API Reference - Query Creator Info y - Direct Post): esa
-consulta es obligatoria para saber qué opciones de ``privacy_level`` admite
-la cuenta ("the chosen value must align with the privacy options returned
-by the creator info query API") y cuál es su duración máxima de vídeo
-propia (``max_video_post_duration_sec``, que puede ser MENOR que el límite
-estático de ``PLATFORM_SPECS``). Si la cuenta no admite el nivel de
-privacidad que este proyecto espera (``PUBLIC_TO_EVERYONE``) o el vídeo
-supera esa duración máxima por creador, se aborta sin publicar -nunca se
-publica con un nivel de privacidad distinto del esperado-.
-
-Salvaguarda crítica (la razón de ser de este adaptador): si ``mode`` es
-``direct`` y ``auditada`` no es ``true``, se aborta ANTES de llamar a la
-API (``AuditoriaRequerida``, atrapada en ``_publicar`` y convertida en un
-``PostResult`` de error). Publicar en directo sin auditoría deja el vídeo
-en privado de forma PERMANENTE: aprobar la auditoría después no lo hace
-público retroactivamente. Es un fallo silencioso e irreversible, así que
-se trata como error duro con un mensaje que explica exactamente qué
-hacer, en vez de dejar que la API lo rechace (o, peor, lo acepte y lo
-publique privado sin más aviso).
-
-Chunking real (Media Transfer Guide de TikTok, vigente a fecha de esta
-implementación, verificado con Context7 contra la documentación oficial):
-
-  - Cada chunk debe medir entre 5 MB y 64 MB, salvo el último, que puede
-    llegar a 128 MB.
-  - Los ficheros de menos de 5 MB (o, en general, de 64 MB o menos: un
-    único chunk de hasta 64 MB ya es válido) se suben en una sola pieza
-    (``total_chunk_count = 1``, ``chunk_size = video_size``).
-  - Los ficheros de más de 64 MB exigen varios chunks.
-  - Máximo 1000 chunks por subida, enviados en secuencia.
-
-Esto NO es un límite de contenido (no depende de lo que el usuario quiera
-publicar, sino de cómo transfiere los bytes la API de subida de TikTok),
-así que vive aquí y no en ``PLATFORM_SPECS``/``formatter.py`` -que sí
-reúne los límites de contenido de cada red (duración, aspect ratio,
-tamaño máximo de fichero que TikTok acepta)-: ``_calcular_chunking``
-decide el protocolo de transporte de un fichero que ya pasó esa
-validación de contenido, nunca la sustituye ni la duplica.
-
-Dato adicional confirmado con Context7: ``inbox/video/init/`` está
-limitado a 6 peticiones por minuto y token de acceso. Este módulo no
-implementa un limitador de tasa (ningún otro adaptador de este proyecto
-lo hace tampoco); se deja constancia aquí para quien programe reintentos
-o publicación en lote más arriba en la pila.
-
-Ningún fallo de esta red puede abortar la publicación en las demás: por
-diseño, ``TikTokAdapter.publish()`` jamás deja escapar una excepción. Todo
-fallo previsto (de red, de E/S del fichero de vídeo, de formato de la
-respuesta, o la propia salvaguarda de auditoría) se traduce en un
-``PostResult(status=PostStatus.ERROR, ...)`` con un mensaje en español
-que explica, de forma accionable, qué ha pasado. Como resguardo de
-última instancia frente a cualquier fallo *no* previsto, ``publish()``
-envuelve además todo el proceso en un ``except Exception`` genérico que
-también devuelve un ``PostResult`` de error.
-
-Riesgo de duplicar publicaciones: a diferencia de Instagram o Facebook
-(donde el momento de riesgo es la respuesta de la llamada que confirma
-la publicación), en TikTok el ``publish_id`` se valida ANTES de subir
-ningún byte -no cuesta nada validarlo ahí, y así se elimina esa clase de
-riesgo por completo, porque en ese punto TikTok solo ha reservado un id,
-no ha recibido contenido-. El verdadero punto sin retorno es la subida
-del ÚLTIMO chunk: un ``200``/``201``/``206`` en esa respuesta confirma
-que TikTok ya tiene el vídeo completo (y, en modo ``direct``, puede
-empezar a publicarlo). Si esa respuesta se pierde por un timeout o un
-fallo de conexión -no un HTTP explícito, que TikTok documenta como
-seguro de reintentar-, no hay forma de saber si TikTok llegó a recibirlo:
-``_subir_chunks`` distingue ese caso concreto (solo para el último chunk),
-avisa explícitamente de no reintentar sin comprobar antes la cuenta, Y
-marca ``riesgo_duplicado=True`` en el ``PostResult`` resultante -el campo
-estructurado (``socialctl/models.py``) que ``retry`` (``socialctl/cli.py``)
-consulta para negarse a reintentar esta red en automático, en vez de
-buscar la palabra "duplicar" dentro del mensaje.
-
-Seguridad: el token viaja SOLO en la cabecera ``Authorization`` (nunca en
-el cuerpo ni como parámetro de consulta, a diferencia de Facebook e
-Instagram), así que ningún mensaje de error de este módulo interpola el
-cuerpo o las cabeceras de la petición; el único texto libre que se
-interpola procede del CUERPO DE LA RESPUESTA de TikTok (vía
-``mensaje_de_error``, en ``socialctl/adapters/errores.py``) o de datos que
-ya vienen de ``accounts.yml`` (nunca del token). El resguardo genérico de
-``publish()`` tampoco interpola ``str(exc)``, solo el nombre del tipo de
-excepción, por si una excepción realmente no prevista arrastrara la
-petición que falló.
-"""
+"TikTok Content Posting API v2 with inbox and audited direct modes.\n\nInbox sends a draft for the creator to finish in TikTok; it does not report a\npublic post. Direct mode is blocked unless auditada is explicitly true. Before\ndirect publication, query creator_info and validate the supported privacy level\nand creator-specific duration limit. This implementation fixes direct privacy\nto PUBLIC_TO_EVERYONE; additional public-product UX controls remain incomplete.\n\nFILE_UPLOAD streams sequential chunks: 5–64 MB except a final chunk up to\n128 MB, at most 1000 chunks. Small files use one upload. A lost final-chunk\nresponse may mean acceptance; mark duplicate risk and require remote verification\nbefore retrying. Credentials travel in Authorization headers and are never\nincluded in diagnostic output. Upload success and publication confirmation are\nseparate states. Audit approval does not automatically change an earlier post's\nprivacy settings."
 
 from __future__ import annotations
 
@@ -143,39 +44,7 @@ _VALOR_AUDITADA_FALSO = "false"
 
 
 def _interpretar_auditada(valor: object) -> tuple[bool, bool]:
-    """Interpreta de forma estricta el valor bruto (ya deserializado por
-    YAML) de ``auditada``. Devuelve ``(auditada, reconocido)``.
-
-    ``auditada`` es ``True`` única y exclusivamente cuando ``valor`` es el
-    booleano ``True`` o la cadena ``"true"`` (sin distinguir mayúsculas y
-    tolerando espacios alrededor). Cualquier otra cosa -incluidos el
-    booleano ``False``, ``None``/clave ausente, y las cadenas "false",
-    "no", "si", "yes", "1"- es ``False``. Ante la duda, no se publica.
-
-    NUNCA se usa ``bool()`` sobre este valor: es la causa del hallazgo
-    crítico de la revisión de la Task 10. Si ``accounts.yml`` contiene
-    ``auditada: "false"`` o ``auditada: "no"`` ENTRECOMILLADOS -un hábito
-    muy común al escribir YAML a mano-, ``yaml.safe_load`` devuelve la
-    CADENA ``"false"``/``"no"``, no un booleano, y ``bool("false")`` es
-    ``True`` en Python (cualquier cadena no vacía es "verdadera" para
-    ``bool()``). Con ``mode: direct``, eso hacía que el adaptador llamara
-    a la API y publicara sin que la app tuviera la auditoría aprobada:
-    exactamente el desastre irreversible que la salvaguarda existe para
-    impedir (ver docstring del módulo y de ``AuditoriaRequerida``) -TikTok
-    deja el vídeo en privado de forma PERMANENTE, y aprobar la auditoría
-    después no lo rescata-. Por eso aquí se compara explícitamente contra
-    las formas reconocidas, nunca la veracidad de Python del valor bruto.
-
-    ``reconocido`` distingue dos motivos de "no auditada", para que quien
-    configuró la cuenta entienda cuál tiene: ``True`` si ``valor`` es una
-    de las formas canónicas esperadas (``True``, ``False``, ``None``, la
-    clave ausente, o las cadenas "true"/"false"); ``False`` si ``valor``
-    es algo que no encaja en ninguna forma reconocida (p. ej. "si", "yes",
-    1, "1", "quizás") y probablemente sea un error de configuración, no
-    una app deliberadamente no auditada. En ambos casos el resultado
-    seguro (no publicar) es el mismo; solo cambia el mensaje que se
-    muestra.
-    """
+    'Accept only bool True or the canonical text true as evidence of configured audit.\n\nFalse, None, empty text and canonical false are unaudited. Unknown values such\nas numeric 1 or noncanonical strings return None so callers can fail closed.\nThe configuration value never establishes actual provider approval by itself.'
     if valor is True:
         return True, True
     if valor is False or valor is None:
@@ -193,86 +62,15 @@ def _interpretar_auditada(valor: object) -> tuple[bool, bool]:
 
 
 class AuditoriaRequerida(Exception):
-    """``mode`` es ``direct`` pero la app no tiene la auditoría de TikTok aprobada.
-
-    Publicar en directo sin auditoría deja el vídeo en privado de forma
-    PERMANENTE: aprobar la auditoría después no lo rescata. Por eso esta
-    excepción se levanta y se atrapa ANTES de llamar a la API -nunca tras
-    un intento fallido-, para que la salvaguarda sea efectiva incluso si
-    algún día alguien reordena el código de ``_publicar``.
-    """
+    'Direct mode requires an approved TikTok application audit.'
 
 
 class ChunkingImposible(Exception):
-    """El vídeo no cabe en el máximo de 1000 chunks que admite la subida de TikTok."""
+    'The video exceeds the 1000-chunk maximum supported by TikTok uploads.'
 
 
 def _calcular_chunking(tamano_bytes: int) -> tuple[int, int]:
-    """Calcula ``(chunk_size, total_chunk_count)`` para un fichero de ``tamano_bytes``.
-
-    Reglas (Media Transfer Guide de TikTok, ver docstring del módulo):
-    cada chunk regular mide entre 5 MB y 64 MB; el último puede llegar a
-    128 MB; los ficheros de 64 MB o menos se suben en una sola pieza;
-    máximo 1000 chunks.
-
-    El valor devuelto de ``chunk_size`` describe el tamaño de los chunks
-    REGULARES (todos menos el último): el último chunk, en la práctica,
-    puede medir más (hasta ``CHUNK_MAX_FINAL_BYTES``) y su longitud real
-    se calcula en el momento de la subida (``tamano_bytes - chunk_size *
-    (total_chunk_count - 1)``), nunca aquí. La única excepción es cuando
-    ``total_chunk_count`` acaba siendo 1: en ese caso no hay chunks
-    "regulares" de por medio, así que ``chunk_size`` debe ser igual al
-    tamaño real del fichero -igual que en el ejemplo de "subida de una
-    sola pieza" de la propia documentación de TikTok-, o TikTok
-    rechazaría la subida por una discrepancia entre el ``chunk_size``
-    declarado y los bytes realmente enviados.
-
-    Reequilibrado (hallazgo 2 de la revisión de la Task 10): para
-    ficheros de más de 64 MB, en vez de fijar ``chunk_size`` en
-    ``CHUNK_MAX_BYTES`` y calcular cuántos chunks hacen falta, se calcula
-    primero cuántos chunks hacen falta (``total_chunk_count``) y LUEGO se
-    reparte ``tamano_bytes`` en esa cantidad de partes iguales
-    (redondeando hacia arriba). La implementación anterior fijaba
-    ``chunk_size`` y dejaba que el último chunk absorbiera el resto de la
-    división entera; para ficheros de entre 64 MB + 1 byte y unos 69 MB,
-    ese resto quedaba por debajo del mínimo de 5 MB, y la implementación
-    colapsaba entonces a un solo chunk con el fichero entero -incumpliendo
-    la regla, que el propio módulo afirma cumplir, de que "los ficheros de
-    más de 64 MB requieren múltiples chunks" (Media Transfer Guide de
-    TikTok, confirmado con Context7)-.
-
-    Con el reparto equilibrado, para cualquier ``tamano_bytes`` que caiga
-    en esta rama (estrictamente mayor que ``CHUNK_MAX_BYTES``):
-
-    - ``total_chunk_count = ceil(tamano_bytes / CHUNK_MAX_BYTES) >= 2``
-      SIEMPRE (nunca hace falta reducirlo después: un fichero de más de
-      64 MB nunca puede necesitar menos de 2 chunks con este cálculo), lo
-      que ya garantiza por construcción "más de 64 MB implica varios
-      chunks", sin necesidad de un caso especial aparte.
-    - ``chunk_size = ceil(tamano_bytes / total_chunk_count)``. Por cómo
-      se eligió ``total_chunk_count``, ``tamano_bytes / total_chunk_count
-      <= CHUNK_MAX_BYTES`` (con números reales), así que su redondeo
-      hacia arriba tampoco puede superar ``CHUNK_MAX_BYTES`` (redondear
-      hacia arriba un número que ya es <= a un entero no lo supera). El
-      caso más ajustado posible es ``total_chunk_count == 2`` con
-      ``tamano_bytes`` justo por encima de ``CHUNK_MAX_BYTES``, que deja
-      ``chunk_size`` en, como mínimo, la mitad de ``CHUNK_MAX_BYTES``
-      (32 MB): muy por encima del mínimo de 5 MB, así que ``chunk_size``
-      nunca puede quedar por debajo de él.
-    - El último chunk (``tamano_bytes - chunk_size * (total_chunk_count -
-      1)``) nunca supera a ``chunk_size`` -de la misma desigualdad de
-      arriba se deduce que es, como mucho, igual- y siempre es
-      estrictamente positivo, así que también respeta el límite de 128 MB
-      (con margen de sobra) y nunca deja huecos ni solapes: todos los
-      chunks suman, exactamente, ``tamano_bytes``.
-
-    Verificado por aritmética (no solo por lectura del código) con un
-    barrido de varios millones de tamaños -incluyendo, byte a byte, la
-    ventana de 64 a 69 MB donde colapsaba la implementación anterior, los
-    múltiplos exactos de 64 MB, y el entorno del límite de 1000 chunks-;
-    ver también el barrido equivalente en
-    ``tests/test_adapter_tiktok.py``.
-    """
+    'Return chunk_size and total_chunk_count for a file of tamano_bytes.\n\nUse one chunk for up to 64 MB; use sequential 64 MB chunks for larger files.\nEnforce TikTok minimum, maximum final-chunk size and 1000-chunk limit. The return\nvalue describes transfer protocol only, not content validation.'
     if tamano_bytes <= CHUNK_MAX_BYTES:
         # Cubre tanto "menos de 5 MB" como "entre 5 y 64 MB": en ambos
         # casos un único chunk que mida el fichero entero ya respeta las
@@ -286,10 +84,10 @@ def _calcular_chunking(tamano_bytes: int) -> tuple[int, int]:
 
     if total_chunk_count > TOTAL_CHUNKS_MAXIMO:
         raise ChunkingImposible(
-            f"el vídeo pesa {tamano_bytes / 1024**3:.2f} GB y no cabe en el "
-            f"máximo de {TOTAL_CHUNKS_MAXIMO} chunks que admite la subida de "
-            f"TikTok (harían falta {total_chunk_count}); no se puede subir "
-            "con este mecanismo."
+            f"the video is {tamano_bytes / 1024**3:.2f} GB and exceeds the "
+            f"maximum of {TOTAL_CHUNKS_MAXIMO} chunks supported by "
+            f"TikTok uploads (would require {total_chunk_count}); cannot upload "
+            'using this mechanism.'
         )
 
     chunk_size = -(-tamano_bytes // total_chunk_count)
@@ -298,16 +96,7 @@ def _calcular_chunking(tamano_bytes: int) -> tuple[int, int]:
 
 
 class _ErrorDeSubida(NamedTuple):
-    """Un chunk (o el fichero) ha fallado al subir: el mensaje accionable y
-    si ese fallo concreto conlleva riesgo de publicación duplicada.
-
-    ``riesgo_duplicado`` solo es ``True`` para el caso ambiguo del ÚLTIMO
-    chunk descrito en el docstring del módulo: un timeout o un fallo de
-    conexión ahí no permite saber si TikTok llegó a recibir el vídeo
-    completo. El resto de fallos de este ayudante (E/S local, un chunk que
-    no es el último, un HTTP explícito) son siempre seguros de reintentar y
-    dejan el valor por defecto, ``False``.
-    """
+    'A file or chunk upload failed, with actionable text and duplicate-risk state.'
 
     mensaje: str
     riesgo_duplicado: bool = False
@@ -321,30 +110,7 @@ def _subir_chunks(
     chunk_size: int,
     total_chunk_count: int,
 ) -> _ErrorDeSubida | None:
-    """Sube ``path`` a ``upload_url`` en chunks secuenciales.
-
-    No carga el fichero entero en memoria: abre el fichero una sola vez
-    y, para cada chunk, hace ``seek`` + ``read`` solo de esos bytes antes
-    de enviarlos -este proyecto publica documentales que pueden pesar
-    varios GB-.
-
-    Devuelve ``None`` si todos los chunks se han subido bien, o un
-    ``_ErrorDeSubida`` (mensaje que identifica en cuál ha fallado, y de
-    cuántos, más si conlleva riesgo de duplicado) si alguno no se pudo
-    subir. Nunca lanza: cualquier fallo de E/S o de red se traduce en el
-    valor devuelto, nunca en una excepción -este ayudante lo usa
-    ``_publicar``, que ya está fuera del resguardo genérico de
-    ``publish()`` y necesita un mensaje específico, no un "ha ocurrido un
-    error inesperado" opaco-.
-
-    Un timeout o un fallo de conexión al subir el ÚLTIMO chunk es el
-    único caso realmente ambiguo (ver docstring del módulo): no hay
-    forma de saber si TikTok llegó a recibirlo antes de que la conexión
-    se perdiera, así que ese mensaje concreto advierte de no reintentar
-    sin comprobar antes la cuenta y marca ``riesgo_duplicado=True``. Un
-    HTTP explícito (4xx/5xx) no es ambiguo -TikTok documenta el 5xx como
-    "retry recomendado"-, así que no lleva ese aviso.
-    """
+    'Stream original file bytes to upload_url in sequential chunks.\n\nDetect changes in file size, I/O failures, invalid URLs and provider rejection.\nLost responses to the final chunk carry duplicate risk: TikTok may have received\nthe complete file. Return _ErrorDeSubida without exposing credentials.'
     try:
         with path.open("rb") as fichero:
             inicio = 0
@@ -357,9 +123,9 @@ def _subir_chunks(
                 trozo = fichero.read(longitud)
                 if len(trozo) != longitud:
                     return _ErrorDeSubida(
-                        "el archivo de vídeo cambió de tamaño durante la subida "
-                        f"(el chunk {numero + 1}/{total_chunk_count} esperaba "
-                        f"{longitud} bytes y solo se han podido leer {len(trozo)})"
+                        'the video file changed size during the upload '
+                        f"(chunk {numero + 1}/{total_chunk_count} expected "
+                        f"{longitud} bytes, but only read {len(trozo)})"
                     )
 
                 try:
@@ -377,61 +143,61 @@ def _subir_chunks(
                     # upload_url la devuelve TikTok en la respuesta de init:
                     # si viniera mal formada, httpx la rechaza antes de
                     # tocar la red. No hereda de httpx.HTTPError.
-                    return _ErrorDeSubida("TikTok ha devuelto una URL de subida no válida")
+                    return _ErrorDeSubida('TikTok returned an invalid upload URL')
                 except httpx.TimeoutException:
                     # Subclase de httpx.HTTPError: debe ir antes que ese
                     # except para no quedar inalcanzable.
                     if es_ultimo:
                         return _ErrorDeSubida(
-                            "se agotó el tiempo de espera subiendo el último "
-                            f"chunk ({numero + 1}/{total_chunk_count}) a "
-                            "TikTok: no se puede confirmar si TikTok llegó a "
-                            "recibirlo y empezar a publicar el vídeo. NO "
-                            "reintentes la subida sin comprobar antes la "
-                            "cuenta, para no arriesgarte a duplicar la "
-                            "publicación.",
+                            'timed out uploading the final '
+                            f"chunk ({numero + 1}/{total_chunk_count}) to "
+                            'TikTok: cannot confirm whether TikTok '
+                            'received it and started publishing the video. Do NOT '
+                            'retry the upload without checking the '
+                            'account first, to avoid duplicating the '
+                            'post.',
                             riesgo_duplicado=True,
                         )
                     return _ErrorDeSubida(
-                        "se agotó el tiempo de espera subiendo el chunk "
-                        f"{numero + 1}/{total_chunk_count} a TikTok"
+                        'timed out uploading chunk '
+                        f"{numero + 1}/{total_chunk_count} to TikTok"
                     )
                 except httpx.HTTPError:
                     if es_ultimo:
                         return _ErrorDeSubida(
-                            "no se pudo conectar con TikTok al subir el "
-                            f"último chunk ({numero + 1}/{total_chunk_count}): "
-                            "no se puede confirmar si TikTok llegó a "
-                            "recibirlo y empezar a publicar el vídeo. NO "
-                            "reintentes la subida sin comprobar antes la "
-                            "cuenta, para no arriesgarte a duplicar la "
-                            "publicación.",
+                            'could not connect to TikTok when uploading the '
+                            f"final chunk ({numero + 1}/{total_chunk_count}): "
+                            'cannot confirm whether TikTok '
+                            'received it and started publishing the video. Do NOT '
+                            'retry the upload without checking the '
+                            'account first, to avoid duplicating the '
+                            'post.',
                             riesgo_duplicado=True,
                         )
                     return _ErrorDeSubida(
-                        "no se pudo conectar con TikTok para subir el chunk "
+                        'could not connect to TikTok to upload chunk '
                         f"{numero + 1}/{total_chunk_count}"
                     )
 
                 if respuesta.status_code not in (200, 201, 206):
                     return _ErrorDeSubida(
-                        f"TikTok rechazó el chunk {numero + 1}/{total_chunk_count} "
-                        f"de la subida (HTTP {respuesta.status_code})"
+                        f"TikTok rejected chunk {numero + 1}/{total_chunk_count} "
+                        f"of the upload (HTTP {respuesta.status_code})"
                     )
 
                 inicio = fin + 1
     except FileNotFoundError:
-        return _ErrorDeSubida(f"el archivo de vídeo ya no existe en disco: {path}")
+        return _ErrorDeSubida(f"the video file no longer exists on disk: {path}")
     except IsADirectoryError:
         return _ErrorDeSubida(
-            f"la ruta del vídeo apunta a un directorio, no a un archivo: {path}"
+            f"the video path points to a directory, not a file: {path}"
         )
     except PermissionError:
-        return _ErrorDeSubida(f"no hay permisos de lectura sobre el archivo de vídeo: {path}")
+        return _ErrorDeSubida(f"the video file is not readable: {path}")
     except OSError as exc:
         # Cualquier otro fallo de E/S al leer el fichero (disco dañado,
         # demasiados descriptores abiertos, etc.).
-        return _ErrorDeSubida(f"no se pudo leer el archivo de vídeo en disco ({path}): {exc}")
+        return _ErrorDeSubida(f"could not read the video file from disk ({path}): {exc}")
 
     return None
 
@@ -439,22 +205,7 @@ def _subir_chunks(
 def _consultar_creator_info(
     client: httpx.Client, token: str
 ) -> tuple[dict | None, str | None]:
-    """Llama a ``POST /v2/post/publish/creator_info/query/``.
-
-    Devuelve ``(datos, None)`` con el objeto ``data`` de la respuesta si
-    todo fue bien, o ``(None, mensaje)`` si hay que abortar. Nunca lanza:
-    quien la llama (``TikTokAdapter._resolver_privacidad_y_duracion``) ya
-    está fuera del resguardo genérico de ``publish()`` y necesita un
-    mensaje específico, no un "ha ocurrido un error inesperado" opaco.
-
-    Confirmado con Context7 (content-posting-api-reference-query-creator-info):
-    la petición no lleva cuerpo, solo las cabeceras ``Authorization`` y
-    ``Content-Type``; la respuesta trae ``privacy_level_options``,
-    ``comment_disabled``, ``duet_disabled``, ``stitch_disabled`` y
-    ``max_video_post_duration_sec`` dentro de ``data``. El token viaja solo
-    en la cabecera ``Authorization`` (igual que el resto del módulo), así
-    que ningún mensaje de aquí puede arrastrarlo.
-    """
+    'Query /v2/post/publish/creator_info/query/ with the authenticated token.\n\nReturn creator data or a diagnostic error; this helper performs no publication.\nCallers validate privacy_level_options and max_video_post_duration_sec.'
     try:
         respuesta = client.post(
             f"{API}/creator_info/query/",
@@ -464,9 +215,9 @@ def _consultar_creator_info(
             },
         )
     except httpx.TimeoutException:
-        return None, "se agotó el tiempo de espera consultando creator_info en TikTok"
+        return None, 'timed out querying creator_info on TikTok'
     except httpx.HTTPError:
-        return None, "no se pudo conectar con TikTok para consultar creator_info"
+        return None, 'could not connect to TikTok to query creator_info'
 
     if respuesta.status_code != 200:
         return None, mensaje_de_error(respuesta, token)
@@ -474,41 +225,22 @@ def _consultar_creator_info(
     try:
         cuerpo = respuesta.json()
     except json.JSONDecodeError:
-        return None, "TikTok respondió con un cuerpo que no es JSON válido"
+        return None, 'TikTok returned an invalid JSON response'
 
     datos = cuerpo.get("data") if isinstance(cuerpo, dict) else None
     if not isinstance(datos, dict):
-        return None, "TikTok respondió sin datos de creator_info (falta el campo 'data')"
+        return None, "TikTok returned no creator_info data (missing 'data' field)"
 
     return datos, None
 
 
 class TikTokAdapter(Adapter):
-    """Publica en TikTok mediante la Content Posting API v2, en modo inbox o direct."""
+    'Publish to TikTok through Content Posting API v2 in inbox or direct mode.'
 
     platform = Platform.TIKTOK
 
     def validate(self, post: PlatformPost, brand: Brand) -> list[ValidationError]:
-        """Añade, a los del base, los problemas de configuración de cuenta
-        Y la salvaguarda de auditoría.
-
-        Hallazgo de revisión (I4): con ``mode: direct`` y ``auditada:
-        false``, el preview decía "Problemas detectados: 0" y el usuario
-        aprobaba una publicación que el sistema ya sabía que iba a
-        rechazar -la salvaguarda de auditoría (ver
-        ``_comprobar_auditoria``) solo se comprobaba dentro de
-        ``_publicar()``, DESPUÉS de la aprobación-. Ninguna de las
-        comprobaciones de este método hace red (leen ``brand.cuentas``, ya
-        cargado en memoria; `_comprobar_auditoria` tampoco), así que
-        encajan en `validate()` sin romper su contrato ("No hace red"):
-        la consulta a ``creator_info/query/`` SÍ hace red (confirma qué
-        `privacy_level` admite la cuenta) y por eso se queda,
-        deliberadamente, fuera de aquí y solo dentro de `_publicar()`.
-
-        La salvaguarda se mantiene TAMBIÉN en `_publicar` (no se quita de
-        ahí, y sigue siendo la que de verdad impide publicar): `publish()`
-        no puede confiar en que alguien haya llamado a `validate()` antes.
-        """
+        'Add TikTok account, upload mode and audit checks without network access.'
         errores = super().validate(post, brand)
         cuenta = brand.cuentas.get("tiktok") or {}
         open_id = cuenta.get("open_id")
@@ -521,7 +253,7 @@ class TikTokAdapter(Adapter):
                 ValidationError(
                     platform=self.platform,
                     campo="cuenta",
-                    motivo=f"falta open_id en {brand.raiz / 'accounts.yml'}",
+                    motivo=f"missing open_id in {brand.raiz / 'accounts.yml'}",
                 )
             )
 
@@ -531,8 +263,8 @@ class TikTokAdapter(Adapter):
                     platform=self.platform,
                     campo="cuenta",
                     motivo=(
-                        f"modo de TikTok desconocido: '{modo}' en "
-                        f"{brand.raiz / 'accounts.yml'}. Valores válidos: "
+                        f"unknown TikTok mode: '{modo}' in "
+                        f"{brand.raiz / 'accounts.yml'}. Valid values: "
                         "inbox, direct"
                     ),
                 )
@@ -550,35 +282,23 @@ class TikTokAdapter(Adapter):
         return errores
 
     def publish(self, post: PlatformPost, brand: Brand, client: httpx.Client) -> PostResult:
-        """Publica el post. Nunca lanza: cualquier fallo vuelve como ``PostResult`` de error.
-
-        Todos los pasos concretos viven en ``_publicar()``. Este método es
-        solo el resguardo de última instancia: si ``_publicar()`` deja
-        escapar una excepción que nadie previó, aquí se atrapa igualmente,
-        para que un fallo de TikTok nunca pueda abortar la publicación en
-        las demás redes.
-
-        El mensaje de este resguardo genérico NUNCA interpola ``str(exc)``:
-        solo el nombre del tipo de excepción, por si una excepción
-        verdaderamente no prevista arrastrara en su propio mensaje la
-        petición que falló (y, con ella, el token).
-        """
+        'Publish a validated post; convert every failure to an error PostResult.'
         spec = PLATFORM_SPECS[self.platform]
         if len(post.media) > spec.max_media:
             return self._error(
-                f"esta ruta admite como máximo {spec.max_media} archivo; "
-                "no publica carruseles"
+                f"this endpoint supports at most {spec.max_media} file; "
+                'it does not publish carousels'
             )
 
         try:
             return self._publicar(post, brand, client)
         except Exception as exc:
             return self._error(
-                f"ha ocurrido un error inesperado en TikTok ({type(exc).__name__})"
+                f"an unexpected TikTok error occurred ({type(exc).__name__})"
             )
 
     def _publicar(self, post: PlatformPost, brand: Brand, client: httpx.Client) -> PostResult:
-        """Cuerpo real de la publicación, con manejo específico de cada fallo previsto."""
+        'Execute publication with explicit handling of expected failures.'
         cuenta = brand.cuentas.get("tiktok") or {}
         open_id = cuenta.get("open_id")
         modo = cuenta.get("mode", "inbox")
@@ -592,12 +312,12 @@ class TikTokAdapter(Adapter):
         # instagram.py-, así que se valida aquí aunque no viaje en ninguna
         # petición de este módulo.
         if not open_id:
-            return self._error(f"falta open_id en {brand.raiz / 'accounts.yml'}")
+            return self._error(f"missing open_id in {brand.raiz / 'accounts.yml'}")
 
         if modo not in ("inbox", "direct"):
             return self._error(
-                f"modo de TikTok desconocido: '{modo}' en {brand.raiz / 'accounts.yml'}. "
-                "Valores válidos: inbox, direct"
+                f"unknown TikTok mode: '{modo}' in {brand.raiz / 'accounts.yml'}. "
+                'Valid values: inbox, direct'
             )
 
         try:
@@ -607,7 +327,7 @@ class TikTokAdapter(Adapter):
 
         if not post.media:
             return self._error(
-                "no hay ningún vídeo que publicar: el post no tiene media adjunta"
+                'no video to publish: the post has no media attached'
             )
         asset = post.media[0]
 
@@ -633,10 +353,10 @@ class TikTokAdapter(Adapter):
         try:
             tamano_bytes = asset.path.stat().st_size
         except FileNotFoundError:
-            return self._error(f"el archivo de vídeo ya no existe en disco: {asset.path}")
+            return self._error(f"the video file no longer exists on disk: {asset.path}")
         except OSError as exc:
             return self._error(
-                f"no se pudo leer el archivo de vídeo en disco ({asset.path}): {exc}"
+                f"could not read the video file from disk ({asset.path}): {exc}"
             )
 
         try:
@@ -673,11 +393,11 @@ class TikTokAdapter(Adapter):
             )
         except httpx.TimeoutException:
             return self._error(
-                "se agotó el tiempo de espera al contactar con TikTok para "
-                "iniciar la subida"
+                'timed out contacting TikTok to '
+                'initialize the upload'
             )
         except httpx.HTTPError:
-            return self._error("no se pudo conectar con TikTok para iniciar la subida")
+            return self._error('could not connect to TikTok to initialize the upload')
 
         if inicio.status_code != 200:
             return self._error(mensaje_de_error(inicio, token))
@@ -686,19 +406,19 @@ class TikTokAdapter(Adapter):
             cuerpo_respuesta = inicio.json()
         except json.JSONDecodeError:
             return self._error(
-                "TikTok respondió con un cuerpo que no es JSON válido al "
-                "iniciar la subida"
+                'TikTok returned an invalid JSON response when attempting to '
+                'initialize the upload'
             )
 
         datos = cuerpo_respuesta.get("data") if isinstance(cuerpo_respuesta, dict) else None
         if not isinstance(datos, dict):
             return self._error(
-                "TikTok respondió sin datos de subida (falta el campo 'data')"
+                "TikTok returned no upload data (missing 'data' field)"
             )
 
         upload_url = datos.get("upload_url")
         if not isinstance(upload_url, str) or not upload_url:
-            return self._error("TikTok no devolvió una URL de subida válida")
+            return self._error('TikTok did not return a valid upload URL')
 
         publish_id = datos.get("publish_id")
         # Se valida el tipo AQUÍ, antes de subir ningún byte: en este punto
@@ -708,8 +428,8 @@ class TikTokAdapter(Adapter):
         # docstring del módulo-.
         if publish_id is not None and not isinstance(publish_id, str):
             return self._error(
-                "TikTok respondió con un publish_id inesperado (se esperaba "
-                f"una cadena de texto y llegó {type(publish_id).__name__})"
+                'TikTok returned an unexpected publish_id (expected '
+                f"a string, received {type(publish_id).__name__})"
             )
 
         error_subida = _subir_chunks(
@@ -731,63 +451,18 @@ class TikTokAdapter(Adapter):
             platform=self.platform,
             status=PostStatus.PENDIENTE_CONFIRMACION,
             platform_id=publish_id,
-            error="pendiente: abre la app de TikTok y confirma la publicación",
+            error='pending: open TikTok and confirm the publication',
         )
 
     def _resolver_privacidad_y_duracion(
         self, token: str, asset: MediaAsset, client: httpx.Client
     ) -> tuple[str | None, PostResult | None]:
-        """Solo en modo direct: consulta ``creator_info/query/`` y confirma
-        que ESTA cuenta admite el nivel de privacidad que este proyecto
-        espera, y que el vídeo no supera la duración máxima de ESTE
-        creador. Devuelve ``(privacy_level, None)`` si se puede continuar, o
-        ``(None, PostResult)`` si hay que abortar sin publicar.
-
-        Obligatoria en modo direct (Content Posting API Reference - Query
-        Creator Info, confirmado con Context7): "Applications must invoke
-        this API when rendering the Export to TikTok page to display the
-        correct account information, available privacy level options, and
-        interaction settings" -y "Body > post_info > privacy_level" (misma
-        doc): "the chosen value must align with the privacy options
-        returned by the creator info query API". No todas las cuentas
-        admiten ``PUBLIC_TO_EVERYONE`` (una cuenta privada o de menor, por
-        ejemplo, no lo admite): publicar con un nivel no admitido lo
-        rechazaría la API, y publicar con un nivel DISTINTO al que este
-        proyecto espera (p. ej. degradar en silencio a
-        ``SELF_ONLY``) sería peor -contenido que el usuario cree público y
-        no lo es-. Por eso, si el nivel esperado no está entre las opciones
-        de esta cuenta, se aborta sin publicar en vez de elegir otro nivel
-        por su cuenta.
-
-        Este proyecto siempre espera publicar como contenido público
-        (``PUBLIC_TO_EVERYONE``, ``_PRIVACY_LEVEL_DESEADO``): no hay hoy
-        ninguna opción en ``accounts.yml`` para pedir otra cosa. Si algún
-        día una marca necesitara un nivel distinto, esa preferencia debería
-        vivir en ``accounts.yml`` (decisión editorial de la marca), nunca
-        fijada aquí; hasta que exista esa necesidad real, mantener un único
-        valor esperado es más simple y no hay ninguna marca configurada hoy
-        que lo necesite.
-
-        La misma consulta devuelve ``max_video_post_duration_sec``: la
-        duración máxima que ESTE creador admite, que puede ser MENOR que el
-        límite estático de ``PLATFORM_SPECS`` (p. ej. el ejemplo oficial de
-        la propia doc de TikTok devuelve 300s, no los 600s que asume este
-        proyecto). Es un valor dinámico por creador, no un límite de
-        contenido universal, así que se comprueba aquí -junto al resto de
-        la respuesta de esta misma llamada- y no en ``PLATFORM_SPECS``.
-
-        Como cualquier llamada de red de este módulo, nunca lanza: cualquier
-        fallo (de red, de formato de la respuesta, o de que la cuenta no
-        admita lo que se necesita) se traduce en el ``PostResult`` de error
-        devuelto, nunca en una excepción -esta llamada queda dentro del
-        ``except Exception`` genérico de ``publish()`` solo como resguardo
-        de última instancia, igual que el resto del módulo-.
-        """
+        'In direct mode, query creator info and check privacy and duration.\n\nThe configured PUBLIC_TO_EVERYONE level must appear in privacy_level_options.\nReject unsupported privacy rather than selecting a different level. The video\nmust fit the returned max_video_post_duration_sec. Return either the validated\nprivacy level or an error PostResult, without sending content.'
         datos, error_creador = _consultar_creator_info(client, token)
         if error_creador is not None:
             return None, self._error(
-                f"no se pudo consultar creator_info en TikTok (obligatorio "
-                f"en mode: direct antes de publicar): {error_creador}"
+                f"could not query creator_info on TikTok (required "
+                f"before publication in mode: direct): {error_creador}"
             )
 
         opciones = datos.get("privacy_level_options")
@@ -795,22 +470,22 @@ class TikTokAdapter(Adapter):
             isinstance(o, str) for o in opciones
         ):
             return None, self._error(
-                "TikTok respondió sin una lista válida de "
-                "privacy_level_options en creator_info: no se puede "
-                "confirmar qué nivel de privacidad admite esta cuenta"
+                'TikTok returned no valid list of '
+                'privacy_level_options in creator_info: cannot '
+                'confirm which privacy levels this account supports'
             )
 
         if _PRIVACY_LEVEL_DESEADO not in opciones:
             return None, self._error(
-                "la cuenta de TikTok no admite publicar con "
-                f"privacy_level={_PRIVACY_LEVEL_DESEADO!r} (el nivel que "
-                "este proyecto espera para mode: direct); las opciones que "
-                f"sí admite esta cuenta son {opciones!r}. Es probable que "
-                "sea una cuenta privada o de un menor: revisa la "
-                "configuración de privacidad de la cuenta en la app de "
-                "TikTok, o usa mode: inbox si prefieres confirmar la "
-                "publicación manualmente. No se publica con un nivel de "
-                "privacidad distinto del esperado."
+                'the TikTok account does not support publishing with '
+                f"privacy_level={_PRIVACY_LEVEL_DESEADO!r} (the level "
+                'this project expects for mode: direct); this account '
+                f"supports these options: {opciones!r}. It may "
+                'be a private or underage account: review the '
+                'account privacy settings in '
+                'TikTok, or use mode: inbox to confirm the '
+                'publication manually. No publication is made with a '
+                'different privacy level from the expected one.'
             )
 
         maximo = datos.get("max_video_post_duration_sec")
@@ -821,18 +496,17 @@ class TikTokAdapter(Adapter):
             and duracion > maximo
         ):
             return None, self._error(
-                f"el vídeo dura {duracion:.0f}s y supera los {maximo:.0f}s "
-                "que esta cuenta admite como máximo para un post directo "
-                "(max_video_post_duration_sec de creator_info, un límite "
-                "por creador que puede ser menor que el límite general de "
-                "TikTok); usa mode: inbox o recorta el vídeo."
+                f"the video is {duracion:.0f}s long and exceeds the {maximo:.0f}s "
+                'maximum supported by this account for a direct post '
+                '(max_video_post_duration_sec from creator_info, a '
+                'creator-specific limit that may be lower than the general '
+                'TikTok limit); use mode: inbox or provide a shorter video.'
             )
 
         return _PRIVACY_LEVEL_DESEADO, None
 
     def _comprobar_auditoria(self, brand: Brand, modo: str, valor_auditada: object) -> None:
-        """Aplica la salvaguarda de auditoría. Ver docstring del módulo, de
-        ``_interpretar_auditada`` y de ``AuditoriaRequerida``."""
+        'Reject direct publication unless the audit configuration is explicitly true.'
         if modo != "direct":
             return
 
@@ -843,25 +517,25 @@ class TikTokAdapter(Adapter):
         ruta = brand.raiz / "accounts.yml"
         if reconocido:
             raise AuditoriaRequerida(
-                f"tiktok.mode es 'direct' pero la app no está auditada "
-                f"(auditada: {valor_auditada!r} en {ruta}). Publicar así "
-                "dejaría el vídeo en privado de forma PERMANENTE: aprobar "
-                "la auditoría después no lo rescata. Cambia a mode: inbox, "
-                "o espera a que TikTok apruebe la auditoría de tu app y "
-                "entonces pon auditada: true."
+                f"tiktok.mode is 'direct', but the app is not audited "
+                f"(auditada: {valor_auditada!r} in {ruta}). Publishing this way "
+                'would restrict the video to private visibility; '
+                'later audit approval does not automatically make it public. Use mode: inbox, '
+                'or wait until TikTok approves your app audit and '
+                'then set auditada: true.'
             )
         # Valor no reconocido (ni true/false canónico, ni booleano, ni
         # ausente): mensaje distinto para que quien configuró la cuenta
         # note el error de tecleo, en vez de creer que ya dejó la cuenta
         # marcada como "no auditada" a propósito.
         raise AuditoriaRequerida(
-            f"tiktok.mode es 'direct' pero el valor de 'auditada' en {ruta} "
-            f"no se reconoce ({valor_auditada!r}): se trata como NO "
-            "auditada por seguridad, para no arriesgarse a dejar el vídeo "
-            "en privado de forma PERMANENTE (aprobar la auditoría después "
-            "no lo rescata). Si la auditoría de tu app ya está aprobada, "
-            "escribe literalmente auditada: true (el booleano, sin "
-            "comillas) en accounts.yml."
+            f"tiktok.mode is 'direct', but the 'auditada' value in {ruta} "
+            f"is not recognized ({valor_auditada!r}): treating the app as NOT "
+            'audited for safety to avoid restricting the video '
+            'to private visibility (later audit approval '
+            'does not automatically make it public). If your app audit is approved, '
+            'set auditada: true (a boolean, without '
+            'quotes) in accounts.yml.'
         )
 
     def _error(self, mensaje: str, *, riesgo_duplicado: bool = False) -> PostResult:

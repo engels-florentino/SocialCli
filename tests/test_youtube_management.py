@@ -145,9 +145,9 @@ def test_inspect_rejects_video_from_another_brand_channel(tmp_path):
     api_a = YouTubeAPI(_snippet(channelId="channel-b"), authenticated="channel-a")
     api_b = YouTubeAPI(_snippet(channelId="channel-a"), authenticated="channel-b")
 
-    with pytest.raises(YouTubeManagementError, match="no pertenece"):
+    with pytest.raises(YouTubeManagementError, match="does not belong"):
         YouTubeManagementClient(brand_a, api_a.client()).inspect("video-1")
-    with pytest.raises(YouTubeManagementError, match="no pertenece"):
+    with pytest.raises(YouTubeManagementError, match="does not belong"):
         YouTubeManagementClient(brand_b, api_b.client()).inspect("video-1")
 
     assert not (brand_a.raiz / ".socialctl" / "changes").exists()
@@ -158,16 +158,16 @@ def test_inspect_rejects_token_for_a_different_configured_channel(tmp_path):
     brand = _brand(tmp_path, channel="configured")
     api = YouTubeAPI(_snippet(channelId="configured"), authenticated="authenticated")
 
-    with pytest.raises(YouTubeManagementError, match="canal autenticado"):
+    with pytest.raises(YouTubeManagementError, match="authenticated channel"):
         YouTubeManagementClient(brand, api.client()).inspect("video-1")
 
 
 @pytest.mark.parametrize(
     "raw, message",
     [
-        ({"version": 1, "platform": "youtube", "video_id": "v", "patch": {"status": "public"}}, "campo"),
+        ({"version": 1, "platform": "youtube", "video_id": "v", "patch": {"status": "public"}}, "field"),
         ({"version": 1, "platform": "youtube", "video_id": "v", "patch": {"title": None}}, "null"),
-        ({"version": 1, "platform": "youtube", "video_id": "v", "patch": {}}, "vacío"),
+        ({"version": 1, "platform": "youtube", "video_id": "v", "patch": {}}, "empty"),
         ({"version": 1, "platform": "youtube", "video_id": "v", "patch": {"title": "x"}, "extra": 1}, "extra"),
     ],
 )
@@ -252,7 +252,7 @@ def test_prepare_fails_closed_for_unknown_snippet_field_or_missing_etag(tmp_path
     unknown = YouTubeAPI(_snippet(futureMutableThing="danger"))
     missing_etag = YouTubeAPI(etag="")
 
-    with pytest.raises(YouTubeManagementError, match="desconocido"):
+    with pytest.raises(YouTubeManagementError, match="unknown"):
         prepare_youtube_change(
             YouTubeManagementClient(brand, unknown.client()), ChangeStore(brand.raiz), _spec(tmp_path)
         )
@@ -265,11 +265,11 @@ def test_prepare_fails_closed_for_unknown_snippet_field_or_missing_etag(tmp_path
 @pytest.mark.parametrize(
     "patch, message",
     [
-        ({"title": ""}, "título"),
+        ({"title": ""}, "title"),
         ({"title": "x" * 101}, "100"),
         ({"description": "é" * 2501}, "5000 bytes"),
         ({"tags": ["x" * 501]}, "500"),
-        ({"categoryId": ""}, "categoría"),
+        ({"categoryId": ""}, "category"),
     ],
 )
 def test_prepare_validates_required_fields_and_youtube_limits(tmp_path, patch, message):
@@ -296,7 +296,7 @@ def test_store_rejects_non_uuid_path_and_tampered_immutable_proposal(tmp_path):
     raw = json.loads(path.read_text(encoding="utf-8"))
     raw["after"]["title"] = "Manipulado"
     path.write_text(json.dumps(raw), encoding="utf-8")
-    with pytest.raises(ChangeError, match="huella"):
+    with pytest.raises(ChangeError, match="fingerprint"):
         store.load(change.id)
 
 
@@ -344,7 +344,7 @@ def test_retry_resyncs_parent_after_new_directory_sync_failure_before_put(
     monkeypatch.setattr(store, "_sync_directory", fail_first_brand_sync)
     edit = _spec(tmp_path)
 
-    with pytest.raises(ChangeError, match="guardar"):
+    with pytest.raises(ChangeError, match="save"):
         prepare_youtube_change(
             YouTubeManagementClient(brand, api.client()), store, edit
         )
@@ -471,7 +471,7 @@ def test_intent_directory_sync_failure_prevents_put(tmp_path, monkeypatch):
         raise OSError("simulated directory fsync failure")
 
     monkeypatch.setattr(store, "_sync_directory", fail)
-    with pytest.raises(ChangeError, match="guardar"):
+    with pytest.raises(ChangeError, match="save"):
         apply_youtube_change(
             YouTubeManagementClient(brand, api.client()), store, change.id, change.fingerprint
         )
@@ -562,7 +562,7 @@ def test_uncertain_apply_is_reconciled_read_only_and_never_repeats_put(tmp_path)
         raise httpx.ReadTimeout("token-Histopast-long-secret", request=request)
 
     api.on_put = timeout_after_remote_acceptance
-    with pytest.raises(ChangeError, match="incierto"):
+    with pytest.raises(ChangeError, match="uncertain"):
         apply_youtube_change(
             YouTubeManagementClient(brand, api.client()), store, change.id, change.fingerprint
         )
@@ -585,13 +585,13 @@ def test_uncertain_apply_still_before_becomes_manual_review_without_repeat(tmp_p
         YouTubeManagementClient(brand, api.client()), store, _spec(tmp_path)
     )
     api.on_put = lambda request: (_ for _ in ()).throw(httpx.ReadTimeout("timeout", request=request))
-    with pytest.raises(ChangeError, match="incierto"):
+    with pytest.raises(ChangeError, match="uncertain"):
         apply_youtube_change(
             YouTubeManagementClient(brand, api.client()), store, change.id, change.fingerprint
         )
     api.on_put = None
 
-    with pytest.raises(ChangeError, match="revisión manual"):
+    with pytest.raises(ChangeError, match="manual review"):
         apply_youtube_change(
             YouTubeManagementClient(brand, api.client()), store, change.id, change.fingerprint
         )
@@ -695,8 +695,8 @@ def test_cli_show_edit_status_and_apply_requires_typed_digest_even_with_yes(tmp_
         ["content", "edit", "--file", str(spec_path), "--brand", brand.nombre, "--root", str(tmp_path), "--dry-run"],
     )
     assert edited.exit_code == 0
-    assert "Snippet propuesto completo" in edited.stdout
-    assert "Restauración" in edited.stdout
+    assert "Complete proposed snippet" in edited.stdout
+    assert "Restoration" in edited.stdout
     change_id = next((brand.raiz / ".socialctl" / "changes").glob("*.json")).stem
     change = ChangeStore(brand.raiz).load(change_id)
 
@@ -712,7 +712,7 @@ def test_cli_show_edit_status_and_apply_requires_typed_digest_even_with_yes(tmp_
         input="wrong\n",
     )
     assert refused.exit_code == 1
-    assert "--yes no sustituye" in refused.stdout
+    assert "--yes does not replace" in refused.stdout
     assert [r.method for r in api.requests].count("PUT") == 0
 
     applied = runner.invoke(
@@ -721,5 +721,5 @@ def test_cli_show_edit_status_and_apply_requires_typed_digest_even_with_yes(tmp_
         input=f"{change.fingerprint}\n",
     )
     assert applied.exit_code == 0
-    assert "aplicado y verificado" in applied.stdout
+    assert "applied and verified" in applied.stdout
     assert [r.method for r in api.requests].count("PUT") == 1

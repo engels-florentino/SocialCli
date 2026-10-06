@@ -1,53 +1,4 @@
-"""Publicación en Instagram (Graph API v26.0, flujo de contenedor de tres pasos).
-
-Instagram es la más frágil de las cuatro redes que publica este proyecto,
-por dos razones que no se dan en las otras tres:
-
-1. No admite subir el fichero de media directamente: exige una URL
-   pública desde la que descargarlo. `media_url_base` en `accounts.yml` es
-   el prefijo público del host donde el usuario aloja sus archivos (los
-   sube él, por su cuenta; este proyecto nunca los transfiere), así que
-   `clip.mp4` se resuelve a `<media_url_base>/clip.mp4`. Antes de crear el
-   contenedor se hace un `HEAD` a esa URL y se aborta si no responde 200:
-   sin esa comprobación, un archivo que el usuario aún no ha subido a su
-   host se traduce en un error opaco de Instagram varios minutos después,
-   a mitad del sondeo del paso 2.
-2. El flujo tiene tres pasos, con sondeo de por medio: crear el
-   contenedor → sondear su `status_code` hasta `FINISHED` (los vídeos
-   tardan) → publicar. Eso multiplica el número de llamadas de red que
-   `publish()` debe blindar frente a fallos.
-
-Ningún fallo de esta red puede abortar la publicación en las demás: por
-diseño, `InstagramAdapter.publish()` jamás deja escapar una excepción. Todo
-fallo previsto (de red -incluidas las del bucle de sondeo-, de formato de
-la respuesta o de configuración) se traduce en un `PostResult(status=
-PostStatus.ERROR, ...)` con un mensaje en español que explica, de forma
-accionable, qué ha pasado. Como resguardo de última instancia frente a
-cualquier fallo *no* previsto, `publish()` envuelve además todo el proceso
-en un `except Exception` genérico que también devuelve un `PostResult` de
-error, para que la regla se sostenga incluso ante un caso que nadie
-anticipó hoy.
-
-Aviso de seguridad propio de este adaptador: el token viaja en el CUERPO de
-la petición (`access_token`, dentro de `data=`) al crear el contenedor y al
-publicar, y como parámetro de consulta durante el sondeo y al pedir el
-permalink -superficies distintas, ninguna de las dos es una cabecera como en
-YouTube-, lo que lo hace fácil de filtrar por accidente. Por eso el
-resguardo genérico de `publish()` nunca interpola `str(exc)` -solo el
-nombre del tipo de excepción-, y los `except` de red de este módulo usan
-siempre mensajes fijos. El único texto libre que se interpola en cualquier
-mensaje de error de este módulo procede del CUERPO DE LA RESPUESTA de
-Instagram (vía `mensaje_de_error`, en `socialctl/adapters/errores.py`) o de
-datos que ya vienen de `accounts.yml` (URLs, ids), nunca de la petición ni
-de sus cabeceras. Eso por sí solo no bastaría si un intermediario (un
-proxy, un balanceador) reflejase la URL o el cuerpo de la petición que
-falló en su respuesta de error -el hallazgo crítico de la revisión final,
-reproducido con un 502 que reflejaba la URL del sondeo, token incluido-; por
-eso `mensaje_de_error` recibe también el token y lo redacta explícitamente
-de cualquier texto que fuera a devolver, sea cual sea la vía por la que se
-hubiera colado (ver `socialctl/adapters/errores.py`). Con esa redacción, el
-mensaje nunca puede arrastrar el token, también en ese caso límite.
-"""
+'Publish Instagram media through Graph API v26.0 container creation and delivery.\n\nThe provider fetches user-supplied files from a configured public HTTPS host.\nCreate a container, poll processing, then publish it and read its permalink.\nFailures after a potentially accepted publication report duplicate risk rather\nthan silently retrying. Unexpected IDs are rejected. Known access tokens are\nredacted even when a proxy reflects the failed request in a response.'
 
 from __future__ import annotations
 
@@ -84,58 +35,7 @@ GRAFO = "https://graph.facebook.com/v26.0"
 
 
 class InstagramAdapter(Adapter):
-    """Publica en Instagram mediante el flujo de contenedor de la Graph API.
-
-    A diferencia de YouTube y Facebook, Instagram no admite subir el
-    fichero de media directamente: exige una URL pública desde la que
-    descargarlo. Esa URL se construye con `media_url_base` (de
-    `accounts.yml`) y el nombre del fichero.
-
-    El flujo tiene tres pasos, con sondeo de por medio:
-
-    1. `POST /{ig_user_id}/media` con `video_url` o `image_url` y
-       `caption` → devuelve un `creation_id` (el contenedor).
-    2. Sondear `GET /{creation_id}?fields=status_code` hasta `FINISHED`
-       (los vídeos tardan varios minutos) o `ERROR` (se aborta sin
-       publicar).
-    3. `POST /{ig_user_id}/media_publish` con el `creation_id` → devuelve
-       el id de la publicación ya creada.
-
-    Tras el paso 3, con la publicación ya hecha, se hace un intento
-    adicional de mejor esfuerzo: `GET /{id}?fields=permalink` sobre ese
-    mismo id para obtener la URL pública real
-    (`https://www.instagram.com/reel/<shortcode>/`) y guardarla en
-    `PostResult.url`. `media_publish` solo devuelve un id interno de
-    media, no el shortcode público, así que sin esta llamada no hay forma
-    de construir un enlace que funcione: uno hecho a mano con ese id
-    (`instagram.com/<id>`) tiene toda la apariencia de un enlace legítimo
-    pero no resuelve a nada. Como la publicación ya ha tenido éxito en ese
-    punto, un fallo al pedir el permalink (de red, de formato de la
-    respuesta, o ausencia del campo) jamás convierte el resultado en
-    `ERROR`: degrada con gracia a `url=None`, conservando el `platform_id`
-    correcto (ver `_obtener_permalink`).
-
-    Antes del paso 1 se hace un `HEAD` a la URL pública de la media y se
-    aborta si no responde 200 (ver el aviso del módulo).
-
-    `espera_s` (segundos entre sondeos) e `intentos` (máximo de sondeos)
-    son parámetros del constructor -no límites de contenido, así que no
-    van en `PLATFORM_SPECS`- para poder testear el sondeo sin esperas
-    reales; ambos tienen valor por defecto porque, como cualquier
-    adaptador que acabe registrado en `ADAPTADORES`, esta clase debe poder
-    instanciarse sin argumentos.
-
-    Los valores por defecto (`espera_s=60.0`, `intentos=5`) reproducen la
-    cadencia que Meta recomienda ("Troubleshooting > Container publishing
-    status", confirmado con Context7): "It is recommended to poll the
-    container status once per minute for a maximum of 5 minutes". La
-    implementación anterior sondeaba cada 5 segundos hasta 60 veces -12
-    veces más peticiones de las recomendadas sobre el mismo recurso- para
-    llegar, por otra vía, al mismo techo aproximado de 5 minutos de espera
-    total; estos valores mantienen ese mismo techo (razonable para un
-    Reel, cuya duración máxima son 15 minutos) pero con la cadencia real
-    que Meta documenta, en vez de una elegida sin respaldo.
-    """
+    'Publish Instagram media using the Graph API container workflow.'
 
     platform = Platform.INSTAGRAM
 
@@ -144,18 +44,7 @@ class InstagramAdapter(Adapter):
         self.intentos = intentos
 
     def validate(self, post: PlatformPost, brand: Brand) -> list[ValidationError]:
-        """Añade, a los del base, los problemas de configuración de cuenta.
-
-        Hallazgo de revisión (I4): `ig_user_id` y `media_url_base` solo se
-        comprobaban al publicar (`_publicar`, más abajo), así que un post
-        con la cuenta mal configurada pasaba el preview limpio (`Problemas
-        detectados: 0`) y el usuario lo aprobaba sin saber que iba a
-        fallar. Ninguna de las dos comprobaciones hace red -ambas leen
-        `brand.cuentas`, ya cargado en memoria-, así que encajan en
-        `validate()` sin romper su contrato ("No hace red"). Se mantienen
-        TAMBIÉN en `_publicar` (no se quitan de ahí): `publish()` no puede
-        confiar en que alguien haya llamado a `validate()` antes.
-        """
+        'Add Instagram account and public media hosting checks.'
         errores = super().validate(post, brand)
         cuenta = brand.cuentas.get("instagram") or {}
 
@@ -164,7 +53,7 @@ class InstagramAdapter(Adapter):
                 ValidationError(
                     platform=self.platform,
                     campo="cuenta",
-                    motivo=f"falta ig_user_id en {brand.raiz / 'accounts.yml'}",
+                    motivo=f"missing ig_user_id in {brand.raiz / 'accounts.yml'}",
                 )
             )
 
@@ -174,10 +63,10 @@ class InstagramAdapter(Adapter):
                     platform=self.platform,
                     campo="cuenta",
                     motivo=(
-                        "falta media_url_base en accounts.yml: Instagram exige "
-                        "una URL pública para la media (no admite subir el "
-                        "fichero directamente); indica el host donde alojas "
-                        "los archivos, por ejemplo 'https://cdn.tumarca.com'"
+                        'missing media_url_base in accounts.yml: Instagram requires '
+                        'a public media URL (direct file upload is '
+                        'not supported); specify the host serving '
+                        "your files, for example 'https://cdn.example.com'"
                     ),
                 )
             )
@@ -185,60 +74,41 @@ class InstagramAdapter(Adapter):
         return errores
 
     def publish(self, post: PlatformPost, brand: Brand, client: httpx.Client) -> PostResult:
-        """Publica el post. Nunca lanza: cualquier fallo vuelve como `PostResult` de error.
-
-        Todos los pasos concretos viven en `_publicar()`, incluido el bucle
-        de sondeo de `_esperar_procesado()` -que hace varias llamadas de
-        red, ninguna de las cuales puede escapar tampoco-. Este método es
-        solo el resguardo de última instancia: si `_publicar()` deja escapar
-        una excepción que nadie previó -hoy, o el día que alguien modifique
-        este archivo y olvide mantener la regla-, aquí se atrapa igualmente,
-        para que un fallo de Instagram nunca pueda abortar la publicación en
-        las demás redes.
-
-        El mensaje de este resguardo genérico NUNCA interpola `str(exc)`:
-        solo el nombre del tipo de excepción. El token viaja en el cuerpo (y,
-        durante el sondeo, como parámetro de consulta) de la petición, así
-        que una excepción verdaderamente no prevista podría, en teoría,
-        arrastrarlo en su propio mensaje (por ejemplo, una excepción de una
-        librería de transporte que volcara la petición que falló); no
-        interpolar su texto es lo único que lo garantiza también en ese
-        caso límite, no solo en los previstos.
-        """
+        'Publish a validated post; convert every failure to an error PostResult.'
         spec = PLATFORM_SPECS[self.platform]
         if len(post.media) > spec.max_media:
             return self._error(
-                f"esta ruta admite como máximo {spec.max_media} archivo; "
-                "no publica carruseles"
+                f"this endpoint supports at most {spec.max_media} file; "
+                'it does not publish carousels'
             )
 
         try:
             return self._publicar(post, brand, client)
         except Exception as exc:
             return self._error(
-                f"ha ocurrido un error inesperado en Instagram ({type(exc).__name__})"
+                f"an unexpected Instagram error occurred ({type(exc).__name__})"
             )
 
     def _publicar(self, post: PlatformPost, brand: Brand, client: httpx.Client) -> PostResult:
-        """Cuerpo real de la publicación, con manejo específico de cada fallo previsto."""
+        'Execute publication with explicit handling of expected failures.'
         cuenta = brand.cuentas.get("instagram") or {}
 
         ig_user_id = cuenta.get("ig_user_id")
         if not ig_user_id:
-            return self._error(f"falta ig_user_id en {brand.raiz / 'accounts.yml'}")
+            return self._error(f"missing ig_user_id in {brand.raiz / 'accounts.yml'}")
 
         base = cuenta.get("media_url_base")
         if not base:
             return self._error(
-                "falta media_url_base en accounts.yml: Instagram exige una URL "
-                "pública para la media (no admite subir el fichero "
-                "directamente); indica el host donde alojas los archivos, "
-                "por ejemplo 'https://cdn.tumarca.com'"
+                'missing media_url_base in accounts.yml: Instagram requires a '
+                'public media URL (it does not support direct '
+                'file upload); specify the host serving your files, '
+                "for example 'https://cdn.example.com'"
             )
 
         if not post.media:
             return self._error(
-                "no hay ninguna imagen o vídeo que publicar: el post no tiene media adjunta"
+                'no image or video to publish: the post has no media attached'
             )
         asset = post.media[0]
 
@@ -273,26 +143,26 @@ class InstagramAdapter(Adapter):
             # httpx la rechaza al construir la petición, antes de tocar la
             # red. Esta excepción NO hereda de httpx.HTTPError.
             return self._error(
-                f"media_url_base produce una URL de media no válida: {url_media!r}"
+                f"media_url_base produces an invalid media URL: {url_media!r}"
             )
         except httpx.TimeoutException:
             # Subclase de httpx.HTTPError: debe ir antes que ese except para
             # no quedar inalcanzable.
             return self._error(
-                f"se agotó el tiempo de espera comprobando si {url_media} "
-                "está accesible"
+                f"timed out checking whether {url_media} "
+                'is accessible'
             )
         except httpx.HTTPError:
             return self._error(
-                f"no se pudo comprobar si {url_media} está accesible: revisa "
-                "que el host de media_url_base esté levantado"
+                f"could not check whether {url_media} is accessible: check "
+                'that the media_url_base host is running'
             )
 
         if sonda.status_code != 200:
             return self._error(
-                f"{url_media} no responde con HTTP 200 (ha devuelto "
-                f"{sonda.status_code}); sube el archivo a ese host antes de "
-                "publicar en Instagram"
+                f"{url_media} did not return HTTP 200 (returned "
+                f"{sonda.status_code}); upload the file to that host before "
+                'publishing to Instagram'
             )
 
         campo_url = "video_url" if asset.kind is MediaKind.VIDEO else "image_url"
@@ -315,15 +185,15 @@ class InstagramAdapter(Adapter):
             # media_url_base más arriba, pero aquí construye la URL del
             # propio Grafo.
             return self._error(
-                f"el ig_user_id configurado ({ig_user_id!r}) produce una URL no válida"
+                f"the configured ig_user_id ({ig_user_id!r}) produces an invalid URL"
             )
         except httpx.TimeoutException:
             return self._error(
-                "se agotó el tiempo de espera creando el contenedor de media en Instagram"
+                'timed out creating the Instagram media container'
             )
         except httpx.HTTPError:
             return self._error(
-                "no se pudo conectar con Instagram para crear el contenedor de media"
+                'could not connect to Instagram to create the media container'
             )
 
         if creacion.status_code != 200:
@@ -333,11 +203,11 @@ class InstagramAdapter(Adapter):
             contenedor_id = creacion.json()["id"]
         except json.JSONDecodeError:
             return self._error(
-                "Instagram respondió con un cuerpo que no es JSON válido al "
-                "crear el contenedor de media"
+                'Instagram returned an invalid JSON response while '
+                'creating the media container'
             )
         except KeyError:
-            return self._error("Instagram respondió sin el id del contenedor de media")
+            return self._error('Instagram returned no media container ID')
 
         # A diferencia del permalink (cosmético: un fallo ahí degrada a
         # `url=None` sin abortar), un `id` de contenedor que no sea una
@@ -350,10 +220,10 @@ class InstagramAdapter(Adapter):
         # que solo atraparía el resguardo genérico de `publish()`-.
         if not isinstance(contenedor_id, str):
             return self._error(
-                "Instagram respondió con un identificador de contenedor de "
-                "media inesperado (se esperaba una cadena de texto y llegó "
-                f"{type(contenedor_id).__name__}); no se puede continuar sin "
-                "un id de contenedor válido"
+                'Instagram returned an unexpected media container '
+                'ID (expected a string, received '
+                f"{type(contenedor_id).__name__}); cannot continue without "
+                'a valid container ID'
             )
 
         error_de_sondeo = self._esperar_procesado(contenedor_id, token, client)
@@ -381,20 +251,20 @@ class InstagramAdapter(Adapter):
             )
         except httpx.TimeoutException:
             return self._error(
-                "se agotó el tiempo de espera publicando en Instagram: no se "
-                "puede confirmar si Instagram llegó a aceptar la publicación "
-                "antes de que se perdiera la respuesta. NO reintentes sin "
-                "comprobar antes la cuenta, para no arriesgarte a duplicar la "
-                "publicación.",
+                'timed out publishing to Instagram: cannot '
+                'confirm whether Instagram accepted the post '
+                'before the response was lost. Do NOT retry without '
+                'checking the account first, to avoid duplicating the '
+                'post.',
                 riesgo_duplicado=True,
             )
         except httpx.HTTPError:
             return self._error(
-                "no se pudo conectar con Instagram para publicar: no se puede "
-                "confirmar si Instagram llegó a aceptar la publicación antes "
-                "de que se perdiera la conexión. NO reintentes sin comprobar "
-                "antes la cuenta, para no arriesgarte a duplicar la "
-                "publicación.",
+                'could not connect to Instagram to publish: cannot '
+                'confirm whether Instagram accepted the post before '
+                'the connection was lost. Do NOT retry without checking '
+                'the account first, to avoid duplicating the '
+                'post.',
                 riesgo_duplicado=True,
             )
 
@@ -405,20 +275,20 @@ class InstagramAdapter(Adapter):
             post_id = publicacion.json()["id"]
         except json.JSONDecodeError:
             return self._error(
-                "Instagram respondió con un cuerpo que no es JSON válido tras "
-                "publicar: la publicación ya fue aceptada (HTTP 200), pero no "
-                "se puede confirmar ni reportar su id. NO reintentes sin "
-                "comprobar antes la cuenta, para no arriesgarte a duplicar la "
-                "publicación.",
+                'Instagram returned an invalid JSON response after '
+                'publishing: the post was accepted (HTTP 200), but its ID '
+                'cannot be confirmed or reported. Do NOT retry without '
+                'checking the account first, to avoid duplicating the '
+                'post.',
                 riesgo_duplicado=True,
             )
         except KeyError:
             return self._error(
-                "Instagram respondió sin el id de la publicación: la "
-                "publicación ya fue aceptada (HTTP 200), pero no se puede "
-                "confirmar ni reportar su id. NO reintentes sin comprobar "
-                "antes la cuenta, para no arriesgarte a duplicar la "
-                "publicación.",
+                'Instagram returned no post ID: the '
+                'post was accepted (HTTP 200), but its ID cannot be '
+                'confirmed or reported. Do NOT retry without checking '
+                'the account first, to avoid duplicating the '
+                'post.',
                 riesgo_duplicado=True,
             )
 
@@ -450,13 +320,13 @@ class InstagramAdapter(Adapter):
         # volver a publicar) para quien lo lea.
         if not isinstance(post_id, str):
             return self._error(
-                "Instagram respondió con un identificador de publicación "
-                "inesperado (se esperaba una cadena de texto y llegó "
-                f"{type(post_id).__name__}); la publicación probablemente "
-                "ya está hecha en Instagram -media_publish ya la aceptó y "
-                "solo ha fallado el id devuelto para confirmarla-, así que "
-                "NO la reintentes: volver a publicar puede duplicarla. "
-                "Comprueba la cuenta antes de volver a publicar.",
+                'Instagram returned an unexpected post '
+                'ID (expected a string, received '
+                f"{type(post_id).__name__}); the post was probably "
+                'published on Instagram: media_publish accepted it and '
+                'only its returned ID failed validation. Therefore '
+                'do NOT retry: another publication could duplicate it. '
+                'Check the account before publishing again.',
                 riesgo_duplicado=True,
             )
 
@@ -475,36 +345,7 @@ class InstagramAdapter(Adapter):
     def _obtener_permalink(
         self, media_id: str, token: str, client: httpx.Client
     ) -> str | None:
-        """Pide el permalink público real del media ya publicado.
-
-        `media_publish` solo devuelve un id interno de media, no el
-        shortcode público, así que la única forma de obtener un enlace que
-        de verdad resuelva a la publicación es pedir el campo `permalink`
-        del nodo IG Media (`GET /{ig-media-id}?fields=permalink`).
-
-        Esta llamada es de mejor esfuerzo: la publicación ya ha tenido
-        éxito antes de invocarse, así que esta función NUNCA lanza y
-        degrada a `None` ante cualquier fallo -de red, un HTTP distinto de
-        200, un cuerpo que no es JSON válido, que no trae el campo
-        `permalink`, o que lo trae con un tipo que no es una cadena de texto
-        (p. ej. un número)-, sin distinguir el motivo: no hay ningún mensaje
-        de error que construir aquí (a diferencia del resto del adaptador),
-        así que tampoco hay ningún texto en el que el token pudiera
-        filtrarse por esta vía.
-
-        La comprobación de tipo es necesaria porque `PostResult.url` está
-        tipado `str | None`: pydantic v2 no coacciona un entero (o
-        cualquier otro tipo) a texto, así que devolver el valor tal cual
-        cuando no es una cadena haría que `PostResult(url=...)` en
-        `_publicar()` lanzara un `ValidationError` -fuera de cualquier
-        `try` propio de esa función-, que solo atraparía el resguardo
-        genérico de `publish()`. El resultado sería justo lo que la
-        degradación con gracia prohíbe: una publicación que Instagram ya
-        aceptó reportada como `ERROR`, con el `platform_id` perdido. A
-        diferencia de `post_id`/`contenedor_id` (ver `_publicar`), un
-        `permalink` con un tipo inesperado sigue siendo cosmético: basta
-        con degradar a `None`, no hace falta abortar con `ERROR`.
-        """
+        'Read the public permalink for published media, falling back to the ID URL.'
         try:
             respuesta = client.get(
                 f"{GRAFO}/{media_id}",
@@ -520,30 +361,7 @@ class InstagramAdapter(Adapter):
     def _esperar_procesado(
         self, contenedor_id: str, token: str, client: httpx.Client
     ) -> PostResult | None:
-        """Sondea el contenedor hasta que termine. No lanza: cualquier fallo
-        de este bucle también vuelve como `PostResult` de error.
-
-        Devuelve `None` si el contenedor terminó bien (toca publicar) o un
-        `PostResult` de error si hay que abortar sin publicar: contenedor en
-        ERROR o EXPIRED, un fallo de red o de formato durante el sondeo, o
-        agotar `self.intentos` sin ver FINISHED.
-
-        El enum completo de `status_code` (confirmado con Context7,
-        "Troubleshooting > Container publishing status" e "IG Container >
-        Reading > Fields") es `EXPIRED` ("not published within 24 hours"),
-        `ERROR` ("failed process"), `FINISHED` ("ready to publish"),
-        `IN_PROGRESS` ("currently processing") y `PUBLISHED` ("successfully
-        completed"). De esos cinco, `EXPIRED` y `ERROR` son terminales -el
-        contenedor nunca va a llegar a FINISHED- así que ambos cortan el
-        sondeo de inmediato, cada uno con un mensaje que dice qué ha pasado.
-        Antes, `EXPIRED` caía en el mismo camino que "todavía procesando" y
-        agotaba los `self.intentos` restantes sin motivo antes de fallar con
-        un mensaje genérico de timeout, en vez de abortar ya con la causa
-        real. Cualquier otro valor (`IN_PROGRESS`, o uno futuro que Meta
-        añada y que hoy no está documentado) sigue tratándose como "todavía
-        no ha terminado": se sigue sondeando en vez de tratarlo como éxito o
-        como fallo inmediato.
-        """
+        'Poll the media container until ready, failed, expired or timed out.\n\nFINISHED permits publication. ERROR and EXPIRED terminate with actionable\nerrors. Unknown or in-progress statuses keep polling up to the configured limit.\nNetwork and malformed-response failures return error text without throwing.'
         for intento in range(self.intentos):
             try:
                 estado = client.get(
@@ -552,13 +370,13 @@ class InstagramAdapter(Adapter):
                 )
             except httpx.TimeoutException:
                 return self._error(
-                    "se agotó el tiempo de espera consultando el estado del "
-                    "contenedor de media en Instagram"
+                    'timed out checking the status of the '
+                    'Instagram media container'
                 )
             except httpx.HTTPError:
                 return self._error(
-                    "no se pudo conectar con Instagram para consultar el "
-                    "estado del contenedor de media"
+                    'could not connect to Instagram to check the '
+                    'media container status'
                 )
 
             if estado.status_code != 200:
@@ -568,21 +386,21 @@ class InstagramAdapter(Adapter):
                 codigo = estado.json()["status_code"]
             except json.JSONDecodeError:
                 return self._error(
-                    "Instagram respondió con un cuerpo que no es JSON válido "
-                    "al consultar el contenedor de media"
+                    'Instagram returned an invalid JSON response '
+                    'when checking the media container'
                 )
             except KeyError:
                 return self._error(
-                    "Instagram respondió sin status_code al consultar el "
-                    "contenedor de media"
+                    'Instagram returned no status_code when checking the '
+                    'media container'
                 )
 
             if codigo == "FINISHED":
                 return None
             if codigo == "ERROR":
                 return self._error(
-                    "Instagram no ha podido procesar la media (el "
-                    "contenedor ha quedado en estado ERROR)"
+                    'Instagram could not process the media (the '
+                    'container is in ERROR status)'
                 )
             if codigo == "EXPIRED":
                 # Terminal, igual que ERROR (ver docstring de este método):
@@ -591,10 +409,10 @@ class InstagramAdapter(Adapter):
                 # self.intentos sin motivo antes de fallar con un mensaje
                 # genérico de timeout que ocultaría la causa real.
                 return self._error(
-                    "el contenedor de media de Instagram ha caducado "
-                    "(status_code=EXPIRED) sin llegar a publicarse: no se "
-                    "publicó dentro de las 24 horas; crea el contenedor de "
-                    "nuevo para volver a intentarlo"
+                    'the Instagram media container expired '
+                    '(status_code=EXPIRED) before publication: it was not '
+                    'published within 24 hours; create a new container '
+                    'to try again'
                 )
 
             # No dormir tras el último intento agotado: no serviría de nada
@@ -603,8 +421,8 @@ class InstagramAdapter(Adapter):
                 time.sleep(self.espera_s)
 
         return self._error(
-            f"el contenedor de Instagram no terminó de procesarse a tiempo "
-            f"tras {self.intentos} intentos"
+            f"the Instagram container did not finish processing in time "
+            f"after {self.intentos} attempts"
         )
 
     def _error(self, mensaje: str, *, riesgo_duplicado: bool = False) -> PostResult:

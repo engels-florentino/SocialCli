@@ -22,7 +22,7 @@ def output(value):
 
 
 def preview(change):
-    return "DRY-RUN — PREVIEW COMPLETO Analytics/Reporting\n" + output(change.model_dump(mode="json")) + "\nHuella exacta para aprobar: " + change.fingerprint
+    return "DRY-RUN — PREVIEW COMPLETO Analytics/Reporting\n" + output(change.model_dump(mode="json")) + "\nExact fingerprint for approval: " + change.fingerprint
 
 
 def load_mapping(path):
@@ -37,7 +37,7 @@ def load_mapping(path):
 
 def register(content_app, default_root):
     from socialctl.management.cli import _brand, _fail
-    analytics = typer.Typer(help="Analytics/Reporting: periodos oficiales, CSV y propuestas exactas.")
+    analytics = typer.Typer(help="Analytics/Reporting: official periods, CSV and exact proposals.")
     content_app.add_typer(analytics, name="youtube-analytics")
 
     def read(root, brand, callback):
@@ -114,7 +114,7 @@ def register(content_app, default_root):
     @analytics.command("report-download")
     def report_download(job_id: str, report_id: str, report_type_id: str = typer.Option(..., "--report-type-id"), start: str = typer.Option(..., "--start"), end: str = typer.Option(..., "--end"),
                         brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root")):
-        """Descarga e importa atómicamente CSV y procedencia en almacén privado."""
+        """Download and atomically import CSV and provenance into private storage."""
         def run(client):
             binding, data = client.download(job_id=job_id, report_id=report_id, report_type_id=report_type_id, start_date=start, end_date=end)
             store = ObservationStore(client.brand.raiz, client.configured_channel_id)
@@ -162,7 +162,7 @@ def register(content_app, default_root):
         try:
             change = store.load(change_id)
             typer.echo(preview(change))
-            approval = typer.prompt("Escribe la huella exacta para aprobar")
+            approval = typer.prompt("Enter the exact fingerprint to approve")
             if approval != change.fingerprint:
                 raise ValueError("approval does not match fingerprint")
             with make_http_client() as http:

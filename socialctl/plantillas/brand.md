@@ -1,133 +1,95 @@
-# Identidad de marca
+# Brand identity
 
-Este fichero define cómo habla, se ve y suena la marca. El código de `socialctl`
-y los skills compartidos no contienen preferencias de una marca concreta. Lo que
-escribas aquí determina el copy y guía la producción audiovisual.
+This file defines how the brand speaks, looks and sounds. Shared code and skills contain no preferences for any particular brand. What you write here determines copy and guides audiovisual production.
 
-> **Cómo rellenarlo.** Cada sección lleva un *Ejemplo* que ilustra qué se
-> espera. Son ilustraciones genéricas, no la voz de esta marca: sustitúyelas
-> por lo tuyo. Mientras una sección siga marcada como pendiente, el skill
-> preguntará antes de asumir nada.
+> **How to fill this in.** Each section includes a generic example, not this brand's voice. Replace it with your own choices. While a section is marked as pending, the agent must ask before assuming anything.
 
----
+## Language
 
-## Idioma
+English.
 
-Español.
+## Tone
 
----
+How the brand sounds. The same fact can be told in different ways.
 
-## Tono
+*Example — one fact in three tones:*
 
-Cómo suena la marca cuando habla. Es lo que más cambia el resultado: el mismo
-dato se puede contar de formas muy distintas.
+- **Informative and approachable:** “This existed earlier than you might think.”
+- **Precise and restrained:** “First documented in 1498, according to surviving sources.”
+- **Bold hook:** “Everything you were told about this is wrong 🤯”
 
-*Ejemplo — un mismo hecho con tres tonos:*
+Choose the tone that fits your brand.
 
-- **Divulgativo y cercano:** «Antes de lo que crees, esto ya existía.»
-- **Riguroso y sobrio:** «Documentado por primera vez en 1498, según las
-  fuentes conservadas.»
-- **Gancho agresivo:** «Todo lo que te contaron sobre esto está mal 🤯»
+**Pending:** rigor, approachability, formality and whether humor belongs.
 
-Los tres son correctos. Solo uno suena a tu marca.
+## Topics
 
-**Pendiente de definir:** nivel de rigor, cercanía, formalidad y si hay sitio
-para el humor.
+What the brand covers and excludes. This keeps copy within your scope.
 
----
+*Example:* “X, Y and Z, based on sources. Exclude A, B and comparisons with current events.”
 
-## Temas
+**Pending.**
 
-De qué habla la marca y de qué no. Evita que el copy se vaya a un terreno que
-no es el tuyo.
+## Call to action
 
-*Ejemplo:* «X, Y y Z, tratados desde las fuentes. Fuera: A, B y cualquier
-paralelismo con la actualidad.»
+How posts end. This can be consistent or vary by platform.
 
-**Pendiente de definir.**
+*Example:* “Watch the full piece on the channel.” / “Subscribe for more on this topic.” / No call to action.
 
----
+**Pending.** The agent must ask if a call to action is needed before one is defined here.
 
-## Llamada a la acción
+## Default hashtags
 
-Cómo se cierra un post. Puede ser siempre la misma o cambiar según la red.
+Hashtags used with most posts. **Without this section, add none.** Do not invent hashtags.
 
-*Ejemplo:* «La pieza completa, en el canal.» / «Suscríbete si te interesa el
-tema.» / o ninguna, si prefieres no pedir nada.
+*Example:* `yourbrand`, `yourtopic`, `yourcategory`
 
-**Pendiente de definir.** El skill no inventará un CTA: si hace falta uno antes
-de que lo escribas aquí, preguntará.
+**Pending.**
 
----
+## Never
 
-## Hashtags base
+The brand's boundaries, including claims or tactics you would not use.
 
-Los que acompañan a casi todos los posts. **Sin esta sección no se pone
-ninguno**, porque la regla del sistema es no improvisar hashtags.
+*Example:* “No clickbait the content cannot deliver. No claims without sources. Never present a hypothesis as established fact.”
 
-*Ejemplo:* `tumarca`, `tutema`, `tucategoria`
+**Pending.**
 
-**Pendiente de definir.**
+## Audiovisual identity
 
----
+Complete this section if the brand produces video. Do not copy another brand's settings by default. Identify approved decisions and proposals. SocialCli itself only accepts produced media.
 
-## Nunca
+- **Palette and typography:** colors, fonts, logo use and contrast.
+- **Visual style and motion:** pace, composition, maps, graphics and preferred or excluded treatments.
+- **Voice and music:** approved narrator or engine, musical character and available tools.
+- **Generation and 3D:** authorized tools, character continuity and reconstruction criteria.
+- **Editing and delivery:** editor, transitions, aspect ratio, resolution, fps, color space, container and codecs, audio sample rate and channels, loudness and true peak targets, subtitles and horizontal or vertical versions. Record episode-specific values in that project's file.
 
-Las líneas rojas de la marca. Es lo que impide que, por buscar gancho, el copy
-acabe diciendo algo que no dirías.
+**Pending for this brand.** Episode-specific decisions belong in that project's `estado.md` file.
 
-*Ejemplo:* «Nunca clickbait que la pieza no cumpla. Nunca afirmaciones sin
-fuente. Nunca presentar una hipótesis como un hecho probado.»
+## Copy templates
 
-**Pendiente de definir.**
-
----
-
-## Identidad audiovisual
-
-Completa esta sección si la marca produce video. No copies la configuración de otra
-marca por defecto. Indica qué decisiones están aprobadas y cuáles son propuestas.
-
-- **Paleta y tipografía:** colores, fuentes, uso del logo y contraste.
-- **Estilo visual y movimiento:** ritmo, composición, mapas, gráficos y tratamientos que se desean o se evitan.
-- **Voz y música:** narrador o motor aprobado, carácter musical y herramientas disponibles.
-- **Generación y 3D:** herramientas autorizadas, continuidad de personajes y criterios de reconstrucción.
-- **Montaje y entrega:** editor, transiciones, relación de aspecto, resolución, fps, espacio de color, contenedor y códecs, frecuencia y canales de audio, objetivo de sonoridad y pico real, subtítulos y versiones horizontal o vertical. Los valores que cambien por episodio se cierran en la ficha de ese proyecto.
-
-**Pendiente de definir para esta marca.** Las decisiones de un episodio concreto van
-en el `estado.md` de ese proyecto, no aquí.
-
----
-
-## Plantillas de copy
-
-Cómo suena la marca en cada red. Cada una se lee distinto, así que el mismo
-mensaje no se escribe igual.
+Define how the brand writes for each platform.
 
 ### YouTube
 
-Título de 100 caracteres como máximo, que funcione solo (mucha gente lo verá
-sin la miniatura). Descripción larga; los hashtags **no** van en el texto, van
-como etiquetas aparte.
+Titles should work on their own and contain no more than 100 characters. Define long descriptions and separate tags here.
 
-**Pendiente de definir.**
+**Pending.**
 
 ### Instagram
 
-El gancho va en la primera línea: el feed corta a los 125 caracteres, así que
-lo que no esté ahí no se lee. Hashtags al final.
+Put the hook in the first line, before the caption is truncated. Place hashtags at the end.
 
-**Pendiente de definir.**
+**Pending.**
 
 ### TikTok
 
-Una o dos líneas, con los hashtags integrados en el texto.
+One or two lines with hashtags included in the text.
 
-**Pendiente de definir.**
+**Pending.**
 
 ### Facebook
 
-Admite texto largo, y es la única red donde poner un enlace no penaliza el
-alcance. Sirve para contar algo más y enlazar a la pieza completa.
+Define longer copy and links to the complete piece where appropriate.
 
-**Pendiente de definir.**
+**Pending.**

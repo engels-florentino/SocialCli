@@ -44,7 +44,7 @@ def test_unknown_database_schema_never_falls_back_to_json(tmp_path):
     store.save([_entry("one", "2020-01-01T00:00:00Z")])
     with sqlite3.connect(store.database_path) as connection:
         connection.execute("PRAGMA user_version=99")
-    with pytest.raises(ScheduleError, match="versión"):
+    with pytest.raises(ScheduleError, match='version'):
         ScheduleStore(tmp_path).load()
 
 

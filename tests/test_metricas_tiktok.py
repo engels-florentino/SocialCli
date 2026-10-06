@@ -240,7 +240,7 @@ def test_error_de_scope_dice_cual_falta(brand):
 
     mensaje = str(excinfo.value)
     assert "user.info.stats" in mensaje
-    assert "socialctl auth tiktok" in mensaje
+    assert 'socialcli auth tiktok' in mensaje
 
 
 @respx.mock
@@ -342,7 +342,7 @@ def test_un_fallo_en_una_pagina_posterior_conserva_lo_ya_leido(brand):
     assert [p.id for p in lectura.piezas] == ["a", "b"]
     for pieza in lectura.piezas:
         aviso = pieza.especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO]
-        assert "página 3" in aviso
+        assert "page 3" in aviso
         assert TOKEN not in aviso
 
 

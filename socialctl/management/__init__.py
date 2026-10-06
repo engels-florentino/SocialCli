@@ -1,1 +1,1 @@
-"""Servicios de gestión de contenido remoto existente."""
+"""Management services for existing remote content."""

@@ -23,7 +23,7 @@ from socialctl.management.meta_comment_inbox import (
 from socialctl.models import Platform
 from socialctl.publication_steps import PublicationStore, retry_first_comment
 
-comments_app = typer.Typer(help="Comentarios durables de Facebook/Instagram en medios propios; Instagram no permite editar texto.")
+comments_app = typer.Typer(help="Durable Facebook/Instagram comments on owned media; Instagram does not allow text editing.")
 
 
 def make_http_client():
@@ -36,21 +36,21 @@ def _json(value):
 
 def render_comment_preview(change):
     return ("PREVIEW COMPLETO — comentario independiente\n" + _json(change.model_dump(mode="json")) +
-            "\nNo se modifica el medio. Crear no demuestra que el enlace sea clicable ni que el comentario esté fijado."
-            "\nDelete elimina explícitamente el comentario propio; una lectura vacía no demuestra ausencia."
-            f"\nHuella exacta para aprobar: {change.fingerprint}")
+            "\nMedia is not modified. Creation does not prove the link is clickable or the comment is pinned."
+            "\nDelete explicitly removes owned comment; an empty read does not prove absence."
+            f"\nExact fingerprint for approval: {change.fingerprint}")
 
 
 def _inbox_record(selected, platform: Platform, media_id: str, comment_id: str):
     if platform not in {Platform.FACEBOOK, Platform.INSTAGRAM}:
-        raise ChangeError("la bandeja solo admite Facebook e Instagram")
+        raise ChangeError("inbox supports only Facebook and Instagram")
     account_key = "page_id" if platform is Platform.FACEBOOK else "ig_user_id"
     account_id = (selected.cuentas.get(platform.value) or {}).get(account_key)
     rows = [row for row in CommentInboxStore(selected.raiz).load().comments
             if (row.platform, row.account_id, row.media_id, row.comment_id) ==
             (platform.value, account_id, media_id, comment_id)]
     if len(rows) != 1:
-        raise ChangeError("comentario no observado de forma inequívoca en la bandeja")
+        raise ChangeError("comment was not unambiguously observed in inbox")
     return rows[0]
 
 
@@ -63,12 +63,12 @@ def _inbox_record_for_change(selected, change):
                 (binding.get("platform"), binding.get("account_id"),
                  binding.get("media_id"), binding.get("comment_id"))]
         if len(rows) != 1:
-            raise ChangeError("el vínculo durable del ChangeSet con la bandeja no coincide")
+            raise ChangeError("durable ChangeSet link to inbox mismatch")
         if rows[0].change_id != change.id:
             raise ChangeError(
-                "este borrador de bandeja fue reemplazado por otro ChangeSet; no se puede aplicar")
+                "this inbox draft was replaced by another ChangeSet; cannot be applied")
         if rows[0].idempotency_key != binding.get("idempotency_key"):
-            raise ChangeError("el vínculo durable del ChangeSet con la bandeja no coincide")
+            raise ChangeError("durable ChangeSet link to inbox mismatch")
         return rows[0]
     # Compatibility for inbox drafts created before the binding was embedded in
     # the ChangeSet: both the current pointer and immutable preparation events
@@ -78,7 +78,7 @@ def _inbox_record_for_change(selected, change):
                 event.get("event") == "explicit_draft_prepared" and
                 event.get("change_id") == change.id for event in row.journal)]
     if len(rows) > 1:
-        raise ChangeError("el ChangeSet aparece duplicado en la bandeja")
+        raise ChangeError("ChangeSet duplicated in inbox")
     return rows[0] if rows else None
 
 
@@ -86,16 +86,16 @@ def render_draft_preview(record, change):
     return ("PREVIEW COMPLETO — respuesta a comentario observado\n"
             + _json({"source_comment": record.model_dump(mode="json"),
                      "changeset": change.model_dump(mode="json")})
-            + "\nNo se responderá sin aprobación exacta. Un resultado incierto bloquea otro POST."
-            + f"\nHuella exacta para aprobar: {change.fingerprint}")
+            + "\nNo reply without exact approval. An uncertain outcome blocks another POST."
+            + f"\nExact fingerprint for approval: {change.fingerprint}")
 
 
 @comments_app.command("list")
 def list_comments(media_id: str, platform: Platform = typer.Option(..., "--platform"),
                   brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                   parent_id: str | None = typer.Option(None, "--parent-id"),
-                  include_moderation: bool = typer.Option(False, "--include-moderation", help="Incluye estado oculto cuando el proveedor lo expone.")):
-    """Lee comentarios paginados verificando cuenta y propiedad; nunca prueba ausencia."""
+                  include_moderation: bool = typer.Option(False, "--include-moderation", help="Include hidden status when exposed by provider.")):
+    """Read paginated comments with account and ownership checks; does not prove absence."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -110,7 +110,7 @@ def list_comments(media_id: str, platform: Platform = typer.Option(..., "--platf
 def show_comment(media_id: str, comment_id: str, platform: Platform = typer.Option(..., "--platform"),
                  brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                  parent_id: str | None = typer.Option(None, "--parent-id")):
-    """Verifica ID y pertenencia del comentario al medio propio (o a su padre)."""
+    """Verify comment ID and membership in owned media or parent."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -123,9 +123,9 @@ def show_comment(media_id: str, comment_id: str, platform: Platform = typer.Opti
 @comments_app.command("sync")
 def sync(media_id: str, platform: Platform = typer.Option(..., "--platform"),
          brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-         since: str | None = typer.Option(None, "--since", help="Fecha RFC3339 inicial; después se reutiliza el cursor temporal durable."),
+         since: str | None = typer.Option(None, "--since", help="Initial RFC3339 timestamp; subsequent reads reuse durable time cursor."),
          max_pages: int = typer.Option(100, "--max-pages", min=1, max=100)):
-    """Lee comentarios nuevos, deduplica IDs y actualiza la bandeja; nunca responde."""
+    """Read new comments, deduplicate IDs and update inbox without replying."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -141,10 +141,10 @@ def sync(media_id: str, platform: Platform = typer.Option(..., "--platform"),
 def inbox(brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
           platform: Platform | None = typer.Option(None, "--platform"),
           media_id: str | None = typer.Option(None, "--media-id")):
-    """Muestra la bandeja agrupada por pieza, autor, idioma y tipo; no toca Meta."""
+    """Display inbox grouped by item, author, language and type without accessing Meta."""
     selected = _brand(root, brand)
     if platform not in {None, Platform.FACEBOOK, Platform.INSTAGRAM}:
-        _fail("la bandeja solo admite Facebook e Instagram")
+        _fail("inbox supports only Facebook and Instagram")
     try:
         data = CommentInboxStore(selected.raiz).load()
     except ChangeError as exc:
@@ -158,10 +158,10 @@ def inbox(brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(D
 
 @comments_app.command("draft")
 def draft(media_id: str, comment_id: str, platform: Platform = typer.Option(..., "--platform"),
-          text: str = typer.Option(..., "--text", help="Respuesta literal aportada; no se genera con IA."),
+          text: str = typer.Option(..., "--text", help="Supplied literal reply; not AI-generated."),
           brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-          dry_run: bool = typer.Option(False, "--dry-run", help="Compatibilidad: preparar siempre es solo local.")):
-    """Prepara un borrador explícito y su ChangeSet; no hace ningún POST."""
+          dry_run: bool = typer.Option(False, "--dry-run", help="Compatibility: preparation is always local only.")):
+    """Prepare explicit draft and ChangeSet without POSTs."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -170,7 +170,7 @@ def draft(media_id: str, comment_id: str, platform: Platform = typer.Option(...,
                 media_id=media_id, comment_id=comment_id, text=text)
     except (ChangeError, OSError) as exc:
         _fail(str(exc))
-    typer.echo("DRY-RUN remoto: borrador y ChangeSet locales; ninguna escritura en Meta.")
+    typer.echo("Remote DRY-RUN: local draft and ChangeSet; no Meta writes.")
     typer.echo(render_draft_preview(record, change))
 
 
@@ -179,19 +179,19 @@ def apply_draft(media_id: str, comment_id: str,
                 platform: Platform = typer.Option(..., "--platform"),
                 brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                 max_replies: int = typer.Option(10, "--max-replies", min=1,
-                    help="Máximo de intenciones de respuesta en la ventana y cuenta."),
+                    help="Maximum reply intentions within window and account."),
                 window_seconds: int = typer.Option(3600, "--window-seconds", min=1)):
-    """Muestra el preview y aplica solo tras escribir la huella exacta."""
+    """Display preview and apply only after entering exact fingerprint."""
     selected = _brand(root, brand)
     try:
         record = _inbox_record(selected, platform, media_id, comment_id)
         if not record.change_id:
-            raise ChangeError("el comentario no tiene borrador")
+            raise ChangeError("comment has no draft")
         change = CommentStore(selected.raiz).load(record.change_id)
         typer.echo(render_draft_preview(record, change))
-        digest = typer.prompt("Escribe la huella exacta para aprobar")
+        digest = typer.prompt("Enter the exact fingerprint to approve")
         if digest != change.fingerprint:
-            _fail("aprobación no coincide con la huella exacta")
+            _fail("approval does not match exact fingerprint")
         with make_http_client() as http:
             result = apply_inbox_draft(MetaCommentsClient(selected, platform, http),
                 CommentStore(selected.raiz), CommentInboxStore(selected.raiz),
@@ -209,7 +209,7 @@ def reconcile_draft(media_id: str, comment_id: str,
                     platform: Platform = typer.Option(..., "--platform"),
                     brand: str = typer.Option(..., "--brand"),
                     root: Path = typer.Option(DEFAULT_ROOT, "--root")):
-    """Solo GET: reconcilia un resultado incierto y nunca repite el POST."""
+    """GET only: reconcile uncertain outcome and never repeat POST."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -226,12 +226,12 @@ def reconcile_draft(media_id: str, comment_id: str,
 @comments_app.command("prepare")
 def prepare(media_id: str, platform: Platform = typer.Option(..., "--platform"),
             brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-            action: str = typer.Option("add", "--action", help="add, reply, edit (solo Facebook) o delete (autor propio)."),
-            text: str | None = typer.Option(None, "--text", help="Texto exacto aportado por el usuario; no se genera copy."),
+            action: str = typer.Option("add", "--action", help="add, reply, edit (Facebook only) or delete (own author)."),
+            text: str | None = typer.Option(None, "--text", help="Exact user-supplied text; no copy generated."),
             parent_id: str | None = typer.Option(None, "--parent-id"),
             comment_id: str | None = typer.Option(None, "--comment-id"),
-            dry_run: bool = typer.Option(False, "--dry-run", help="Solo prepara y muestra el ChangeSet; no escribe en Meta.")):
-    """Prepara add/reply/edit/delete sin escritura remota y muestra propuesta completa."""
+            dry_run: bool = typer.Option(False, "--dry-run", help="Only prepare and display ChangeSet; no Meta writes.")):
+    """Prepare add/reply/edit/delete without remote writes and display full proposal."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -239,14 +239,14 @@ def prepare(media_id: str, platform: Platform = typer.Option(..., "--platform"),
                 media_id=media_id, text=text, action=action, parent_id=parent_id, comment_id=comment_id)
     except (ChangeError, OSError) as exc:
         _fail(str(exc))
-    typer.echo("DRY-RUN remoto: propuesta local; ninguna escritura en Meta.")
+    typer.echo("Remote DRY-RUN: local proposal; no Meta writes.")
     typer.echo(render_comment_preview(change))
 
 
 @comments_app.command("status")
 def status(change_id: str, brand: str = typer.Option(..., "--brand"),
            root: Path = typer.Option(DEFAULT_ROOT, "--root")):
-    """Muestra el ChangeSet y diario completos sin tocar Meta."""
+    """Display complete ChangeSet and journal without accessing Meta."""
     selected = _brand(root, brand)
     try:
         change = CommentStore(selected.raiz).load(change_id)
@@ -258,17 +258,17 @@ def status(change_id: str, brand: str = typer.Option(..., "--brand"),
 @comments_app.command("apply")
 def apply(change_id: str, brand: str = typer.Option(..., "--brand"),
           root: Path = typer.Option(DEFAULT_ROOT, "--root")):
-    """Muestra preview completo y exige escribir su huella exacta; un POST incierto no se repite."""
+    """Display full preview and require exact fingerprint entry; uncertain POST is never repeated."""
     selected = _brand(root, brand)
     store = CommentStore(selected.raiz)
     try:
         change = store.load(change_id)
         if _inbox_record_for_change(selected, change):
-            _fail("este ChangeSet pertenece a la bandeja; usa comments apply-draft para conservar estado y frecuencia")
+            _fail("this ChangeSet belongs to inbox; use comments apply-draft to preserve state and frequency")
         typer.echo(render_comment_preview(change))
-        digest = typer.prompt("Escribe la huella exacta para aprobar")
+        digest = typer.prompt("Enter the exact fingerprint to approve")
         if digest != change.fingerprint:
-            _fail("aprobación no coincide con la huella exacta")
+            _fail("approval does not match exact fingerprint")
         with make_http_client() as http:
             result = apply_comment(MetaCommentsClient(selected, Platform(change.platform), http), store, change_id, digest)
     except (ChangeError, OSError) as exc:
@@ -281,13 +281,13 @@ def apply(change_id: str, brand: str = typer.Option(..., "--brand"),
 @comments_app.command("reconcile")
 def reconcile(change_id: str, brand: str = typer.Option(..., "--brand"),
               root: Path = typer.Option(DEFAULT_ROOT, "--root")):
-    """Solo GET remoto: candidatos idénticos no son prueba de creación; nunca POST."""
+    """Remote GET only: identical candidates do not prove creation; never POST."""
     selected = _brand(root, brand)
     store = CommentStore(selected.raiz)
     try:
         change = store.load(change_id)
         if _inbox_record_for_change(selected, change):
-            _fail("este ChangeSet pertenece a la bandeja; usa comments reconcile-draft")
+            _fail("this ChangeSet belongs to inbox; use comments reconcile-draft")
         with make_http_client() as http:
             result = reconcile_comment(MetaCommentsClient(selected, Platform(change.platform), http), store, change_id)
     except (ChangeError, OSError) as exc:
@@ -298,7 +298,7 @@ def reconcile(change_id: str, brand: str = typer.Option(..., "--brand"),
 @comments_app.command("publication-status")
 def publication_status(publication_id: str, brand: str = typer.Option(..., "--brand"),
                        root: Path = typer.Option(DEFAULT_ROOT, "--root")):
-    """Lee un intento durable: medio confirmado, texto aprobado y ChangeSet de comentario."""
+    """Read durable attempt containing confirmed media, approved text and comment ChangeSet."""
     selected = _brand(root, brand)
     try:
         result = PublicationStore(selected.raiz).load(publication_id)
@@ -311,11 +311,11 @@ def publication_status(publication_id: str, brand: str = typer.Option(..., "--br
 def retry_first(publication_id: str, brand: str = typer.Option(..., "--brand"),
                 root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                 dry_run: bool = typer.Option(False, "--dry-run")):
-    """Reanuda solo el comentario originalmente aprobado; nunca sube medios ni repite POST inciertos."""
+    """Resume only originally approved comment; never upload media or repeat uncertain POSTs."""
     selected = _brand(root, brand)
     try:
         data = PublicationStore(selected.raiz).load(publication_id)
-        typer.echo("Primer comentario: aprobación heredada del intento original completo:\n" + _json(data))
+        typer.echo("First comment: approval inherited from complete original attempt:\n" + _json(data))
         if dry_run:
             return
         with make_http_client() as http:

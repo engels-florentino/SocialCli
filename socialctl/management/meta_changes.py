@@ -73,10 +73,10 @@ def prepare_meta(client, store, raw):
 
 def bound(client, change):
     if (change.brand, change.brand_root, change.platform) != (client.brand.nombre, str(client.brand.raiz.resolve()), client.platform.value):
-        raise MetaError("la marca/cuenta no coincide con la propuesta")
+        raise MetaError("brand/account does not match proposal")
     edit = validate_edit(change.edit)
     if client.identity(user_required=edit.action == "media-delete") != change.identity:
-        raise MetaError("el actor/cuenta del token cambió desde la propuesta")
+        raise MetaError("token actor/account changed since proposal")
     return edit
 
 
@@ -122,7 +122,7 @@ def apply_meta(client, store, change_id, approval_digest):
         locks.enter_context(store.apply_lock(change_id))
         change = store.load(change_id)
         if not hmac.compare_digest(change.fingerprint, approval_digest):
-            raise MetaError("la aprobación no coincide con la huella exacta")
+            raise MetaError("approval does not match exact fingerprint")
         edit = bound(client, change)
         key = operation_key(change)
         locks.enter_context(store.apply_lock(str(uuid.uuid5(uuid.NAMESPACE_URL, key))))
@@ -133,12 +133,12 @@ def apply_meta(client, store, change_id, approval_digest):
         for path in store.root.glob("*.json"):
             other = store.load(path.stem)
             if other.id != change.id and operation_key(other) == key and other.status in {"applying", "uncertain"}:
-                raise MetaError(f"resultado incierto pendiente {other.id}; no se elude con otro UUID")
+                raise MetaError(f"uncertain outcome pending {other.id}; another UUID cannot bypass it")
         if client.snapshot(edit) != change.before:
             change.status = "conflict"
             event(change, "remote_changed_no_write")
             store.save(change)
-            raise MetaError("el recurso cambió desde el preview")
+            raise MetaError("resource changed since preview")
         change.status = "applying"
         event(change, "write_intent", approval_digest=approval_digest)
         store.save(change)

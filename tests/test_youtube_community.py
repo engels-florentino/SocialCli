@@ -155,7 +155,7 @@ def test_own_edit_delete_author_gate_and_foreign_channel(tmp_path, action):
     if action == "edit":
         edit["text"] = "Edited supplied"
     api.threads[0]["snippet"]["topLevelComment"] = comment(author="foreign")
-    with pytest.raises(ResourceError, match="autor"):
+    with pytest.raises(ResourceError, match="author"):
         prepare_community(client, store, edit)
     assert not api.writes
     api.threads[0]["snippet"]["topLevelComment"] = comment()
@@ -266,10 +266,10 @@ def test_two_brands_actor_parent_conflict_and_snapshot_tampering(tmp_path):
     _, api_b, client_b, _ = service(tmp_path, "Other", "channel-b")
     edit = {"action": "edit", "video_id": "video-1", "thread_id": "UgxThread", "comment_id": "UgxTop", "text": "New"}
     change = prepare_community(client, store, edit)
-    with pytest.raises(ResourceError, match="marca"):
+    with pytest.raises(ResourceError, match='brand'):
         apply_community(client_b, store, change.id, change.fingerprint)
     api.actor = "channel-b"
-    with pytest.raises(ResourceError, match="autenticado"):
+    with pytest.raises(ResourceError, match="authenticated"):
         apply_community(client, store, change.id, change.fingerprint)
     api.actor = "channel-a"
     api.threads[0]["snippet"]["topLevelComment"]["etag"] = "concurrent"
@@ -289,7 +289,7 @@ def test_explicit_external_rating_subscription_and_unsubscribe(tmp_path):
         assert apply_community(client, store, change.id, change.fingerprint).status == "verified"
     assert api.writes[0].url.params["id"] == "external-video" and not api.writes[0].content
     assert api.writes[2].url.params["id"] == "sub.opaque="
-    with pytest.raises(ResourceError, match="propio"):
+    with pytest.raises(ResourceError, match="own"):
         prepare_community(client, store, {"action": "subscribe", "channel_id": "channel-a"})
 
 
@@ -356,7 +356,7 @@ def test_page_capacity_must_cover_rows_before_authorizing_comment_write(tmp_path
                 "pageInfo": {"totalResults": len(api.replies), "resultsPerPage": capacity}})
     api.on_read = replies
     if capacity == 0:
-        with pytest.raises(ResourceError, match="lista incompleta"):
+        with pytest.raises(ResourceError, match='incomplete list'):
             apply_community(client, store, change.id, change.fingerprint)
         assert not api.writes and store.load(change.id).status == "proposed"
     else:

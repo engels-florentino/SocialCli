@@ -167,7 +167,7 @@ def test_chapters_reject_invalid_starts_counts_and_final_duration(tmp_path, text
     module = parts()
     client = API().client(brand_at(tmp_path))
     edit = module.MetadataEdit(video_id="video-1", kind="chapters", patch={"description": text})
-    with pytest.raises(ChangeError, match="capítulo"):
+    with pytest.raises(ChangeError, match="chapter"):
         module.propose_parts(client.inspect("video-1"), edit)
 
 
@@ -187,11 +187,11 @@ def test_unknown_remote_fields_and_wrong_owner_fail_closed(tmp_path, part):
     api = API()
     client = api.client(brand_at(tmp_path))
     api.videos["video-1"][part]["futureMutable"] = "value"
-    with pytest.raises(Exception, match="desconocido"):
+    with pytest.raises(Exception, match="unknown"):
         client.inspect("video-1")
     del api.videos["video-1"][part]["futureMutable"]
     api.videos["video-1"]["snippet"]["channelId"] = "channel-other"
-    with pytest.raises(Exception, match="pertenece"):
+    with pytest.raises(Exception, match="belong"):
         client.inspect("video-1")
     assert api.writes == []
 
@@ -237,7 +237,7 @@ def test_direct_client_rejects_incomplete_part_instead_of_erasing_omitted_fields
     parts()
     api = API()
     client = api.client(brand_at(tmp_path))
-    with pytest.raises(Exception, match="omitir"):
+    with pytest.raises(Exception, match="omitted"):
         client.update_parts("video-1", body, etag="etag-1")
     assert api.writes == []
 
@@ -254,7 +254,7 @@ def test_all_status_proposals_reject_expired_preserved_publish_at(tmp_path, meta
     client = api.client(brand_at(tmp_path))
     metadata_clock.expire()
     observed = client.inspect("video-1")  # Read-only inspection still works.
-    with pytest.raises(ChangeError, match="publishAt.*futuro"):
+    with pytest.raises(ChangeError, match="publishAt.*future"):
         module.propose_parts(observed, module.MetadataEdit(video_id="video-1", kind=kind, patch=patch))
     assert api.writes == [] and api.videos["video-1"] == original
 
@@ -282,7 +282,7 @@ def test_direct_status_boundary_rejects_expired_preserved_publish_at(tmp_path, m
                 metadata_clock.expire()
             return result
         monkeypatch.setattr(client, "_authenticated_channel", delayed_auth)
-    with pytest.raises(YouTubeUpdateRejected, match="publishAt.*futuro"):
+    with pytest.raises(YouTubeUpdateRejected, match="publishAt.*future"):
         client.update_parts("video-1", outgoing, etag="etag-1")
     assert outgoing["status"]["publishAt"] == "2099-01-01T00:00:00Z"
     assert api.writes == [] and api.videos["video-1"] == original

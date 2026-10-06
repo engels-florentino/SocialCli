@@ -14,11 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from socialctl.brands import _validar_nombre_de_marca
 from socialctl.scheduler import ScheduleError, parse_scheduled_at
 
-remote_app = typer.Typer(help="Gestiona la cola autoritativa por SSH; solo posts existentes en el servidor.")
+remote_app = typer.Typer(help="Manage authoritative queue via SSH; only existing server posts.")
 from socialctl.workspace import default_root
 
 DEFAULT_ROOT = default_root()
-REMOTE_NOTICE = "Ejecutor remoto: la copia local está obsoleta y no es autoritativa. Usa schedule-remote status o schedule-remote health con --brand."
+REMOTE_NOTICE = "Remote executor: local copy is stale and non-authoritative. Use schedule-remote status or schedule-remote health with --brand."
 
 
 class SchedulePreview(BaseModel):
@@ -40,7 +40,7 @@ class SchedulePreview(BaseModel):
     @classmethod
     def no_credentials(cls, value):
         if re.search(r"(?i)(?:[\"']?(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization|token)[\"']?\s*[:=]|\bbearer\s+\S+)", value):
-            raise ValueError("preview contiene un posible secreto")
+            raise ValueError("preview may contain a secret")
         return value
 
 
@@ -61,41 +61,41 @@ class RemoteConfig(BaseModel):
     @classmethod
     def host_valid(cls, value):
         if len(value) > 253 or any(not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?", part) or len(part) > 63 for part in value.split(".")):
-            raise ValueError("host inválido")
+            raise ValueError("invalid host")
         return value
 
     @field_validator("user")
     @classmethod
     def user_valid(cls, value):
         if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_-]{0,63}", value):
-            raise ValueError("usuario inválido")
+            raise ValueError("invalid user")
         return value
 
     @field_validator("root", "executable")
     @classmethod
     def path_valid(cls, value):
         if not re.fullmatch(r"/[A-Za-z0-9_./-]+", value) or ".." in value.split("/") or str(PurePosixPath(value)) != value or value == "/":
-            raise ValueError("ruta absoluta inválida")
+            raise ValueError("invalid absolute path")
         return value
 
     @field_validator("executable")
     @classmethod
     def executable_valid(cls, value):
         if not value.endswith("/.venv/bin/socialctl"):
-            raise ValueError("ejecutable socialctl inválido")
+            raise ValueError("invalid socialcli executable")
         return value
 
 
 def _component(value: str) -> str:
     if not re.fullmatch(r"[\w][\w .-]*", value) or value in {".", ".."}:
-        raise ScheduleError("identificador remoto inválido")
+        raise ScheduleError("invalid remote identifier")
     return value
 
 
 def _entry(value: str) -> str:
     parts = value.split("/")
     if len(parts) != 2 or parts[1] not in {"facebook", "instagram"}:
-        raise ScheduleError("identificador remoto inválido")
+        raise ScheduleError("invalid remote identifier")
     _component(parts[0])
     return value
 
@@ -106,7 +106,7 @@ def _send(root: Path, brand: str, args: list[str]) -> None:
         brand_root = _validar_nombre_de_marca(root, brand)
         config = RemoteConfig.model_validate_json((brand_root / ".socialctl/remote-executor.json").read_bytes())
     except Exception as exc:
-        raise ScheduleError("configuración remota inválida o ausente") from exc
+        raise ScheduleError("remote configuration invalid or missing") from exc
     preview_mode = args[0] == "schedule" and "--dry-run" in args
     if preview_mode:
         args = [*args, "--preview-json"]
@@ -119,23 +119,23 @@ def _send(root: Path, brand: str, args: list[str]) -> None:
         result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
                                 text=True, timeout=180, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
-        raise ScheduleError("conexión remota fallida; revisa SSH y schedule-remote status antes de reintentar") from exc
+        raise ScheduleError("remote connection failed; check SSH and schedule-remote status before retrying") from exc
     if preview_mode and result.returncode in {0, 1}:
         try:
             response = SchedulePreview.model_validate_json(result.stdout)
             if response.valid != (result.returncode == 0):
-                raise ValueError("estado inconsistente")
+                raise ValueError("inconsistent status")
         except ValueError as exc:
-            raise ScheduleError("preview remoto inválido o no seguro; no se mostró salida sin verificar") from exc
+            raise ScheduleError("remote preview invalid or unsafe; unverified output was not displayed") from exc
         typer.echo(response.preview)
         if not response.valid:
-            raise ScheduleError("No se programa nada: corrige los problemas de arriba.")
+            raise ScheduleError("Nothing scheduled: fix the issues above.")
         typer.echo(f"Approval digest: {response.digest}")
-        typer.echo(f"--dry-run: se programaría para {response.scheduled_at}.")
+        typer.echo(f"--dry-run: would schedule for {response.scheduled_at}.")
         return
     if result.returncode:
         # Transport and remote exceptions can contain credentials/URLs.
-        raise ScheduleError("comando remoto fallido; verifica el estado remoto antes de reintentar")
+        raise ScheduleError("remote command failed; verify remote status before retrying")
     if args[0] == "native-schedule":
         from socialctl.native_schedule.approval import reject_secrets
         try:
@@ -143,7 +143,7 @@ def _send(root: Path, brand: str, args: list[str]) -> None:
                 raise ValueError("oversized output")
             reject_secrets(result.stdout)
         except ValueError as exc:
-            raise ScheduleError("respuesta nativa remota inválida o no segura") from exc
+            raise ScheduleError("native remote response invalid or unsafe") from exc
     typer.echo(result.stdout, nl=False)
 
 
@@ -191,15 +191,15 @@ def schedule(slug: str, at: str = typer.Option(..., "--at"),
         args = ["schedule", _component(slug), "--at", at]
         if dry_run:
             if yes or approval_digest:
-                raise ScheduleError("dry-run no admite aprobación")
+                raise ScheduleError("dry-run does not accept approval")
             args += ["--dry-run"]
         else:
             if not yes or not approval_digest or not re.fullmatch(r"[a-f0-9]{64}", approval_digest):
-                raise ScheduleError("muestra --dry-run y aprueba su digest con --approval-digest y --yes")
+                raise ScheduleError("show --dry-run and approve its digest with --approval-digest and --yes")
             args += ["--approval-digest", approval_digest, "--yes"]
         for platform in only or []:
             if platform not in {"facebook", "instagram"}:
-                raise ScheduleError("red remota inválida")
+                raise ScheduleError("invalid remote platform")
             args += ["--only", platform]
         _send(root, brand, args)
     _run(operation)
@@ -209,7 +209,7 @@ def send_native(root: Path, brand: str, args: list[str]) -> None:
     """Bounded native command grammar; paths resolve only at authoritative root."""
     operations={'prepare','approve','status','dispatch','reconcile','handoff','submit-marker','cancel','reschedule','migration-prepare','migration-apply','migration-recover','deliver'}
     if not args or args[0] not in operations:
-        raise ScheduleError('comando nativo remoto inválido')
+        raise ScheduleError('invalid native remote command')
     operation=args[0]
     identifier=lambda value: bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}',value))
     digest=lambda value: bool(re.fullmatch(r'[a-f0-9]{64}',value))
@@ -242,5 +242,5 @@ def send_native(root: Path, brand: str, args: list[str]) -> None:
         else:
             valid=valid and (tail==[] or (operation=='dispatch' and tail==['--yes']))
     if not valid:
-        raise ScheduleError('argumentos nativos remotos inválidos')
+        raise ScheduleError('invalid native remote arguments')
     _send(root,brand,['native-schedule',*args])

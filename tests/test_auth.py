@@ -62,7 +62,7 @@ def test_sin_credenciales_pide_autenticar(brand):
     with httpx.Client() as client:
         with pytest.raises(AuthError) as exc:
             obtener_token(brand, Platform.TIKTOK, client)
-    assert "socialctl auth" in str(exc.value)
+    assert 'socialcli auth' in str(exc.value)
 
 
 @respx.mock
@@ -86,7 +86,7 @@ def test_refresh_rechazado_pide_reautenticar_sin_filtrar_el_token(brand):
             obtener_token(brand, Platform.TIKTOK, client)
 
     mensaje = str(exc.value)
-    assert "socialctl auth tiktok" in mensaje
+    assert 'socialcli auth tiktok' in mensaje
     assert "SECRETO-r" not in mensaje
 
     # TikTok identifica al cliente con client_key/client_secret (no
@@ -109,7 +109,7 @@ def test_facebook_caducado_pide_reautenticar(brand):
     with httpx.Client() as client:
         with pytest.raises(AuthError) as exc:
             obtener_token(brand, Platform.FACEBOOK, client)
-    assert "socialctl auth facebook" in str(exc.value)
+    assert 'socialcli auth facebook' in str(exc.value)
 
 
 @respx.mock
@@ -132,7 +132,7 @@ def test_expira_en_corrupto_pide_reautenticar_sin_reventar(brand):
             obtener_token(brand, Platform.YOUTUBE, client)
 
     mensaje = str(exc.value)
-    assert "socialctl auth youtube" in mensaje
+    assert 'socialcli auth youtube' in mensaje
     assert "no-es-un-numero" not in mensaje
 
 
@@ -160,7 +160,7 @@ def test_refresco_con_200_sin_access_token_pide_reautenticar(brand):
             obtener_token(brand, Platform.YOUTUBE, client)
 
     mensaje = str(exc.value)
-    assert "socialctl auth youtube" in mensaje
+    assert 'socialcli auth youtube' in mensaje
     assert "FUGA-CUERPO-1" not in mensaje
 
 
@@ -187,7 +187,7 @@ def test_refresco_con_200_no_json_pide_reautenticar(brand):
             obtener_token(brand, Platform.TIKTOK, client)
 
     mensaje = str(exc.value)
-    assert "socialctl auth tiktok" in mensaje
+    assert 'socialcli auth tiktok' in mensaje
     assert "FUGA-CUERPO-2" not in mensaje
 
 
@@ -245,8 +245,8 @@ def test_refresco_timeout_pide_reautenticar_sin_traza(brand):
             obtener_token(brand, Platform.YOUTUBE, client)
 
     mensaje = str(exc.value)
-    assert "tiempo de espera" in mensaje.lower()
-    assert "socialctl auth youtube" in mensaje
+    assert 'timed out' in mensaje.lower()
+    assert 'socialcli auth youtube' in mensaje
     assert "SECRETO-TIMEOUT" not in mensaje
 
 
@@ -271,8 +271,8 @@ def test_refresco_fallo_de_conexion_pide_reautenticar_sin_traza(brand):
             obtener_token(brand, Platform.TIKTOK, client)
 
     mensaje = str(exc.value)
-    assert "conectar" in mensaje.lower()
-    assert "socialctl auth tiktok" in mensaje
+    assert 'connect' in mensaje.lower()
+    assert 'socialcli auth tiktok' in mensaje
     assert "SECRETO-CONEXION" not in mensaje
 
 
@@ -312,7 +312,7 @@ def test_refresco_url_invalida_no_filtra_el_refresh_token(brand, monkeypatch):
             obtener_token(brand, Platform.YOUTUBE, client)
 
     mensaje = str(exc.value)
-    assert "no es válida" in mensaje.lower()
+    assert 'invalid' in mensaje.lower()
     assert "SECRETO-REFRESH-URL" not in mensaje
     assert "SECRETO-CLIENTE-URL" not in mensaje
     # La petición que provocó el fallo sí llevaba los secretos: si no los
@@ -349,7 +349,7 @@ def test_refresco_resguardo_final_no_filtra_el_refresh_token(brand, monkeypatch)
             obtener_token(brand, Platform.TIKTOK, client)
 
     mensaje = str(exc.value)
-    assert "inesperado" in mensaje.lower()
-    assert "socialctl auth tiktok" in mensaje
+    assert 'unexpected' in mensaje.lower()
+    assert 'socialcli auth tiktok' in mensaje
     assert "SECRETO-REFRESH-INESPERADO" not in mensaje
     assert "ValueError" not in mensaje

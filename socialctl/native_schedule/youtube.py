@@ -158,7 +158,7 @@ def _readback(job, payload, remote_id, api, expected_parts=None):
     token = api._token()
     if api._authenticated_channel(token) != job.account_id:
         return YouTubeScheduleResult('conflict',remote_id,'Authenticated channel mismatch')
-    data=api._get_json(URL_VIDEOS,token,params={'id':remote_id,'part':'snippet,status,processingDetails'},operation='verificar programación')
+    data=api._get_json(URL_VIDEOS,token,params={'id':remote_id,'part':'snippet,status,processingDetails'},operation='verify scheduling')
     items=data.get('items')
     if not isinstance(items,list) or len(items)!=1:
         return YouTubeScheduleResult('uncertain',remote_id,'No unique remote readback')

@@ -1,7 +1,4 @@
-"""Lectura de métricas de las redes. Solo lectura: nada de esto publica nada.
-
-Importar este paquete registra en `LECTORES` los lectores que ya existan.
-"""
+"""Read-only network metrics package; imports register available readers."""
 
 from __future__ import annotations
 

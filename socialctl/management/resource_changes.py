@@ -34,13 +34,13 @@ def caption_format(path, data):
         return "application/octet-stream", extension, "extension_only/provider_validation_required"
     allowed = {"srt", "vtt", "sbv", "sub", "mpsub", "lrc", "smi", "sami", "rt", "ttml", "dfxp", "scc"}
     if extension not in allowed:
-        raise ResourceError("extensión de subtítulos no documentada/admitida")
+        raise ResourceError("caption extension undocumented/unsupported")
     try:
         text = data.decode("utf-8-sig")
     except UnicodeDecodeError:
-        raise ResourceError("formato de texto requiere UTF-8 suministrado; no se convierte") from None
+        raise ResourceError("text format requires supplied UTF-8; no conversion") from None
     if "\x00" in text or re.search(r"<!\s*(DOCTYPE|ENTITY)", text, re.I):
-        raise ResourceError("subtítulos: texto o declaraciones XML no admitidos")
+        raise ResourceError("captions: unsupported text or XML declarations")
     patterns = {
         "srt": r"(?m)^\d+\r?\n\d{2}:\d{2}:\d{2},\d{3}\s+-->\s+\d{2}:\d{2}:\d{2},\d{3}",
         "vtt": r"\AWEBVTT(?:\s|$)[\s\S]*\d{2}:\d{2}\.\d{3}\s+-->\s+\d{2}:\d{2}",
@@ -64,7 +64,7 @@ def caption_format(path, data):
     else:
         valid = re.search(patterns[extension], text) is not None
     if not valid:
-        raise ResourceError("subtítulos: estructura/tiempos no reconocidos; no se genera sincronización")
+        raise ResourceError("captions: unrecognized structure/timestamps; synchronization is not generated")
     mime = "text/xml" if extension in {"ttml", "dfxp"} else "application/octet-stream"
     return mime, extension, "basic_structure/provider_validation_required"
 
@@ -78,20 +78,20 @@ def inspect_asset(path: Path, *, thumbnail: bool):
         with os.fdopen(fd, "rb") as source:
             before = os.fstat(source.fileno())
             if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= maximum:
-                raise ResourceError(f"archivo no regular, vacío o superior a {maximum} bytes")
+                raise ResourceError(f"file is not regular, empty or exceeds {maximum} bytes")
             data = source.read(maximum + 1)
             after = os.fstat(source.fileno())
             if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns) or len(data) != before.st_size:
-                raise ResourceError("el archivo cambió mientras se leía")
+                raise ResourceError("file changed during read")
     except OSError:
-        raise ResourceError("no se pudo leer el archivo regular sin enlaces simbólicos") from None
+        raise ResourceError("failed to read regular file without symlinks") from None
     if thumbnail:
         if data.startswith(b"\x89PNG\r\n\x1a\n") and data[12:16] == b"IHDR" and data[-8:] == b"IEND\xaeB`\x82":
             mime, format_name = "image/png", "png"
         elif data.startswith(b"\xff\xd8\xff") and data.endswith(b"\xff\xd9"):
             mime, format_name = "image/jpeg", "jpeg"
         else:
-            raise ResourceError("miniatura: se requieren bytes PNG o JPEG; no se convierte el archivo")
+            raise ResourceError("thumbnail: PNG or JPEG bytes required; file is not converted")
         validation = "container_signature/provider_validation_required"
     else:
         mime, format_name, validation = caption_format(path, data)
@@ -112,7 +112,7 @@ def save_download(path, data):
         os.link(temporary, path, follow_symlinks=False)
         ChangeStore._sync_directory(path.parent)
     except OSError:
-        raise ResourceError("no se pudo guardar la descarga privada; no se reemplazan archivos existentes") from None
+        raise ResourceError("failed to save private download; existing files are not replaced") from None
     finally:
         if temporary is not None:
             os.unlink(temporary)
@@ -162,7 +162,7 @@ class ResourceStore(ChangeStore):
     def _ensure_root(self):
         for directory in (self.root.parent, self.root):
             if directory.is_symlink():
-                raise ResourceError("almacenamiento privado no admite enlaces simbólicos")
+                raise ResourceError("private storage does not accept symlinks")
             directory.mkdir(mode=0o700, exist_ok=True)
             self._sync_directory(directory.parent)
 
@@ -170,7 +170,7 @@ class ResourceStore(ChangeStore):
     def apply_lock(self, change_id):
         self._ensure_root()
         if (self.root / f"{self._validate_id(change_id)}.lock").is_symlink():
-            raise ResourceError("lock privado no admite enlaces simbólicos")
+            raise ResourceError("private lock does not accept symlinks")
         with super().apply_lock(change_id):
             yield
 
@@ -189,7 +189,7 @@ def _event(change, name, **details):
 
 def _identity(client, change):
     if client.brand.nombre != change.target_brand or client.configured_channel_id != change.target_account:
-        raise ResourceError("la marca/cuenta no coincide con la propuesta")
+        raise ResourceError("brand/account does not match proposal")
     return client.inspect(change.video_id)
 
 
@@ -202,21 +202,21 @@ def _operation_key(change):
 def prepare_resource(client, store, *, action, video_id, file=None, track_id=None,
                      language=None, name=None, draft=None):
     if action not in {"thumbnail-set", "caption-insert", "caption-update", "caption-delete"}:
-        raise ResourceError("acción de recurso no admitida")
+        raise ResourceError("unsupported resource action")
     resource_id(video_id)
     if draft is not None and type(draft) is not bool:
-        raise ResourceError("draft debe ser booleano explícito")
+        raise ResourceError("draft must be explicit boolean")
     if action == "caption-insert":
         if track_id is not None or file is None or draft is None or not isinstance(language, str) or not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", language) or not isinstance(name, str) or len(name) > 150:
-            raise ResourceError("insert exige archivo, language, name (máximo 150) y draft explícito; sin track ID")
+            raise ResourceError("insert requires file, language, name (maximum 150) and explicit draft; no track ID")
     elif action == "caption-update":
         if track_id is None or language is not None or name is not None or (file is None and draft is None):
-            raise ResourceError("update exige track ID y archivo y/o draft; language/name no son editables")
+            raise ResourceError("update requires track ID and file and/or draft; language/name cannot be edited")
     elif action == "caption-delete":
         if track_id is None or any(v is not None for v in (file, language, name, draft)):
-            raise ResourceError("delete exige solo el track ID explícito")
+            raise ResourceError("delete requires only explicit track ID")
     elif file is None or any(v is not None for v in (track_id, language, name, draft)):
-        raise ResourceError("thumbnail-set exige solo un archivo suministrado")
+        raise ResourceError("thumbnail-set requires only a supplied file")
     if track_id is not None:
         resource_id(track_id)
     asset = inspect_asset(file, thumbnail=action == "thumbnail-set")[0] if file is not None else None
@@ -227,11 +227,11 @@ def prepare_resource(client, store, *, action, video_id, file=None, track_id=Non
     if action == "thumbnail-set":
         before = {"etag": inspected.etag, "thumbnails": inspected.snippet.get("thumbnails", {})}
         backup = {"fidelity": "metadata_only_no_original_bytes",
-                  "limitation": "La API no expone la miniatura original; URLs públicas no garantizan bytes originales ni restauración fiel."}
+                  "limitation": "API does not expose original thumbnail; public URLs do not guarantee original bytes or faithful restoration."}
     elif action == "caption-insert":
         tracks = client.list_captions(video_id)
         if any(t["snippet"]["language"] == language and t["snippet"]["name"] == name for t in tracks):
-            raise ResourceError("conflict: ya existe un subtítulo con ese idioma y nombre; no se elimina ni reemplaza implícitamente")
+            raise ResourceError("conflict: caption with this language and name already exists; no implicit deletion or replacement")
         before = {"etag": inspected.etag, "track_ids": [t["id"] for t in tracks]}
     else:
         before = client.find_caption(video_id, track_id)
@@ -241,12 +241,12 @@ def prepare_resource(client, store, *, action, video_id, file=None, track_id=Non
             original = client.download_caption(video_id, track_id)
         except ResourceError:
             backup = {"fidelity": "unavailable",
-                      "limitation": "No se pudo descargar el original; permisos/formato pueden impedir recuperación. No hay restauración garantizada."}
+                      "limitation": "Failed to download original; permissions/format may prevent recovery. Restoration is not guaranteed."}
         else:
             store.save_backup(cid, original)
             backup = {"fidelity": "api_original_response_bytes", "size": len(original),
                 "sha256": digest(original), "track_id": track_id,
-                "limitation": "Bytes recibidos sin tfmt/tlang. YouTube puede normalizarlos; no prueba igualdad con el archivo subido originalmente."}
+                "limitation": "Bytes received without tfmt/tlang. YouTube may normalize them; equality with originally uploaded file is unproven."}
     moment = now_utc()
     change = ResourceChange(id=cid, action=action, target_brand=client.brand.nombre,
         target_account=inspected.channel_id, video_id=video_id, track_id=track_id,
@@ -262,17 +262,17 @@ def _preflight(client, change):
     video = _identity(client, change)
     if change.action == "thumbnail-set":
         if {"etag": video.etag, "thumbnails": video.snippet.get("thumbnails", {})} != change.before:
-            raise ResourceConflict("conflict: miniatura o vídeo cambiaron desde el preview")
+            raise ResourceConflict("conflict: thumbnail or video changed since preview")
     elif change.action == "caption-insert":
         rows = client.list_captions(change.video_id)
         if any(t["snippet"]["language"] == change.language and t["snippet"]["name"] == change.name for t in rows):
-            raise ResourceConflict("conflict: ya existe un subtítulo con ese idioma/nombre")
+            raise ResourceConflict("conflict: caption with this language/name already exists")
     else:
         if client.find_caption(change.video_id, change.track_id) != change.before:
-            raise ResourceConflict("conflict: el subtítulo cambió desde el preview")
+            raise ResourceConflict("conflict: caption changed since preview")
         if change.backup["fidelity"] == "api_original_response_bytes":
             if digest(client.download_caption(change.video_id, change.track_id)) != change.backup["sha256"]:
-                raise ResourceConflict("conflict: los bytes remotos del subtítulo cambiaron")
+                raise ResourceConflict("conflict: remote caption bytes changed")
 
 
 def _readback(client, store, change):
@@ -309,7 +309,7 @@ def _readback(client, store, change):
             rows = client.list_captions(change.video_id)
             candidates = [t["id"] for t in rows if t["snippet"]["language"] == change.language and t["snippet"]["name"] == change.name]
             _event(change, "identity_unresolved", candidate_ids=candidates,
-                limitation="Los candidatos no prueban qué inserción produjo el recurso; no se reinsertará.")
+                limitation="Candidates do not prove which insertion produced resource; it will not be reinserted.")
     except ResourceError as exc:
         _event(change, "readback_unavailable", error=str(exc))
     store.save(change)
@@ -332,7 +332,7 @@ def apply_resource(client, store, change_id, approval_digest):
         locks.enter_context(store.apply_lock(change_id))
         change = store.load(change_id)
         if not hmac.compare_digest(approval_digest, change.fingerprint):
-            raise ApprovalMismatch("la aprobación no coincide con la huella exacta")
+            raise ApprovalMismatch("approval does not match exact fingerprint")
         # Serialize separate proposals for the same resource, not just retries of
         # one UUID. A new UUID is not an escape hatch from an uncertain insertion.
         key = _operation_key(change)
@@ -347,7 +347,7 @@ def apply_resource(client, store, change_id, approval_digest):
         for path in store.root.glob("*.json"):
             other = store.load(path.stem)
             if other.id != change.id and _operation_key(other) == key and other.status in {"applying", "uncertain"}:
-                raise ResourceError(f"resultado incierto pendiente en {other.id}; no se repetirá la escritura con otra propuesta")
+                raise ResourceError(f"uncertain outcome pending in {other.id}; write will not be repeated with another proposal")
         try:
             _preflight(client, change)
         except ResourceConflict:
@@ -358,12 +358,12 @@ def apply_resource(client, store, change_id, approval_digest):
         if change.backup["fidelity"] == "api_original_response_bytes":
             backup_path = store.backup_path(change.id)
             if backup_path.is_symlink() or not backup_path.is_file() or digest(backup_path.read_bytes()) != change.backup["sha256"]:
-                raise ResourceError("el backup local del subtítulo cambió o falta; requiere nueva propuesta")
+                raise ResourceError("local caption backup changed or is missing; new proposal required")
         data = None
         if change.asset:
             asset, data = inspect_asset(Path(change.asset["path"]), thumbnail=change.action == "thumbnail-set")
             if asset != change.asset:
-                raise ResourceError("el archivo o sus bytes cambiaron desde el preview; requiere nueva huella")
+                raise ResourceError("file or bytes changed since preview; new fingerprint required")
         # The in-memory bytes checked after ownership reads are the bytes sent,
         # even if the source pathname changes afterward. No reopen at upload time.
         change.status = "applying"

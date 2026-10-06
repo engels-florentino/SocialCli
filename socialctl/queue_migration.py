@@ -21,12 +21,12 @@ from socialctl.publisher import render_preview, validar_todo
 from socialctl.rutas import validar_ruta_relativa
 from socialctl.scheduler import ScheduleEntry, ScheduleError, ScheduleStore, _canonical_json, approval_hash, legacy_approval_hash, now_utc
 
-LIMITATION = "La huella legacy no probaba bytes ni identidad histórica de cuenta, link o privacy. Esta operación conserva los valores actuales verificados; no crea una aprobación social nueva."
+LIMITATION = "The legacy fingerprint did not prove bytes or historical account identity, link or privacy. This operation preserves the currently verified values; it does not create a new social approval."
 
 
 def _assert_no_native_transfer(store: ScheduleStore) -> None:
     if (store.root / "legacy-tombstones.json").exists() or (store.root / "native-migrations").exists():
-        raise ScheduleError("transferencia nativa existente; no restaurar legacy, conservar ledger y reconciliar")
+        raise ScheduleError("native transfer exists; do not restore legacy data, preserve the ledger and reconcile")
 
 
 def _digest(value: dict) -> str:
@@ -38,22 +38,22 @@ def _directory(brand: Brand, proposal_id: str) -> Path:
         if str(uuid.UUID(proposal_id)) != proposal_id:
             raise ValueError()
     except ValueError:
-        raise ScheduleError("id de propuesta debe ser UUID") from None
+        raise ScheduleError("proposal ID must be a UUID") from None
     return _safe(brand, f".socialctl/migrations/{proposal_id}")
 
 
 def _safe(brand: Brand, relative: str) -> Path:
-    return validar_ruta_relativa(brand.raiz, relative, ScheduleError, "ruta de migración")
+    return validar_ruta_relativa(brand.raiz, relative, ScheduleError, "migration path")
 
 
 def load_proposal(brand: Brand, proposal_id: str) -> dict:
     data = json.loads((_directory(brand, proposal_id) / "proposal.json").read_bytes())
     if data["brand"] != brand.nombre or data["brand_root"] != str(brand.raiz.resolve()) or data["id"] != proposal_id:
-        raise ScheduleError("la propuesta pertenece a otra marca o raíz")
+        raise ScheduleError("proposal belongs to another brand or root")
     if not hmac.compare_digest(data["digest"], _digest(data)):
-        raise ScheduleError("digest de propuesta no coincide")
+        raise ScheduleError("proposal digest does not match")
     if any(item.get("approval_migration") != proposal_id for item in data["approvals"]):
-        raise ScheduleError("propuesta sin vinculación de procedencia; vuelve a preparar la migración")
+        raise ScheduleError("proposal lacks provenance linkage; prepare the migration again")
     return data
 
 
@@ -66,25 +66,25 @@ def _originals(brand: Brand, store: ScheduleStore, entries: list[ScheduleEntry])
 def _verify(brand: Brand, proposal: dict) -> None:
     for relative, expected in proposal["originals"].items():
         if file_digest(_safe(brand, relative)) != expected:
-            raise ScheduleError(f"entrada original modificada: {relative}")
+            raise ScheduleError(f"original entry changed: {relative}")
     fresh = cargar_brand(brand.raiz.parent, brand.nombre)
     if fresh.cuentas != proposal["accounts"]:
-        raise ScheduleError("identidad de cuenta modificada")
+        raise ScheduleError("account identity changed")
     store = ScheduleStore(brand.raiz)
     if [e.model_dump(mode="json") for e in store.load()] != proposal["entries"]:
-        raise ScheduleError("cola modificada")
+        raise ScheduleError("queue changed")
     for item in proposal["media"]:
         if file_digest(_safe(brand, item["source"])) != item["sha256"]:
-            raise ScheduleError("bytes suministrados modificados")
+            raise ScheduleError("supplied bytes changed")
     for item in proposal["approvals"]:
         post = cargar_post(fresh, item["slug"])
         if legacy_approval_hash(post, Platform(item["platform"])) != item["old_hash"]:
-            raise ScheduleError("evidencia de aprobación legacy modificada")
+            raise ScheduleError("legacy approval evidence changed")
 
 
 def prepare(brand: Brand, *, backend: str = "json", dry_run: bool = False) -> dict:
     if backend not in ("json", "sqlite"):
-        raise ScheduleError("backend inválido")
+        raise ScheduleError("invalid backend")
     store = ScheduleStore(brand.raiz)
     with store.executor_lock(), store._mutation_lock():
         _assert_no_native_transfer(store)
@@ -96,17 +96,17 @@ def prepare(brand: Brand, *, backend: str = "json", dry_run: bool = False) -> di
         approved = []
         for entry in entries:
             if entry.brand != brand.nombre:
-                raise ScheduleError("cola contiene otra marca")
+                raise ScheduleError("queue contains another brand")
             if entry.status in {"published", "cancelled", "error"}:
                 continue
             if entry.status != "approved" or entry.attempts or entry.platform_id or entry.id in active_ids:
-                raise ScheduleError("estado/identidad activa ambigua o entrada ya intentada")
+                raise ScheduleError("ambiguous active state/identity or entry already attempted")
             active_ids.add(entry.id)
             if not entry.content_hash or not re.fullmatch(r"[0-9a-f]{64}", entry.content_hash):
-                raise ScheduleError("se requiere aprobación legacy existente")
+                raise ScheduleError("existing legacy approval required")
             approved.append(entry)
         if not approved:
-            raise ScheduleError("no hay aprobaciones legacy migrables")
+            raise ScheduleError("there are no migratable legacy approvals")
         proposal_id = str(uuid.uuid4())
         media, posts, approvals, previews = {}, {}, [], []
         for slug in dict.fromkeys(e.slug for e in approved):
@@ -117,15 +117,15 @@ def prepare(brand: Brand, *, backend: str = "json", dry_run: bool = False) -> di
             for entry in selected:
                 platform = Platform(entry.platform)
                 if legacy_approval_hash(post, platform) != entry.content_hash:
-                    raise ScheduleError("huella legacy no coincide")
+                    raise ScheduleError("legacy fingerprint does not match")
                 replacements[entry.platform] = {}
                 if not post.platforms[platform].media:
-                    raise ScheduleError("migración exige media suministrada")
+                    raise ScheduleError("migration requires supplied media")
                 for asset in post.platforms[platform].media:
                     sha = file_digest(asset.path)
                     extension = asset.path.suffix.lower()
                     if extension not in MIMES:
-                        raise ScheduleError("MIME de media no soportado")
+                        raise ScheduleError("unsupported media MIME type")
                     relative = f"approved/sha256/{sha}{extension}"
                     source = str(asset.path.relative_to(brand.raiz))
                     media[source] = {"source": source, "relative_path": relative, "sha256": sha, "size": asset.path.stat().st_size, "mime": MIMES[extension],
@@ -164,12 +164,12 @@ def _stage_locked(brand: Brand, proposal_id: str, output: Path) -> dict:
     for item in proposal["media"]:
         raw = _safe(brand, item["source"]).read_bytes()
         if hashlib.sha256(raw).hexdigest() != item["sha256"]:
-            raise ScheduleError("bytes suministrados cambiaron durante staging")
+            raise ScheduleError("supplied bytes changed during staging")
         local = _safe(brand, "media/" + item["relative_path"])
         destination = validar_ruta_relativa(output.resolve(), item["relative_path"], ScheduleError, "staging")
         for path in (local, destination):
             if path.exists() and file_digest(path) != item["sha256"]:
-                raise ScheduleError("destino existente contiene otros bytes")
+                raise ScheduleError("existing destination contains different bytes")
             if not path.exists():
                 durable_write(path, raw)
         files[item["relative_path"]] = {k: v for k, v in item.items() if k != "source"} | {"local_path": str(destination)}
@@ -181,10 +181,10 @@ def _stage_locked(brand: Brand, proposal_id: str, output: Path) -> dict:
 def apply(brand: Brand, proposal_id: str, digest: str, *, acknowledge_legacy_limitations: bool = False, client: httpx.Client | None = None) -> dict:
     proposal = load_proposal(brand, proposal_id)
     if not hmac.compare_digest(proposal["digest"], digest) or not acknowledge_legacy_limitations:
-        raise ScheduleError("exige digest y reconocimiento explícito de limitaciones legacy")
+        raise ScheduleError("requires a digest and explicit acknowledgment of legacy limitations")
     directory = _directory(brand, proposal_id)
     if (directory / "intent.json").exists():
-        raise ScheduleError("migración ya intentada; usa rollback explícito")
+        raise ScheduleError("migration already attempted; use explicit rollback")
     store = ScheduleStore(brand.raiz)
     with store.executor_lock(), store._mutation_lock():
         _assert_no_native_transfer(store)
@@ -210,7 +210,7 @@ def apply(brand: Brand, proposal_id: str, digest: str, *, acknowledge_legacy_lim
             else:
                 durable_write(backup, path.read_bytes())
             if file_digest(backup) != fingerprint:
-                raise ScheduleError("backup no coincide")
+                raise ScheduleError("backup does not match")
             backups[relative] = fingerprint
         intent = {"proposal": proposal_id, "digest": digest, "status": "applying", "backups": backups,
                   "database_existed": store.database_path.exists(), "attestations": attestations,
@@ -226,9 +226,9 @@ def apply(brand: Brand, proposal_id: str, digest: str, *, acknowledge_legacy_lim
             entry = next(e for e in entries if e.id == item["id"] and e.status == "approved")
             entry.content_hash = approval_hash(cargar_post(fresh, entry.slug), fresh, Platform(entry.platform))
             if entry.content_hash != item["new_hash"]:
-                raise ScheduleError("payload, cuenta o bytes cambiaron durante aplicación")
+                raise ScheduleError("payload, account or bytes changed during application")
             if item["approval_migration"] != proposal_id:
-                raise ScheduleError("procedencia de migración no coincide")
+                raise ScheduleError("migration provenance does not match")
             entry.approval_migration = proposal_id
             provenance.append(item | {"new_hash": entry.content_hash})
         if proposal["backend"] == "sqlite" and not store.database_path.exists():
@@ -263,27 +263,27 @@ def rollback(brand: Brand, proposal_id: str) -> None:
             raise ScheduleError(REMOTE_NOTICE)
         guard = store.root / "migration-active.json"
         if guard.exists() and json.loads(guard.read_bytes())["proposal"] != proposal_id:
-            raise ScheduleError("hay otra migración pendiente")
+            raise ScheduleError("another migration is pending")
         if intent["status"] == "rolled_back":
             if guard.exists():
                 if [e.model_dump(mode="json") for e in store.load()] != proposal["entries"]:
-                    raise ScheduleError("cola restaurada cambió antes de retirar guardia")
+                    raise ScheduleError("restored queue changed before guard removal")
                 for relative in proposal["posts"]:
                     if file_digest(_safe(brand, relative)) != intent["backups"][relative]:
-                        raise ScheduleError("post restaurado cambió antes de retirar guardia")
+                        raise ScheduleError("restored post changed before guard removal")
                 guard.unlink()
                 store._sync_directory(store.root)
             return
         if intent["status"] == "committed" and not guard.exists():
             if [e.model_dump(mode="json") for e in store.load()] != intent["queue_after"]:
-                raise ScheduleError("cola avanzó después de migración; rollback no seguro")
+                raise ScheduleError("queue advanced after migration; rollback is unsafe")
             for relative, digest in intent["after"].items():
                 if file_digest(_safe(brand, relative)) != digest:
-                    raise ScheduleError("post cambió después de migración")
+                    raise ScheduleError("post changed after migration")
         # Verify ALL backups before restoring anything, including interrupted retries.
         for relative, digest in intent["backups"].items():
             if file_digest(directory / "backup" / relative) != digest:
-                raise ScheduleError("backup modificado; recuperación bloqueada")
+                raise ScheduleError("backup changed; recovery blocked")
         write_json(guard, {"proposal": proposal_id, "digest": proposal["digest"]})
         intent["status"] = "rolling_back"
         write_json(directory / "intent.json", intent)

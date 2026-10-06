@@ -1,19 +1,19 @@
 # SocialCli
 
-**Publica y gestiona contenido propio en YouTube, Facebook, Instagram y TikTok desde la terminal.** SocialCli es un proyecto público para creadores y equipos que quieren revisar sus publicaciones, separar sus marcas y conservar evidencia de las acciones realizadas.
+**Publish and manage your own content on YouTube, Facebook, Instagram and TikTok from the terminal.** SocialCli is a public project for creators and teams who want to review posts, keep brands separate and retain evidence of their actions.
 
-[Sitio y documentación](https://engels-florentino.github.io/SocialCli/) · [Configuración](SETUP.md) · [Seguridad](SECURITY.md) · [Limitaciones de TikTok](docs/tiktok-review.md)
+[Website and documentation](https://engels-florentino.github.io/SocialCli/) · [Setup](SETUP.md) · [Security](SECURITY.md) · [TikTok limitations](docs/tiktok-review.md)
 
-## Instalar
+## Install
 
-Necesitas Python 3.11 o superior. Para comprobar vídeos necesitas también `ffprobe`, incluido en FFmpeg. SocialCli inspecciona los archivos; no genera, recorta ni reencodea contenido.
+Requires Python 3.11 or later. Video checks also require `ffprobe`, included with FFmpeg. SocialCli inspects files; it does not generate, crop or reencode content.
 
 ```bash
 python -m pip install "git+https://github.com/engels-florentino/SocialCli.git"
 socialcli --help
 ```
 
-Para desarrollar desde el repositorio:
+For development:
 
 ```bash
 git clone https://github.com/engels-florentino/SocialCli.git
@@ -23,65 +23,65 @@ uv run socialcli --help
 uv run pytest
 ```
 
-## Tu primera marca
+## Your first brand
 
-Trabaja en una carpeta de datos que controles. Por defecto se usa la carpeta actual; puedes establecer `SOCIALCLI_ROOT` o pasar `--root` en cada comando. Los archivos de tus cuentas no pertenecen al repositorio del programa.
-
-```bash
-mkdir mis-redes
-cd mis-redes
-socialcli brand new MiMarca
-```
-
-Completa `MiMarca/brand.md` y `MiMarca/accounts.yml`. Después configura las aplicaciones de las plataformas y autoriza **tus propias cuentas**, siguiendo [SETUP.md](SETUP.md):
+Work in a data folder you control. The current folder is the default; set `SOCIALCLI_ROOT` or pass `--root` to choose another folder. Your account files belong outside the application repository.
 
 ```bash
-socialcli auth youtube --brand MiMarca
-socialcli auth tiktok --brand MiMarca
-socialcli auth status --brand MiMarca --platform tiktok --json
+mkdir my-social
+cd my-social
+socialcli brand new MyBrand
 ```
 
-Las claves se introducen mediante el flujo local de configuración y se guardan en `MiMarca/.secrets/`. No hay claves de Histopast ni de ningún otro usuario incluidas. Esta versión usa aplicaciones de desarrollador configuradas por cada operador; no ofrece todavía una aplicación OAuth compartida de SocialCli.
+Complete `MyBrand/brand.md` and `MyBrand/accounts.yml`. Configure provider applications and authorize **your own accounts** as described in [SETUP.md](SETUP.md):
 
-## Revisar y publicar
+```bash
+socialcli auth youtube --brand MyBrand
+socialcli auth tiktok --brand MyBrand
+socialcli auth status --brand MyBrand --platform tiktok --json
+```
 
-Crea `MiMarca/posts/mi-video/post.yml` y coloca tu archivo ya producido en `MiMarca/media/`. [Ejemplo](examples/post.yml):
+Enter credentials through the local setup flow; they are stored in `MyBrand/.secrets/`. No other user's credentials are included. Each operator supplies their own provider application credentials. This release does not offer a shared SocialCli OAuth backend.
+
+## Review and publish
+
+Create `MyBrand/posts/my-video/post.yml` and place your produced file in `MyBrand/media/`. [Example](examples/post.yml):
 
 ```yaml
-slug: mi-video
-campaign: clip-vertical
+slug: my-video
+campaign: vertical-clip
 platforms:
   tiktok:
-    body: "Una historia que vale la pena contar."
+    body: "A story worth telling."
     hashtags: []
-    media: ["mi-video.mp4"]
+    media: ["my-video.mp4"]
 ```
 
 ```bash
-socialcli publish mi-video --brand MiMarca --only tiktok --dry-run
-socialcli publish mi-video --brand MiMarca --only tiktok
+socialcli publish my-video --brand MyBrand --only tiktok --dry-run
+socialcli publish my-video --brand MyBrand --only tiktok
 ```
 
-El primer comando muestra el preview sin publicar. El segundo vuelve a mostrarlo y solicita confirmación. En TikTok, el modo inicial es **inbox**: el vídeo llega al buzón y tú completas la publicación en TikTok. `pending_confirmation` no significa que el vídeo esté publicado.
+The first command displays a preview without publishing. The second displays it again and requests confirmation. TikTok defaults to **inbox**: the video reaches your inbox and you complete publication in TikTok. A pending confirmation status does not mean the video is published.
 
-## Qué incluye
+## Features
 
-- Marcas separadas, credenciales locales y renovación de tokens cuando el proveedor lo permite.
-- Validación de archivos, preview y confirmación antes de publicar.
-- Publicación, inventario, métricas y gestión de contenido, según permisos y capacidades de cada plataforma.
-- Programación con comprobaciones de aprobación y tratamiento de resultados ambiguos para reducir duplicados.
-- Pruebas de adaptadores con respuestas simuladas; no publican en cuentas reales.
+- Separate brands, local credentials and token renewal where supported by the provider.
+- File validation, previews and confirmation before publication.
+- Publishing, inventory, metrics and content management, subject to each platform's permissions and capabilities.
+- Scheduling with approval checks and handling of ambiguous results to reduce duplicates.
+- Adapter tests with simulated responses that do not publish to real accounts.
 
-Cada grupo explica sus opciones con `socialcli <grupo> --help`. El paquete Python conserva el nombre interno `socialctl`; el comando público es `socialcli`. `socialctl` permanece como alias de compatibilidad.
+Each command group documents its options with `socialcli <group> --help`. The internal Python package remains `socialctl`; the public command is `socialcli`. `socialctl` remains a compatibility alias.
 
-## Estado y límites
+## Status and limitations
 
-Publicar el código no otorga acceso de producción a las APIs. Cada plataforma impone requisitos, permisos, cuotas y revisiones. SocialCli **no tiene una aprobación de producción de TikTok acreditada**. El flujo Direct Post requiere auditoría y aún necesita completar los controles de experiencia de usuario descritos en [la revisión técnica](docs/tiktok-review.md); no debe activarse como si la publicación de este repositorio los resolviera.
+Public source code does not grant production API access. Each platform imposes requirements, permissions, quotas and reviews. SocialCli **has no accredited TikTok production approval**. Direct Post requires an audit and still lacks the complete user experience controls described in [the technical review](docs/tiktok-review.md). Publishing this repository does not satisfy those requirements.
 
-Los permisos para métricas y gestión son independientes de los de publicación. Una conexión válida no demuestra que todas las funciones estén autorizadas. Consulta las capacidades y verifica los resultados remotos antes de reintentar una operación incierta.
+Metrics and management permissions are separate from publishing permissions. A valid connection does not demonstrate authorization for every feature. Check capabilities and verify remote results before retrying an uncertain operation.
 
-## Contribuir y soporte
+## Contributing and support
 
-Lee [CONTRIBUTING.md](CONTRIBUTING.md). Para dudas o errores, abre un [issue](https://github.com/engels-florentino/SocialCli/issues) sin tokens, claves, archivos `.env` ni registros privados. Para vulnerabilidades, usa el canal privado indicado en [SECURITY.md](SECURITY.md).
+Read [CONTRIBUTING.md](CONTRIBUTING.md). For questions or bugs, open an [issue](https://github.com/engels-florentino/SocialCli/issues) without tokens, keys, `.env` files or private logs. Report vulnerabilities through the private channel described in [SECURITY.md](SECURITY.md).
 
-Licencia [MIT](LICENSE). SocialCli no está afiliado a las plataformas que integra.
+[MIT license](LICENSE). SocialCli is not affiliated with the platforms it integrates.

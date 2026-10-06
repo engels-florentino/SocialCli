@@ -67,7 +67,7 @@ def test_stage_blocks_remote_marker_before_any_media_or_manifest_write(migration
     brand, _ = migration
     proposal = prepare(brand)
     (brand.raiz / ".socialctl/remote-executor.json").write_text("{}")
-    with pytest.raises(ScheduleError, match="remoto"):
+    with pytest.raises(ScheduleError, match='remote'):
         stage(brand, proposal["id"], tmp_path / "transfer")
     assert not (tmp_path / "transfer").exists()
     assert not (brand.raiz / "media/approved").exists()
@@ -77,7 +77,7 @@ def test_stage_cannot_race_an_authority_handoff_holding_executor_lock(migration,
     brand, _ = migration
     proposal = prepare(brand)
     with ScheduleStore(brand.raiz).executor_lock():
-        with pytest.raises(ScheduleError, match="otro ejecutor"):
+        with pytest.raises(ScheduleError, match="another executor"):
             stage(brand, proposal["id"], tmp_path / "transfer")
     assert not (tmp_path / "transfer").exists()
     assert not (brand.raiz / "media/approved").exists()
@@ -109,7 +109,7 @@ def test_interrupted_apply_blocks_execution_and_explicit_rollback_recovers(migra
     monkeypatch.setattr(ScheduleStore, "_save_unlocked", lambda *a: (_ for _ in ()).throw(OSError("crash")))
     with public_client() as client, pytest.raises(OSError, match="crash"):
         apply(brand, proposal["id"], proposal["digest"], acknowledge_legacy_limitations=True, client=client)
-    with pytest.raises(ScheduleError, match="migración"):
+    with pytest.raises(ScheduleError, match='migration'):
         ScheduleStore(brand.raiz).claim_due(entries[0].id, entries[0].scheduled_at)
     monkeypatch.setattr(ScheduleStore, "_save_unlocked", save)
     rollback(brand, proposal["id"])
@@ -147,7 +147,7 @@ def test_intent_without_guard_still_blocks_executor(migration, tmp_path, monkeyp
     monkeypatch.setattr(module, "write_json", crash)
     with public_client() as client, pytest.raises(OSError, match="power loss"):
         apply(brand, proposal["id"], proposal["digest"], acknowledge_legacy_limitations=True, client=client)
-    with pytest.raises(ScheduleError, match="migración"):
+    with pytest.raises(ScheduleError, match='migration'):
         with ScheduleStore(brand.raiz).executor_lock():
             pass
     monkeypatch.setattr(module, "write_json", original)
@@ -179,7 +179,7 @@ def test_rollback_refuses_advanced_queue(migration, tmp_path):
         apply(brand, proposal["id"], proposal["digest"], acknowledge_legacy_limitations=True, client=client)
     store = ScheduleStore(brand.raiz)
     store.claim_due(entries[0].id, entries[0].scheduled_at)
-    with pytest.raises(ScheduleError, match="avanzó"):
+    with pytest.raises(ScheduleError, match='advanced'):
         rollback(brand, proposal["id"])
 
 
@@ -206,7 +206,7 @@ def test_apply_cannot_bind_changed_staged_bytes_as_new_approval(migration, tmp_p
         if path == brand.dir_posts / "clip/post.yml":
             (brand.raiz / "media" / manifest["files"][0]["relative_path"]).write_bytes(b"changed bytes")
     monkeypatch.setattr(module, "durable_write", tamper)
-    with public_client() as client, pytest.raises(ScheduleError, match="cambiaron"):
+    with public_client() as client, pytest.raises(ScheduleError, match="changed"):
         apply(brand, proposal["id"], proposal["digest"], acknowledge_legacy_limitations=True, client=client)
     assert ScheduleStore(brand.raiz).load() == entries
 
@@ -242,7 +242,7 @@ def test_unbound_draft_proposal_rejected_before_any_application(migration, tmp_p
     proposal["digest"] = _digest(proposal)
     directory = brand.raiz / ".socialctl/migrations" / proposal["id"]
     (directory / "proposal.json").write_text(json.dumps(proposal))
-    with public_client() as client, pytest.raises(ScheduleError, match="vinculación"):
+    with public_client() as client, pytest.raises(ScheduleError, match="linkage"):
         apply(brand, proposal["id"], proposal["digest"], acknowledge_legacy_limitations=True, client=client)
     assert not (directory / "intent.json").exists()
     assert ScheduleStore(brand.raiz).load() == entries
@@ -281,7 +281,7 @@ def test_crash_boundaries_require_and_allow_rollback(migration, tmp_path, monkey
         with pytest.raises(OSError, match="rollback interrupted"):
             rollback(brand, proposal["id"])
         monkeypatch.setattr(module, "durable_write", original_write)
-    with pytest.raises(ScheduleError, match="migración"):
+    with pytest.raises(ScheduleError, match='migration'):
         ScheduleStore(brand.raiz).save(entries)
     rollback(brand, proposal["id"])
     assert ScheduleStore(brand.raiz).load() == entries

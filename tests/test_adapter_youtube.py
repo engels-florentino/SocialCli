@@ -132,7 +132,7 @@ def test_validate_rechaza_un_valor_de_privacidad_no_admitido_por_la_api(brand, p
     errores = YouTubeAdapter().validate(post_invalido, brand)
     errores_privacy = [e for e in errores if e.campo == "privacy"]
     assert len(errores_privacy) == 1
-    assert "no es un valor de privacidad válido" in errores_privacy[0].motivo
+    assert 'is not a valid privacy value' in errores_privacy[0].motivo
 
 
 
@@ -195,7 +195,7 @@ def test_fallo_de_conexion_al_iniciar_la_subida_no_lanza_excepcion(brand, post):
         resultado = YouTubeAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "conectar" in resultado.error.lower()
+    assert "connect" in resultado.error.lower()
 
 
 @respx.mock
@@ -208,7 +208,7 @@ def test_timeout_al_iniciar_la_subida_no_lanza_excepcion(brand, post):
         resultado = YouTubeAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "tiempo de espera" in resultado.error.lower()
+    assert "timed out" in resultado.error.lower()
 
 
 @respx.mock
@@ -224,7 +224,7 @@ def test_fallo_de_conexion_al_subir_los_bytes_no_lanza_excepcion(brand, post):
         resultado = YouTubeAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "conectar" in resultado.error.lower()
+    assert "connect" in resultado.error.lower()
 
 
 @respx.mock
@@ -240,7 +240,7 @@ def test_timeout_al_subir_los_bytes_no_lanza_excepcion(brand, post):
         resultado = YouTubeAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "tiempo de espera" in resultado.error.lower()
+    assert "timed out" in resultado.error.lower()
 
 
 @respx.mock
@@ -261,7 +261,7 @@ def test_respuesta_200_sin_id_no_lanza_excepcion(brand, post):
     # resguardo genérico de `publish()`, así que este test seguía en verde
     # aunque se eliminara el `except KeyError` real. Esta frase completa solo
     # la emite ese `except` específico.
-    assert "respondió sin el id del vídeo" in resultado.error.lower()
+    assert "returned no video id" in resultado.error.lower()
 
 
 @respx.mock
@@ -282,7 +282,7 @@ def test_respuesta_200_con_cuerpo_no_json_no_lanza_excepcion(brand, post):
     # de excepción del resguardo genérico ("JSONDecodeError"), así que este
     # test seguía en verde aunque se eliminara el `except` real. Esta frase
     # completa solo la emite ese `except` específico.
-    assert "cuerpo que no es json válido" in resultado.error.lower()
+    assert 'invalid json response' in resultado.error.lower()
 
 
 @respx.mock
@@ -305,7 +305,7 @@ def test_location_con_puerto_no_numerico_no_lanza_excepcion(brand, post):
 
     assert resultado.status is PostStatus.ERROR
     assert "url" in resultado.error.lower()
-    assert "no válida" in resultado.error.lower()
+    assert "invalid" in resultado.error.lower()
 
 
 @respx.mock
@@ -323,7 +323,7 @@ def test_location_desmesuradamente_larga_no_lanza_excepcion(brand, post):
         resultado = YouTubeAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "no válida" in resultado.error.lower()
+    assert "invalid" in resultado.error.lower()
 
 
 @respx.mock
@@ -353,7 +353,7 @@ def test_archivo_sin_permisos_de_lectura_no_lanza_excepcion(brand, post):
     # "permisos") aparecía igual aunque se eliminara el `except` real y el
     # fallo cayera en el resguardo genérico. La frase completa solo la emite
     # el `except` específico.
-    assert "no hay permisos de lectura" in resultado.error.lower()
+    assert 'not readable' in resultado.error.lower()
 
 
 @respx.mock
@@ -426,7 +426,7 @@ def test_archivo_borrado_antes_de_subir_no_lanza_excepcion(brand, post):
         resultado = YouTubeAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "no existe" in resultado.error.lower()
+    assert "no longer exists" in resultado.error.lower()
 
 
 def test_media_vacia_no_lanza_excepcion(brand, post):
@@ -436,7 +436,7 @@ def test_media_vacia_no_lanza_excepcion(brand, post):
         resultado = YouTubeAdapter().publish(post_sin_media, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "vídeo" in resultado.error.lower()
+    assert "video" in resultado.error.lower()
 
 
 def test_varios_archivos_fallan_antes_de_auth_o_http(brand, post):
@@ -452,7 +452,7 @@ def test_varios_archivos_fallan_antes_de_auth_o_http(brand, post):
         resultado = YouTubeAdapter().publish(post_con_dos, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "1 archivo" in resultado.error
+    assert '1 file' in resultado.error
     assert requests == []
 
 
@@ -631,7 +631,7 @@ def test_mensaje_de_error_con_message_no_textual_da_mensaje_util(brand, post):
 
     assert resultado.status is PostStatus.ERROR
     assert "HTTP 400" in resultado.error
-    assert "ha ocurrido un error inesperado en YouTube" not in resultado.error
+    assert 'an unexpected YouTube error occurred' not in resultado.error
     assert "ValidationError" not in resultado.error
 
 
@@ -707,7 +707,7 @@ def test_id_recibido_seguido_de_timeout_conserva_subida_y_no_es_reintentable(bra
     assert result.observed_privacy is None
     assert result.riesgo_duplicado is False
     assert result.error is None
-    assert any("visibilidad" in warning.lower() for warning in result.warnings)
+    assert any("visibility" in warning.lower() for warning in result.warnings)
 
 
 @pytest.mark.parametrize(
@@ -799,7 +799,7 @@ def test_readback_con_bytes_invalidos_no_revierte_subida_confirmada(brand, post)
     assert result.url.endswith("R4cUGeaKrfU")
     assert result.error is None
     assert result.riesgo_duplicado is False
-    assert any("visibilidad" in warning.lower() for warning in result.warnings)
+    assert any("visibility" in warning.lower() for warning in result.warnings)
 
 
 @pytest.mark.parametrize(
@@ -840,7 +840,7 @@ def test_readback_con_raiz_json_inesperada_conserva_subida(brand, post, readback
     assert result.error is None
     assert result.riesgo_duplicado is False
     assert result.observed_privacy is None
-    assert any("visibilidad" in warning.lower() for warning in result.warnings)
+    assert any("visibility" in warning.lower() for warning in result.warnings)
 
 
 def test_readback_solo_processing_conserva_snapshot_de_visibilidad_del_upload(

@@ -43,7 +43,7 @@ def test_signature_raw_bytes_dedupe_out_of_order_and_brand_isolation(tmp_path):
     assert store.ingest(older, signature(older), "APP_SECRET")["out_of_order"] == 1
     assert len(store.events()) == 2
     alien = body(account="999")
-    with pytest.raises(ValueError, match="cuenta"):
+    with pytest.raises(ValueError, match='account'):
         store.ingest(alien, signature(alien), "APP_SECRET")
     _, other, _, _, _ = service(tmp_path, name="Other")
     assert not mod.WebhookStore(other, "facebook").events()

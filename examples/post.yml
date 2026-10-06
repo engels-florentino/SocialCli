@@ -1,8 +1,8 @@
-# Copy to <Marca>/posts/mi-video/post.yml; supply your own produced media.
-slug: mi-video
-campaign: clip-vertical
+# Copy to <Brand>/posts/my-video/post.yml; supply your own produced media.
+slug: my-video
+campaign: vertical-clip
 platforms:
   tiktok:
-    body: "Una historia que vale la pena contar."
+    body: "A story worth telling."
     hashtags: []
-    media: ["mi-video.mp4"]
+    media: ["my-video.mp4"]

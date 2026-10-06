@@ -94,7 +94,7 @@ def test_server_failed_validation_has_structured_preview_without_writes(tmp_path
     assert payload["protocol"] == "socialctl.schedule-preview.v1"
     assert payload["valid"] is False
     assert "Cuerpo aprobado" in payload["preview"]
-    assert "falta page_id" in payload["preview"]
+    assert "missing page_id" in payload["preview"]
     assert not ScheduleStore(brand.raiz).load()
 
 
@@ -115,9 +115,9 @@ def test_structured_validation_preview_contains_post_loader_warnings(tmp_path):
     result = invocation(tmp_path, "--dry-run", "--preview-json")
     assert result.exit_code == 1, result.output
     payload = json.loads(result.output)
-    assert "AVISO:" in payload["preview"]
+    assert 'WARNING:' in payload["preview"]
     assert "Cuerpo aprobado" in payload["preview"]
-    assert "falta page_id" in payload["preview"]
+    assert "missing page_id" in payload["preview"]
 
 
 def test_new_meta_video_missing_origin_fails_server_preview(tmp_path, monkeypatch):
@@ -128,7 +128,7 @@ def test_new_meta_video_missing_origin_fails_server_preview(tmp_path, monkeypatc
     assert result.exit_code == 1, result.output
     payload = json.loads(result.output)
     assert payload['valid'] is False
-    assert 'declara standalone o youtube_long' in payload['preview']
+    assert 'declare standalone or youtube_long' in payload['preview']
     assert ScheduleStore(brand.raiz).load() == []
 
 

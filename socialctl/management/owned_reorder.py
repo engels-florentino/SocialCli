@@ -22,7 +22,7 @@ def apply_order(client, store, change, edit, approval_digest):
             identity(client, change)
             current = ordered(complete(client.list_items(edit.playlist_id)))
             if current != expected:
-                raise ResourceConflict("conflict: lista cambió antes del siguiente movimiento")
+                raise ResourceConflict("conflict: list changed before next move")
             row = next(r for r in current if r["id"] == plan["item_id"])
             step = {"item_id": row["id"], "status": "applying", "etag": row["etag"], "result_id": None}
             change.steps.append(step)
@@ -35,7 +35,7 @@ def apply_order(client, store, change, edit, approval_digest):
             _event(change, "write_response", item_id=row["id"], result_id=step["result_id"])
             store.save(change)
             if step["result_id"] != row["id"]:
-                raise ResourceUncertain("reorder devolvió un playlistItemId inesperado")
+                raise ResourceUncertain("reorder returned an unexpected playlistItemId")
             predicted = copy.deepcopy(current)
             moved = next(r for r in predicted if r["id"] == row["id"])
             predicted.remove(moved)
@@ -44,7 +44,7 @@ def apply_order(client, store, change, edit, approval_digest):
                 other["snippet"]["position"] = index
             observed = ordered(complete(client.list_items(edit.playlist_id)))
             if semantic(observed) != semantic(predicted):
-                raise ResourceUncertain("readback de orden no coincide o cambió otro campo")
+                raise ResourceUncertain("order readback mismatch or another field changed")
             step["status"] = "verified"
             step["readback"] = next(r for r in observed if r["id"] == row["id"])
             step["collection_digest"] = digest(json.dumps(observed, sort_keys=True, separators=(",", ":")).encode())

@@ -1,12 +1,4 @@
-"""Lectura de métricas de una cuenta Business de Instagram (Graph API).
-
-Comparte con Facebook el token de Página y la forma de los errores; reutiliza
-sus ayudantes (`valor_insight`, `comprobar_respuesta`, `fecha_meta`) en vez
-de duplicarlos, porque cuando Meta cambia el formato, cambia para las dos. Y
-comparte, sobre todo, el motivo por el que aquí no hay ningún
-`raise_for_status()`: el token va en la URL y ese mensaje la arrastra entera
-hasta un snapshot versionado.
-"""
+"""Read Instagram Business metrics via Graph API, sharing Facebook token handling, insights parsing and sanitized errors."""
 
 from __future__ import annotations
 

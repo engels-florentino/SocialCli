@@ -1,14 +1,14 @@
-# Programación y evidencia
+# Scheduling and evidence
 
-Consulta `socialcli native-schedule --help` para el flujo completo. Preparar un
-manifest con `--dry-run` muestra la propuesta; persistir o aprobar requiere su
-digest. Los cambios de contenido, cuenta o archivos invalidan la aprobación.
+See `socialcli native-schedule --help` for the complete workflow. Preparing a
+manifest with `--dry-run` shows the proposal; persistence or approval requires
+its digest. Content, account or file changes invalidate approval.
 
-Los estados distinguen preparación, entrega nativa, handoff y reconciliación.
-Una cola local no demuestra que un post aparezca en el calendario del proveedor.
-Verifica el identificador y el resultado remoto antes de reintentar una entrega
-incierta. No uses un marcador manual como prueba de publicación sin evidencia.
+States distinguish preparation, native delivery, handoff and reconciliation.
+A local queue does not prove that a post appears in the provider's calendar.
+Verify its identifier and remote result before retrying an uncertain delivery.
+Do not use a manual marker as proof of publication without evidence.
 
-La compatibilidad con `schedule`, `schedule-status` y `run-due` conserva colas
-anteriores. La configuración de un ejecutor remoto es propia de cada operador;
-no se distribuye un servidor o calendario de otro creador.
+Compatibility commands `schedule`, `schedule-status` and `run-due` preserve
+older queues. Remote runner configuration belongs to each operator; another
+creator's server or calendar is not distributed.

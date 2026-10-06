@@ -1,8 +1,4 @@
-"""Lectura y validación de media.
-
-Este módulo SOLO LEE. Nunca modifica, recorta ni reencodea un archivo:
-el usuario entrega la media ya lista para publicar.
-"""
+"""Read and validate supplied media without altering it."""
 
 from __future__ import annotations
 
@@ -24,11 +20,11 @@ EXTENSIONES_IMAGEN = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 
 
 class MediaNoEncontrada(Exception):
-    """El archivo indicado no existe."""
+    """The specified media file does not exist."""
 
 
 class MediaInvalida(Exception):
-    """El archivo existe pero no se puede leer como media."""
+    """The file exists but cannot be read as media."""
 
 
 def _ffprobe(path: Path) -> dict:
@@ -66,20 +62,15 @@ def _ffprobe(path: Path) -> dict:
             if linea.startswith(prefijo):
                 linea = linea[len(prefijo):]
             lineas.append(linea)
-        causa = "; ".join(lineas) if lineas else "ffprobe no ha dado más detalles"
+        causa = "; ".join(lineas) if lineas else "ffprobe provided no further details"
         raise MediaInvalida(
-            f"no se puede leer '{path.name}' como media: {causa}"
+            f"cannot read '{path.name}' as media: {causa}"
         ) from exc
     return json.loads(salida.stdout)
 
 
 def _rotacion_grados(stream: dict) -> int:
-    """Extrae la rotación en grados de un stream de vídeo, si la lleva.
-
-    La rotación puede venir como tag `rotate` (contenedores antiguos) o como
-    `Display Matrix` dentro de `side_data_list` (contenedores modernos, p. ej.
-    los que produce un móvil). Se comprueban ambas fuentes.
-    """
+    """Extract video stream rotation in degrees when present."""
     tags = stream.get("tags") or {}
     rotate = tags.get("rotate")
     if rotate is not None:
@@ -100,19 +91,9 @@ def _rotacion_grados(stream: dict) -> int:
 
 
 def leer_media(path: Path, *, ruta_relativa: str = "") -> MediaAsset:
-    """Lee los metadatos de un archivo de media.
-
-    ``ruta_relativa`` es opcional y puramente informativa para quien
-    llama: se copia tal cual a ``MediaAsset.ruta_relativa`` (ver su
-    docstring en ``socialctl/models.py``) para que se pueda mostrar o
-    reconstruir la subcarpeta original (p. ej. ``short/S2.mp4``) sin tener
-    que derivarla de nuevo de ``path``. Quien llama sin indicarla (el caso
-    simple, o un test que solo necesita los metadatos) obtiene la cadena
-    vacía por defecto, que ``ruta_relativa_efectiva`` trata como "usa el
-    nombre de archivo".
-    """
+    """Read supplied media metadata."""
     if not path.exists():
-        raise MediaNoEncontrada(f"no existe el archivo: {path}")
+        raise MediaNoEncontrada(f"file does not exist: {path}")
 
     datos = _ffprobe(path)
     streams = datos.get("streams") or [{}]
@@ -140,28 +121,18 @@ def leer_media(path: Path, *, ruta_relativa: str = "") -> MediaAsset:
 
 
 def ruta_relativa_efectiva(asset: MediaAsset) -> str:
-    """Ruta relativa "de verdad" de ``asset``, con su subcarpeta si la tiene.
-
-    Punto único que resuelve el valor por defecto de
-    ``MediaAsset.ruta_relativa`` (cadena vacía, ver su docstring): lo
-    usan `socialctl.postfile.guardar_post` (para no perder la subcarpeta
-    al reescribir `media` en post.yml), `socialctl.publisher.render_preview`
-    (para mostrarla) y `socialctl.adapters.instagram` (para construir la
-    URL pública con subcarpeta incluida), precisamente para que ese
-    "vacío significa nombre de archivo" no se repita -y quede divergiendo
-    en silencio- en los tres sitios.
-    """
+    """Return the asset's effective relative path, preserving subdirectories."""
     return asset.ruta_relativa or asset.path.name
 
 
 def _ratio(width: int, height: int) -> str:
-    """Devuelve el aspect ratio en forma 'W:H' simplificada."""
+    """Return the simplified width:height aspect ratio."""
     divisor = math.gcd(width, height)
     return f"{width // divisor}:{height // divisor}"
 
 
 def _ratio_compatible(ratio: str, permitidos: list[str], tolerancia: float = 0.02) -> bool:
-    """Un ratio vale si está cerca de alguno de los permitidos."""
+    """Return whether the ratio is close to an allowed ratio."""
     valor = float(Fraction(ratio.replace(":", "/")))
     for permitido in permitidos:
         objetivo = float(Fraction(permitido.replace(":", "/")))
@@ -171,7 +142,7 @@ def _ratio_compatible(ratio: str, permitidos: list[str], tolerancia: float = 0.0
 
 
 def validar_media(post: PlatformPost) -> list[ValidationError]:
-    """Comprueba la media de un post contra los límites de su red."""
+    """Validate supplied media against the platform's limits."""
     spec = PLATFORM_SPECS[post.platform]
     errores: list[ValidationError] = []
 
@@ -182,8 +153,7 @@ def validar_media(post: PlatformPost) -> list[ValidationError]:
                     platform=post.platform,
                     campo="media",
                     motivo=(
-                        f"{post.platform.value} exige imagen o video "
-                        "y no se ha indicado ninguno"
+                        f'{post.platform.value} requires an image or video, but none was provided'
                     ),
                 )
             )
@@ -195,8 +165,7 @@ def validar_media(post: PlatformPost) -> list[ValidationError]:
                 platform=post.platform,
                 campo="media",
                 motivo=(
-                    f"esta ruta admite como máximo {spec.max_media} archivo; "
-                    "no publica carruseles"
+                    f'this route supports at most {spec.max_media} file; it does not publish carousels'
                 ),
             )
         )
@@ -209,8 +178,8 @@ def validar_media(post: PlatformPost) -> list[ValidationError]:
                         platform=post.platform,
                         campo="media",
                         motivo=(
-                            f"{asset.path.name} dura {asset.duration_s:.1f}s y "
-                            f"{post.platform.value} exige al menos {spec.min_video_s}s"
+                            f"{asset.path.name} lasts {asset.duration_s:.1f}s and "
+                            f"{post.platform.value} requires at least {spec.min_video_s}s"
                         ),
                     )
                 )
@@ -220,8 +189,8 @@ def validar_media(post: PlatformPost) -> list[ValidationError]:
                         platform=post.platform,
                         campo="media",
                         motivo=(
-                            f"{asset.path.name} dura {asset.duration_s:.1f}s y "
-                            f"{post.platform.value} admite como máximo {spec.max_video_s}s"
+                            f"{asset.path.name} lasts {asset.duration_s:.1f}s and "
+                            f"{post.platform.value} allows at most {spec.max_video_s}s"
                         ),
                     )
                 )
@@ -232,8 +201,8 @@ def validar_media(post: PlatformPost) -> list[ValidationError]:
                     platform=post.platform,
                     campo="media",
                     motivo=(
-                        f"{asset.path.name} pesa {asset.size_bytes / 1024**2:.0f} MB y "
-                        f"{post.platform.value} admite {spec.max_bytes / 1024**2:.0f} MB"
+                        f"{asset.path.name} is {asset.size_bytes / 1024**2:.0f} MB and "
+                        f"{post.platform.value} allows {spec.max_bytes / 1024**2:.0f} MB"
                     ),
                 )
             )
@@ -246,8 +215,8 @@ def validar_media(post: PlatformPost) -> list[ValidationError]:
                         platform=post.platform,
                         campo="media",
                         motivo=(
-                            f"{asset.path.name} es {ratio} ({asset.width}x{asset.height}) "
-                            f"y {post.platform.value} admite {', '.join(spec.aspect_ratios)}"
+                            f"{asset.path.name} is {ratio} ({asset.width}x{asset.height}) "
+                            f"y {post.platform.value} allows {', '.join(spec.aspect_ratios)}"
                         ),
                     )
                 )

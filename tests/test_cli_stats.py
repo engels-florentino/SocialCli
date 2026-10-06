@@ -155,7 +155,7 @@ def test_only_con_una_red_desconocida_lo_dice_en_espanol(raiz, monkeypatch):
     )
 
     assert resultado.exit_code == 1
-    assert "Redes válidas" in resultado.output
+    assert 'Valid platforms' in resultado.output
     assert "youtube" in resultado.output
 
 
@@ -362,9 +362,9 @@ def test_avisa_si_una_red_lleva_tres_dias_seguidos_fallando(raiz, monkeypatch):
     )
 
     assert resultado.exit_code == 0, resultado.output
-    assert "AVISO: tiktok lleva 3 días seguidos" in resultado.output
-    assert "socialctl auth tiktok" in resultado.output
-    assert "AVISO: facebook" not in resultado.output, (
+    assert 'WARNING: tiktok has gone 3 days without a successful read' in resultado.output
+    assert 'socialcli auth tiktok' in resultado.output
+    assert 'WARNING: facebook' not in resultado.output, (
         "facebook solo falló hoy: avisar de eso vaciaría de significado el aviso"
     )
 
@@ -394,7 +394,7 @@ def test_un_piezas_yml_ilegible_lo_dice_en_espanol_y_no_lo_pisa(raiz, monkeypatc
 
     assert resultado.exit_code == 1
     assert "piezas.yml" in resultado.output
-    assert "Sí se guardó" in resultado.output and "No se guardó" in resultado.output
+    assert 'Saved' in resultado.output and 'Not saved' in resultado.output
     assert "resumen.md" in resultado.output
     assert "Traceback" not in resultado.output
     # Lo editorial sigue intacto: es lo único que no se puede regenerar.
@@ -418,7 +418,7 @@ def test_un_snapshot_corrupto_no_bloquea_la_marca_para_siempre(raiz, monkeypatch
     carpeta.mkdir(parents=True, exist_ok=True)
     (carpeta / "2020-01-01.json").write_text('{"fecha": "2020-01', encoding="utf-8")
 
-    with pytest.warns(UserWarning, match=r"snapshot .* no se puede leer") as warnings:
+    with pytest.warns(UserWarning, match='snapshot .* cannot be read') as warnings:
         resultado = runner.invoke(
             app, ["stats", "--brand", "Histopast", "--root", str(raiz)]
         )
@@ -454,7 +454,7 @@ def test_stats_limpia_snapshots_de_mas_de_un_ano_y_lo_dice(raiz, monkeypatch):
     )
 
     assert resultado.exit_code == 0, resultado.output
-    assert "Limpieza: borrados 1 snapshot" in resultado.output
+    assert 'Cleanup: deleted 1 snapshot' in resultado.output
     assert fecha_vieja.isoformat() in resultado.output
     assert not ruta_snapshot(marca, fecha_vieja).is_file()
     # Dentro del año, se conserva; y lo escrito hoy, también.
@@ -491,7 +491,7 @@ def test_stats_avisa_si_un_borrado_falla_y_no_aborta(raiz, monkeypatch):
     )
 
     assert resultado.exit_code == 0, resultado.output
-    assert "AVISO: no se pudo borrar" in resultado.output
+    assert 'WARNING: could not delete' in resultado.output
     assert fecha_vieja.isoformat() in resultado.output
     # El snapshot de HOY, que ya ha costado cuota de API, se guarda igual.
     assert (marca.raiz / "metricas" / f"{date.today().isoformat()}.json").is_file()

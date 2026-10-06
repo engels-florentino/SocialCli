@@ -50,7 +50,7 @@ def test_sin_permiso_dice_que_scope_falta_y_como_arreglarlo():
     e = SinPermiso(Platform.TIKTOK, "video.list")
     mensaje = str(e)
     assert "video.list" in mensaje
-    assert "socialctl auth tiktok" in mensaje
+    assert 'socialcli auth tiktok' in mensaje
 
 
 def test_leer_red_convierte_falta_de_credenciales_en_estado(brand, monkeypatch):
@@ -64,7 +64,7 @@ def test_leer_red_convierte_falta_de_credenciales_en_estado(brand, monkeypatch):
         lectura = leer_red(Platform.YOUTUBE, brand, client, None)
 
     assert lectura.estado is EstadoLectura.SIN_CREDENCIALES
-    assert "no hay credenciales" in lectura.error
+    assert 'no hay credenciales' in lectura.error
     assert lectura.piezas == []
 
 
@@ -142,7 +142,7 @@ def test_leer_red_no_arrastra_el_token_de_una_httpstatuserror_real(brand, monkey
 
     assert lectura.estado is EstadoLectura.ERROR
     assert token_secreto not in lectura.error
-    assert "[TOKEN REDACTADO]" in lectura.error
+    assert '[TOKEN REDACTADO]' in lectura.error
 
 
 def test_leer_red_sanea_pero_conserva_codigo_de_estado_y_motivo(brand, monkeypatch):

@@ -114,7 +114,7 @@ def test_prepare_rejects_exact_duplicate_even_after_confirmation(brand):
         post_url="https://www.facebook.com/groups/historia.caribe/posts/123",
     )
 
-    with pytest.raises(GroupError, match="duplicada"):
+    with pytest.raises(GroupError, match="duplicate"):
         proposal(brand)
 
 
@@ -123,9 +123,9 @@ def test_prepare_rejects_exact_duplicate_even_after_confirmation(brand):
     [
         ("http://www.facebook.com/groups/example", "HTTPS"),
         ("https://graph.facebook.com/v26.0/groups/example", "facebook.com"),
-        ("https://www.facebook.com/groups/example?access_token=secret", "secreto|query"),
+        ("https://www.facebook.com/groups/example?access_token=secret", "secret|query"),
         ("https://127.0.0.1/groups/example", "facebook.com"),
-        ("https://www.facebook.com/example", "forma"),
+        ("https://www.facebook.com/example", "form"),
     ],
 )
 def test_group_url_rejects_private_or_ambiguous_targets(value, message):
@@ -156,7 +156,7 @@ def test_url_normalization_and_post_must_belong_to_approved_group():
     assert validate_post_url(
         "https://m.facebook.com/groups/example/permalink/pfbid123/", "example"
     ) == "https://www.facebook.com/groups/example/permalink/pfbid123"
-    with pytest.raises(GroupError, match="mismo Grupo"):
+    with pytest.raises(GroupError, match="same approved Group"):
         validate_post_url("https://www.facebook.com/groups/other/posts/1", "example")
 
 
@@ -169,21 +169,21 @@ def test_url_normalization_and_post_must_belong_to_approved_group():
     ],
 )
 def test_prepare_rejects_secrets_in_exportable_text(brand, field):
-    with pytest.raises(GroupError, match="secreto|credencial"):
+    with pytest.raises(GroupError, match="secret|credential"):
         proposal(brand, **field)
 
 
 def test_window_requires_timezone_and_forward_order(brand):
-    with pytest.raises(GroupError, match="zona horaria"):
+    with pytest.raises(GroupError, match="timezone"):
         proposal(brand, window_start=START.replace(tzinfo=None))
-    with pytest.raises(GroupError, match="posterior"):
+    with pytest.raises(GroupError, match="after"):
         proposal(brand, window_end=START)
 
 
 def test_approval_is_exact_and_handoff_is_idempotent(brand):
     store = GroupStore(brand.raiz)
     change = proposal(brand)
-    with pytest.raises(ChangeError, match="huella exacta"):
+    with pytest.raises(ChangeError, match="exact.*fingerprint"):
         approve_handoff(brand, store, change.id, "0" * 64)
     assert store.load(change.id).status == "prepared"
 
@@ -213,7 +213,7 @@ def test_opening_handoff_never_claims_publication_and_is_idempotent(brand):
 def test_confirm_requires_handoff_phrase_and_evidence(brand):
     store = GroupStore(brand.raiz)
     change = proposal(brand)
-    with pytest.raises(GroupError, match="exactamente"):
+    with pytest.raises(GroupError, match="exactly"):
         confirm_group(
             brand, store, change.id, confirmation_phrase="sí",
             post_url="https://www.facebook.com/groups/historia.caribe/posts/123",
@@ -246,7 +246,7 @@ def test_confirm_is_manual_and_cannot_be_overwritten(brand):
         brand, store, change.id,
         confirmation_phrase=CONFIRMATION_PHRASE, post_url=url,
     ).journal == journal
-    with pytest.raises(GroupError, match="no se sobrescribe"):
+    with pytest.raises(GroupError, match="will not be overwritten"):
         confirm_group(
             brand, store, change.id,
             confirmation_phrase=CONFIRMATION_PHRASE,
@@ -286,7 +286,7 @@ def test_evidence_rejects_fake_bytes_even_with_allowed_suffix(brand, suffix):
     evidence = brand.raiz / f"fake{suffix}"
     evidence.write_bytes(b"these are not image or PDF bytes")
 
-    with pytest.raises(GroupError, match="PDF|formato|stream|imagen"):
+    with pytest.raises(GroupError, match="PDF|format|stream|image"):
         confirm_group(
             brand,
             store,
@@ -358,7 +358,7 @@ def test_evidence_rejects_pdf_page_with_missing_or_incorrect_parent(brand, page)
         ],
     )
 
-    with pytest.raises(GroupError, match="Parent inexistente o incorrecto"):
+    with pytest.raises(GroupError, match="nonexistent or incorrect Parent"):
         confirm_group(
             brand,
             store,
@@ -392,7 +392,7 @@ def test_evidence_rejects_pdf_duplicate_or_shared_kids(brand, objects):
     evidence = brand.raiz / "shared-kid.pdf"
     write_minimal_pdf(evidence, objects=objects)
 
-    with pytest.raises(GroupError, match="Kid duplicado o compartido"):
+    with pytest.raises(GroupError, match="duplicate or shared Kid"):
         confirm_group(
             brand,
             store,
@@ -416,7 +416,7 @@ def test_evidence_rejects_pdf_incoherent_page_count(brand):
         ],
     )
 
-    with pytest.raises(GroupError, match="recuento de páginas incoherente"):
+    with pytest.raises(GroupError, match="inconsistent page count"):
         confirm_group(
             brand,
             store,
@@ -447,7 +447,7 @@ def test_evidence_pdf_dictionary_ignores_strings_and_comments(brand, catalog):
         ],
     )
 
-    with pytest.raises(GroupError, match="Root no es un catálogo"):
+    with pytest.raises(GroupError, match='Root is not a catalog'):
         confirm_group(
             brand,
             store,
@@ -471,7 +471,7 @@ def test_evidence_rejects_avi_mjpeg_renamed_as_jpeg(brand):
         capture_output=True,
     )
 
-    with pytest.raises(GroupError, match="formato real|JPEG"):
+    with pytest.raises(GroupError, match="actual format|JPEG"):
         confirm_group(
             brand,
             store,
@@ -508,7 +508,7 @@ def test_evidence_rejects_pdf_without_resolvable_nonempty_page_tree(brand, objec
     evidence = brand.raiz / "fake-structure.pdf"
     write_minimal_pdf(evidence, objects=objects, root=root)
 
-    with pytest.raises(GroupError, match="Root inexistente|páginas reales"):
+    with pytest.raises(GroupError, match="nonexistent Root|actual pages"):
         confirm_group(
             brand,
             store,
@@ -572,7 +572,7 @@ def test_media_rejects_mp3_and_audio_only_mp4(brand):
             check=True,
             capture_output=True,
         )
-        with pytest.raises(GroupError, match="formato|audio solo|pista de vídeo"):
+        with pytest.raises(GroupError, match="format|audio only|video track"):
             proposal(brand, media=name, copy=f"Propuesta para {name}")
 
 
@@ -582,7 +582,7 @@ def test_media_rejects_image_extension_that_disagrees_with_real_codec(brand):
     write_image(jpeg)
     shutil.copyfile(jpeg, disguised)
 
-    with pytest.raises(GroupError, match="no coincide"):
+    with pytest.raises(GroupError, match="does not match"):
         proposal(brand, media=disguised.name)
 
 
@@ -600,7 +600,7 @@ def test_export_queue_is_sanitized_and_readable(brand):
     assert item["id"] == change.id
     assert item["copy"] == change.copy_text
     assert "brand_root" not in item and "dedupe_key" not in item
-    assert "no publica" in item["reminder"]
+    assert "does not publish" in item["reminder"]
 
 
 def _prepare_cli(brand, root, *, media=None):
@@ -625,7 +625,7 @@ def _prepare_cli(brand, root, *, media=None):
 
 def test_cli_full_preview_export_handoff_and_confirmation_are_local(brand, tmp_path, monkeypatch):
     change, prepared = _prepare_cli(brand, tmp_path)
-    assert "PREVIEW COMPLETO" in prepared.output
+    assert "FULL PREVIEW" in prepared.output
     for value in (change.id, change.fingerprint, change.copy_text, change.youtube_url, change.destination.url):
         assert value in prepared.output
 
@@ -638,7 +638,7 @@ def test_cli_full_preview_export_handoff_and_confirmation_are_local(brand, tmp_p
     )
     assert handed.exit_code == 0, handed.output
     assert opened == [change.destination.url]
-    assert "no confirma publicación" in handed.output
+    assert 'does not confirm publication' in handed.output
     assert GroupStore(brand.raiz).load(change.id).status == "awaiting_manual_confirmation"
 
     exported = runner.invoke(
@@ -679,9 +679,9 @@ def test_cli_preview_shows_every_fingerprinted_media_field(brand, tmp_path, suff
     change, prepared = _prepare_cli(brand, tmp_path, media=media_path.name)
 
     expected_duration = (
-        f"Duración: {change.media.duration_s} s"
+        f"Duration: {change.media.duration_s} s"
         if change.media.duration_s is not None
-        else "Duración: no aplica"
+        else "Duration: not applicable"
     )
     for value in (
         change.media.relative_path,
@@ -736,7 +736,7 @@ def test_cli_browser_failure_preserves_retryable_handoff(brand, tmp_path, monkey
     assert result.exit_code != 0
     stored = GroupStore(brand.raiz).load(change.id)
     assert stored.status == "handoff_ready"
-    assert "apertura" in stored.last_error
+    assert "opening" in stored.last_error
     assert stored.confirmation is None
 
 
@@ -771,5 +771,33 @@ def test_status_rejects_changeset_copied_between_brands_before_render(tmp_path):
         ["group", "status", change.id, "--brand", second.nombre, "--root", str(tmp_path)],
     )
     assert result.exit_code != 0
-    assert "marca configurada" in result.output
+    assert 'configured brand' in result.output
     assert change.copy_text not in result.output
+
+
+@pytest.mark.parametrize("phrase", ["I CONFIRM MANUAL PUBLICATION", "CONFIRMO PUBLICADO MANUALMENTE"])
+def test_confirmation_accepts_english_and_legacy_phrases_without_changing_proposal(brand, phrase):
+    store = GroupStore(brand.raiz)
+    change = proposal(brand)
+    approved = approve_handoff(brand, store, change.id, change.fingerprint)
+    fingerprint = approved.fingerprint
+    result = confirm_group(brand, store, change.id, confirmation_phrase=phrase,
+                          post_url="https://www.facebook.com/groups/historia.caribe/posts/123")
+    assert result.status == "confirmed_manual"
+    assert result.fingerprint == fingerprint
+    assert result.copy_text == change.copy_text
+    assert result.destination == change.destination
+
+
+def test_confirmation_rejects_other_phrase_before_any_store_write(brand, monkeypatch):
+    store = GroupStore(brand.raiz)
+    change = proposal(brand)
+    approve_handoff(brand, store, change.id, change.fingerprint)
+    before = store.load(change.id).model_dump()
+    def unexpected_save(*args, **kwargs):
+        raise AssertionError("invalid confirmation must not write")
+    monkeypatch.setattr(store, "save", unexpected_save)
+    with pytest.raises(GroupError, match="I CONFIRM MANUAL PUBLICATION"):
+        confirm_group(brand, store, change.id, confirmation_phrase="I CONFIRM PUBLICATION",
+                      post_url="https://www.facebook.com/groups/historia.caribe/posts/123")
+    assert store.load(change.id).model_dump() == before

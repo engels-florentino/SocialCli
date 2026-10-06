@@ -19,7 +19,7 @@ from socialctl.media_ingress import receive as ingest, verify as readiness, writ
 from socialctl.media_registry import MAX_HEADER, MAX_POST, MediaRegistryError, component, load_bundle, parse_json, relative, stage as stage_bundle
 from socialctl.schedule_remote import DEFAULT_ROOT, RemoteConfig
 
-media_app = typer.Typer(help="Copia y transfiere media suministrada; no publica ni aprueba programación.")
+media_app = typer.Typer(help="Copy and transfer supplied media; does not publish or approve schedules.")
 MAX_RESPONSE = 12 * MAX_POST + MAX_HEADER  # Both full texts, worst-case JSON escaping.
 SECRET = re.compile(r"(?i)(?:[\"']?(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|password|authorization|token)[\"']?\s*[:=]|\bbearer\s+\S+)")
 
@@ -27,19 +27,19 @@ SECRET = re.compile(r"(?i)(?:[\"']?(?:access[_-]?token|refresh[_-]?token|client[
 def _response(value, brand, ident):
     """Only bounded typed readiness/preview data may be printed from SSH."""
     if not isinstance(value, dict) or value.get("bundle") != ident:
-        raise MediaRegistryError("respuesta remota inválida")
+        raise MediaRegistryError("invalid remote response")
     if value.get("protocol") == "socialctl.media-update.v1":
         if (set(value) != {"protocol", "bundle", "preview", "update_digest"}
                 or not isinstance(value["preview"], str) or SECRET.search(value["preview"])
                 or not re.fullmatch(r"[a-f0-9]{64}", value["update_digest"])):
-            raise MediaRegistryError("preview remoto inválido")
+            raise MediaRegistryError("invalid remote preview")
     elif value.get("protocol") == "socialctl.media-readiness.v1":
         if (set(value) != {"protocol", "brand", "bundle", "local_ready", "private_ready", "hosted_ready", "public_ready", "checked_at", "attestations"}
                 or value["brand"] != brand.nombre
                 or any(type(value[key]) is not bool for key in ("local_ready", "private_ready", "hosted_ready", "public_ready"))
                 or not isinstance(value["attestations"], list)
                 or SECRET.search(json.dumps(value))):
-            raise MediaRegistryError("estado remoto inválido")
+            raise MediaRegistryError("invalid remote state")
         from socialctl.scheduler import parse_scheduled_at
         from socialctl.hosted_media import MIMES, public_url, validate_url
         parse_scheduled_at(value["checked_at"])
@@ -47,7 +47,7 @@ def _response(value, brand, ident):
             if (set(item) != {"url", "sha256", "size", "mime"}
                     or not re.fullmatch(r"[a-f0-9]{64}", item["sha256"])
                     or type(item["size"]) is not int or item["size"] <= 0 or item["mime"] not in MIMES.values()):
-                raise MediaRegistryError("atestación remota inválida")
+                raise MediaRegistryError("invalid remote attestation")
             validate_url(item["url"])
         manifest, _ = load_bundle(brand, ident)
         if value["public_ready"]:
@@ -58,13 +58,13 @@ def _response(value, brand, ident):
                         for a in manifest["assets"]}
             actual = {(a["url"], a["sha256"], a["size"], a["mime"]) for a in value["attestations"]}
             if actual != expected or len(value["attestations"]) != len(manifest["assets"]):
-                raise MediaRegistryError("atestación no coincide con assets seleccionados")
+                raise MediaRegistryError("attestation does not match selected assets")
             if not (value["local_ready"] and value["private_ready"] and value["hosted_ready"]):
-                raise MediaRegistryError("estado remoto inconsistente")
+                raise MediaRegistryError("inconsistent remote state")
         elif value["attestations"]:
-            raise MediaRegistryError("estado remoto inconsistente")
+            raise MediaRegistryError("inconsistent remote state")
     else:
-        raise MediaRegistryError("protocolo remoto no admitido")
+        raise MediaRegistryError("unsupported remote protocol")
     return value
 
 
@@ -79,7 +79,7 @@ def _capture(argv, incoming, *, timeout=300):
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise MediaRegistryError("respuesta remota excede tiempo límite")
+                    raise MediaRegistryError("remote response timed out")
                 if not selector.select(remaining):
                     continue
                 chunk = os.read(process.stdout.fileno(), min(65536, MAX_RESPONSE + 1 - len(raw)))
@@ -87,9 +87,9 @@ def _capture(argv, incoming, *, timeout=300):
                     break
                 raw.extend(chunk)
                 if len(raw) > MAX_RESPONSE:
-                    raise MediaRegistryError("respuesta remota excede límite")
+                    raise MediaRegistryError("remote response exceeds the limit")
         if process.wait(timeout=max(0, deadline - time.monotonic())):
-            raise MediaRegistryError("ingestión remota fallida; verifica antes de reintentar")
+            raise MediaRegistryError("remote ingestion failed; verify before retrying")
         return bytes(raw)
     finally:
         # Diagnostics are discarded, never buffered or reflected to the caller.
@@ -101,7 +101,7 @@ def _capture(argv, incoming, *, timeout=300):
 
 def _remote(brand, ident, *, operation, preview_update=False, update_digest=None, public=False):
     if not re.fullmatch(r"[a-f0-9]{64}", ident):
-        raise MediaRegistryError("bundle inválido")
+        raise MediaRegistryError("invalid bundle")
     config = RemoteConfig.model_validate_json(relative(brand.raiz, ".socialctl/remote-executor.json").read_bytes())
     component(brand.nombre)
     args = ["media", operation]
@@ -114,10 +114,10 @@ def _remote(brand, ident, *, operation, preview_update=False, update_digest=None
             args += ["--preview-update"]
         if update_digest:
             if not re.fullmatch(r"[a-f0-9]{64}", update_digest) or preview_update:
-                raise MediaRegistryError("digest de actualización inválido")
+                raise MediaRegistryError("invalid update digest")
             args += ["--update-digest", update_digest]
     else:
-        raise MediaRegistryError("operación no admitida")
+        raise MediaRegistryError("unsupported operation")
     command = shlex.join([config.executable, *args, "--brand", brand.nombre, "--root", config.root])
     argv = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
             "-o", "ConnectTimeout=15", "-p", str(config.port), "--", f"{config.user}@{config.host}", command]
@@ -139,7 +139,7 @@ def _run(operation):
         raise typer.Exit(1) from None
     except Exception:
         # Even parse errors and remote exceptions can contain supplied paths/secrets.
-        typer.echo("Operación de media rechazada: revisa fuentes, manifest, política, espacio y conflictos de posts. Los conflictos exigen --preview-update y su digest; posts activos requieren cancelar/reconciliar la cola primero.")
+        typer.echo("Media operation rejected: check sources, manifest, policy, space and post conflicts. Conflicts require --preview-update and its digest; active posts require queue cancellation/reconciliation first.")
         raise typer.Exit(1) from None
 
 

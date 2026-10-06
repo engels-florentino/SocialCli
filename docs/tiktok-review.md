@@ -1,32 +1,32 @@
-# TikTok: preparación de revisión
+# TikTok review preparation
 
-SocialCli es ahora un proyecto público que otros creadores pueden instalar para gestionar sus cuentas. Esta intención debe reflejarse fielmente en una solicitud nueva. La solicitud histórica de Histopast describía una herramienta privada de un solo operador; publicar este repositorio no modifica esa solicitud ni demuestra cumplimiento de todos los controles.
+SocialCli is a public project that other creators can install to manage their accounts. A new review application must accurately reflect this purpose. The historical application described a private tool for one operator; publishing this repository does not update that application or demonstrate compliance with every control.
 
-## Arquitectura de esta distribución
+## Architecture of this distribution
 
-Cada operador usa su propia aplicación de proveedor y conserva sus secretos localmente. No se incluye el client secret de Histopast. Esto permite distribuir el programa sin compartir sus credenciales, pero no proporciona una autorización común de SocialCli para todos los usuarios. Para ese producto hace falta resolver un servicio de autorización que conserve el secreto fuera del CLI y actualizar arquitectura, políticas y demo antes de presentarlo como existente.
+Each operator uses their own provider application and stores secrets locally. No other creator's client secret is included. This distributes the software without sharing credentials, but does not provide a shared SocialCli OAuth backend. Such a product requires an authorization service that keeps the secret outside the CLI, with updated architecture, policies and demonstration before it can be presented as available.
 
-## Estado que debe declararse
+## Status to declare
 
-- El código es público y admite marcas configuradas por cada operador.
-- Inbox es el modo inicial; el usuario completa el post en TikTok.
-- La aprobación de producción y la auditoría de Direct Post no están acreditadas.
-- Hay una grabación histórica adjunta a la solicitud; no se da por verificado que muestre el producto público actualizado.
-- El sitio público documenta el producto y sus límites; la evaluación final corresponde a TikTok.
+- The code is public and supports brands configured by each operator.
+- Inbox is the default mode; users complete posts in TikTok.
+- Production approval and a Direct Post audit are not accredited.
+- A historical recording is attached to the previous application; it has not been verified as demonstrating the updated public product.
+- The public website documents the product and its limits; TikTok makes the final assessment.
 
-## Antes de solicitar Direct Post
+## Before requesting Direct Post
 
-El adaptador existente consulta creator info y aplica comprobaciones de duración y auditoría, pero fija la privacidad pública. No ofrece todavía todos los controles de UX que exige TikTok: selección explícita de privacidad sin valor por defecto, controles de comentarios/Duet/Stitch compatibles con creator info, identificación visible del creador, divulgación comercial y declaraciones correspondientes. El preview actual del terminal no acredita por sí solo cumplimiento de la interfaz exigida.
+The existing adapter queries creator info and checks duration and audit status, but fixes privacy to public. It does not yet offer all required UX controls: explicit privacy selection without a default, comments/Duet/Stitch controls consistent with creator info, visible creator identification, commercial disclosure and corresponding declarations. The current terminal preview alone does not establish compliance with the required interface.
 
-No activar `auditada: true` sin aprobación real ni enviar una demo que oculte estas limitaciones. Completar y comprobar la experiencia necesaria antes de solicitar ese alcance. Para inbox, revisar igualmente los requisitos generales, permisos y arquitectura; cambiar de endpoint no exonera la revisión general.
+Do not enable `auditada: true` without actual approval or submit a demo that hides these limitations. Complete and verify the necessary experience before requesting this scope. For inbox, also review general requirements, permissions and architecture; changing the endpoint does not waive general review.
 
-## Preparar la solicitud
+## Prepare the application
 
-1. Registrar el nombre e identidad de SocialCli de forma consistente en el portal y el sitio.
-2. Describir el producto público y el modelo de autorización realmente implementado, sin conservar frases de uso exclusivo ni anunciar servicios inexistentes.
-3. Pedir solo los productos/scopes necesarios. Retirar Data Portability si no hay un caso implementado.
-4. Completar descripción y explicación: los campos históricos estaban truncados.
-5. Aportar una grabación actual, creada por el usuario, del flujo completo en sandbox, mostrando cada producto y permiso solicitado.
-6. Revisar políticas y URLs activas, y enviar únicamente cuando el producto y las evidencias estén listos.
+1. Register SocialCli's name and identity consistently in the portal and website.
+2. Describe the public product and the implemented authorization model accurately, without exclusive-use claims or announcing nonexistent services.
+3. Request only necessary products/scopes. Remove Data Portability if no implemented use case exists.
+4. Complete the description and explanation; historical fields were truncated.
+5. Supply an up-to-date, user-created recording of the complete sandbox flow showing every requested product and permission.
+6. Review policies and live URLs, and submit only when the product and evidence are ready.
 
-Fuentes oficiales: [App Review Guidelines](https://developers.tiktok.com/docs/en/app-review-guidelines) y [Content Sharing Guidelines](https://developers.tiktok.com/docs/en/content-sharing-guidelines), consultadas el 6 de octubre de 2026. Estas páginas exigen una aplicación destinada a usuarios externos, una web completa y evidencia del flujo. Direct Post tiene controles adicionales y exige mantener el secreto confidencial.
+Official sources: [App Review Guidelines](https://developers.tiktok.com/docs/en/app-review-guidelines) and [Content Sharing Guidelines](https://developers.tiktok.com/docs/en/content-sharing-guidelines), consulted on October 6, 2026. These pages require an application intended for external users, a complete website and evidence of the flow. Direct Post adds controls and requires keeping the secret confidential.

@@ -144,7 +144,7 @@ def test_queue_bound_posts_are_never_overwritten(tmp_path, state):
     now = now_utc()
     ScheduleStore(server.raiz).save([ScheduleEntry(id="clip/instagram", brand=server.nombre,
         slug="clip", platform="instagram", status=state, scheduled_at=now, created_at=now, updated_at=now)])
-    with pytest.raises(ValueError, match="cola"):
+    with pytest.raises(ValueError, match="queue"):
         ingress().receive(server, wire(local, manifest), preview_update=True)
     assert path.read_bytes() == b"approved bytes"
 
@@ -247,7 +247,7 @@ def test_missing_post_with_active_queue_cannot_be_replaced_by_ingress(tmp_path):
     entry = ScheduleEntry(id="clip/instagram", brand=server.nombre, slug="clip", platform="instagram",
                          scheduled_at=now, created_at=now, updated_at=now)
     store.save([entry])
-    with pytest.raises(ValueError, match="cola"):
+    with pytest.raises(ValueError, match="queue"):
         ingress().receive(server, wire(local, manifest))
     assert not (server.dir_posts / "clip/post.yml").exists()
     assert store.load() == [entry]
@@ -267,7 +267,7 @@ def test_legacy_queue_publication_evidence_blocks_draft_update(tmp_path, state, 
         status=state, platform_id=platform_id, scheduled_at=now, created_at=now, updated_at=now)
     store.save([entry])
     for options in ({"preview_update": True}, {"update_digest": preview["update_digest"]}):
-        with pytest.raises(ValueError, match="publicación"):
+        with pytest.raises(ValueError, match='publication'):
             ingress().receive(server, wire(local, manifest), **options)
         assert path.read_bytes() == b"legacy published text"
         assert store.load() == [entry]

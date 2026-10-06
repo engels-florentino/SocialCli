@@ -17,7 +17,7 @@ def connect(path: Path):
         connection.execute("PRAGMA synchronous=EXTRA")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (0, 1) or (version == 0 and existed):
-            raise ValueError(f"versión SQLite desconocida: {version}")
+            raise ValueError(f"unknown SQLite version: {version}")
         if version == 0:
             with connection:
                 connection.execute("CREATE TABLE entries (position INTEGER PRIMARY KEY, payload TEXT NOT NULL)")

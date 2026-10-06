@@ -101,7 +101,7 @@ def test_el_primer_snapshot_lo_dice_y_no_inventa_variaciones():
 
     assert "Histopast" in texto
     assert "2026-09-11" in texto
-    assert "primer snapshot" in texto.lower()
+    assert 'first snapshot' in texto.lower()
     assert "254" in texto
 
 
@@ -113,7 +113,7 @@ def test_con_dos_snapshots_muestra_la_variacion():
     )
 
     assert "+54" in texto
-    assert "primer snapshot" not in texto.lower()
+    assert 'first snapshot' not in texto.lower()
 
 
 def test_una_variacion_negativa_se_ve_como_tal():
@@ -138,10 +138,10 @@ def test_una_pieza_nueva_no_finge_variacion():
 def test_la_tabla_de_youtube_lleva_retencion_y_suscriptores():
     texto = render_resumen(_snapshot(date(2026, 9, 11), 254), anterior=None, piezas=[])
 
-    assert "% visto" in texto
+    assert '% viewed' in texto
     assert "Subs" in texto
     assert "48.5" in texto
-    assert "Guardados" not in texto, "guardados no es una columna de YouTube"
+    assert 'Saves' not in texto, "guardados no es una columna de YouTube"
 
 
 def test_la_tabla_de_tiktok_lleva_compartidos_pero_no_guardados():
@@ -149,17 +149,17 @@ def test_la_tabla_de_tiktok_lleva_compartidos_pero_no_guardados():
     guardados, así que esa columna no puede aparecer en su tabla."""
     texto = render_resumen(_snapshot_tiktok(date(2026, 9, 11), 15400), anterior=None, piezas=[])
 
-    assert "Compart." in texto
+    assert 'Shares' in texto
     assert "71" in texto
-    assert "% visto" not in texto, "TikTok no mide porcentaje visto"
+    assert '% viewed' not in texto, "TikTok no mide porcentaje visto"
 
 
 def test_la_tabla_de_instagram_si_lleva_guardados():
     """Instagram sí rellena `guardados` (Graph API), así que su tabla sí lleva esa columna."""
     texto = render_resumen(_snapshot_instagram(date(2026, 9, 11), 9000), anterior=None, piezas=[])
 
-    assert "Compart." in texto
-    assert "Guardados" in texto
+    assert 'Shares' in texto
+    assert 'Saves' in texto
     assert "15" in texto
 
 
@@ -175,8 +175,8 @@ def test_tiktok_no_ofrece_guardados_e_instagram_si():
         _snapshot_instagram(date(2026, 9, 11), 9000, guardados=15), anterior=None, piezas=[]
     )
 
-    assert "Guardados" not in texto_tiktok
-    assert "Guardados" in texto_instagram
+    assert 'Saves' not in texto_tiktok
+    assert 'Saves' in texto_instagram
 
 
 def test_la_variacion_cubre_las_tres_metricas_que_pide_el_spec():
@@ -382,7 +382,7 @@ def test_una_red_en_error_con_piezas_conservadas_muestra_el_aviso_y_la_tabla():
     assert "youtube respondió 500" in texto
     assert "254" in texto, "las piezas conservadas no pueden desaparecer"
     assert "4950" in texto, "la línea de seguidores tampoco"
-    assert "| Publicado |" in texto, "la tabla tiene que seguir estando"
+    assert '| Published |' in texto, "la tabla tiene que seguir estando"
 
 
 def test_una_red_en_error_sin_piezas_sigue_sin_tabla():
@@ -396,7 +396,7 @@ def test_una_red_en_error_sin_piezas_sigue_sin_tabla():
     texto = render_resumen(snapshot, anterior=None, piezas=[])
 
     assert "sin_credenciales" in texto
-    assert "| Publicado |" not in texto
+    assert '| Published |' not in texto
 
 
 # --- menores de legibilidad de la tabla ------------------------------------
@@ -439,7 +439,7 @@ def test_un_titulo_con_barra_no_rompe_la_tabla():
         _snapshot_con_titulo("1519: Cortés | la conquista"), anterior=None, piezas=[]
     )
 
-    cabecera = [l for l in texto.split("\n") if l.startswith("| Publicado")][0]
+    cabecera = [l for l in texto.split("\n") if l.startswith("| Published")][0]
     fila = [l for l in texto.split("\n") if l.startswith("| 2026-09-06")][0]
     assert "\\|" in fila, "la barra del título debe ir escapada"
     assert fila.count(" | ") == cabecera.count(" | "), (

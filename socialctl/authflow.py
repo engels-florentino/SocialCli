@@ -1,66 +1,4 @@
-"""Flujo de autorización inicial (OAuth) por red, para el comando `auth`.
-
-Ningún mensaje de error de este módulo puede contener un secreto: ni el
-`client_secret`, ni el código de autorización, ni ningún `access_token` ni
-`refresh_token`, ni el `code_verifier` de PKCE, ni el token de usuario que se
-pega a mano para Meta. Los `except` de red de este módulo nunca interpolan el
-cuerpo de la respuesta ni `str(exc)` de una excepción no prevista; solo
-mensajes fijos y, como mucho, el código de estado HTTP.
-
-YouTube y TikTok comparten el mismo patrón: redirección a un servidor local
-(`socialctl/cli.py` levanta ese servidor; este módulo no toca la red del
-navegador) con PKCE obligatorio para TikTok y recomendado -pero igualmente
-aplicado aquí, por prudencia- para Google:
-
-- TikTok exige PKCE en su flujo de escritorio: un `code_verifier` único por
-  petición, su `code_challenge` (S256) en la URL de autorización, y el mismo
-  `code_verifier` en el canje del código. Confirmado con Context7
-  (developers.tiktok.com/docs/en/login-kit-overview, "Platform differences >
-  Desktop": "Desktop authorization follows a similar redirect flow to web but
-  requires the use of PKCE for security"; y
-  developers.tiktok.com/docs/en/oauth-user-access-token-management, que lista
-  `code_verifier` como campo del canje "required for mobile and desktop apps
-  only"). El brief original de esta tarea NO incluía PKCE en absoluto: ese
-  flujo habría sido rechazado por TikTok.
-- Un detalle propio de TikTok, distinto del estándar RFC 7636 que usa Google:
-  su `code_challenge` es SHA256 del verifier codificado en **hexadecimal**,
-  no en base64url. Confirmado con Context7
-  (developers.tiktok.com/docs/en/login-kit-desktop, "Generate code
-  challenge": `CryptoJS.SHA256(code_verifier).toString(CryptoJS.enc.Hex)`,
-  repetido igual en varias secciones de esa misma página). Usar la
-  codificación base64url estándar aquí produciría un `code_challenge` que no
-  coincide con el que TikTok recalcula, y el canje del código fallaría.
-- Google trata PKCE como **recomendado, no obligatorio**, para apps de
-  escritorio (confirmado con Context7,
-  developers.google.com/identity/protocols/oauth2/native-app: "code_challenge
-  ... Recommended", "code_challenge_method ... Recommended"; y
-  developers.google.com/identity/protocols/oauth2/resources/best-practices:
-  "For desktop applications, implementing PKCE is strongly recommended").
-  Como no hace daño y Google lo soporta con la codificación estándar
-  (`code_challenge = BASE64URL-ENCODE(SHA256(ASCII(code_verifier)))`, misma
-  fuente), este módulo lo aplica también a YouTube, no solo a TikTok.
-
-Facebook e Instagram no tienen este patrón de redirección: sus apps deben
-estar en modo "Live" con revisión de Meta para usar un dominio HTTPS propio
-como `redirect_uri`, y no hay documentación que confirme que acepten
-`http://localhost` para una app de escritorio (a diferencia de Google y
-TikTok, que sí lo documentan explícitamente); no verificado, así que este
-módulo no lo ofrece. Lo que SÍ mejora respecto al brief original -que pedía
-pegar directamente un token de PÁGINA de larga duración, algo que exige que
-el usuario sepa hacer a mano el intercambio en el Explorador de la API de
-Graph- es automatizar ese intercambio: el usuario pega un token de
-**usuario** (el que el Explorador genera por defecto, de corta duración) y
-`intercambiar_token_meta` + `obtener_paginas_meta` hacen aquí el resto:
-canjearlo por uno de usuario de larga duración (~60 días) y, con ese,
-obtener el token de PÁGINA -que Meta documenta sin fecha de caducidad-
-correspondiente a la Página configurada en accounts.yml. Confirmado con
-Context7 (developers.facebook.com/docs/facebook-login/guides/access-tokens/
-get-long-lived): `GET /oauth/access_token` con `grant_type=fb_exchange_token`
-para el primer paso, y `GET /{user-id}/accounts` (aquí, `/me/accounts` con el
-token de usuario de larga duración) para el segundo, cuyo campo
-`access_token` por página "do not have an expiration date and only expire or
-are invalidated under certain conditions".
-"""
+"""Initial platform OAuth authorization; errors must never contain credentials, authorization codes or tokens."""
 
 from __future__ import annotations
 
@@ -132,73 +70,39 @@ URL_TOKEN = {
 }
 
 AYUDA_META = (
-    "Facebook e Instagram no usan una redirección local: no hay documentación "
-    "que confirme que Meta acepte http://localhost como redirect_uri para una "
-    "app de escritorio. En su lugar, pega aquí un token de USUARIO (no de "
-    "página) obtenido en el Explorador de la API de Graph "
-    "(https://developers.facebook.com/tools/explorer/): elige tu app, pulsa "
-    "'Generate Access Token' y concede SIETE permisos: pages_show_list, "
-    "pages_manage_posts, pages_read_engagement e instagram_content_publish "
-    "para publicar, y read_insights, instagram_basic e "
-    "instagram_manage_insights para leer metricas con `socialctl stats`. "
-    "Concederlos todos de una vez evita tener que repetir este paso. "
-    "Ese token puede ser de corta duración: este comando lo canjea por uno de "
-    "página de larga duración automáticamente, para la Página configurada en "
-    "accounts.yml (facebook.page_id)."
+    "Facebook and Instagram use a pasted USER token rather than a local redirect. "
+    "Obtain it from the Graph API Explorer (https://developers.facebook.com/tools/explorer/): "
+    "select your app, choose 'Generate Access Token' and grant seven permissions: "
+    "pages_show_list, pages_manage_posts, pages_read_engagement and instagram_content_publish "
+    "for publication, plus read_insights, instagram_basic and instagram_manage_insights "
+    "for reading metrics with `socialcli stats`. Granting them together avoids repeating "
+    "this step. This command exchanges the token for a long-lived Page token for the "
+    "Page configured in accounts.yml (facebook.page_id)."
 )
 
 
 class EstadoInvalido(Exception):
-    """El parámetro `state` recibido en la redirección no coincide con el generado.
-
-    Es la comprobación anti-CSRF del flujo: si no coincide, hay que abortar
-    sin canjear ningún código, porque no hay garantía de que la respuesta
-    corresponda a la petición de autorización que este proceso inició.
-    """
+    """The received OAuth state does not match the generated state."""
 
 
 def generar_state() -> str:
-    """Genera el valor aleatorio de `state` para protección CSRF.
-
-    Debe generarse de nuevo en cada intento de autorización y verificarse
-    con `verificar_state` al recibir la redirección; nunca reutilizarse.
-    """
+    """Generate a random state value for CSRF protection."""
     return secrets.token_urlsafe(32)
 
 
 def generar_code_verifier() -> str:
-    """Genera un `code_verifier` de PKCE válido para Google y para TikTok.
-
-    Ambas redes exigen una cadena de 43 a 128 caracteres del alfabeto no
-    reservado ``[A-Za-z0-9\\-._~]`` (confirmado con Context7 en
-    developers.google.com/identity/protocols/oauth2/native-app y en
-    developers.tiktok.com/docs/en/login-kit-desktop, con idéntica
-    redacción en ambas). `secrets.token_urlsafe` genera únicamente del
-    subconjunto ``[A-Za-z0-9\\-_]`` (sin ``.`` ni ``~``, que tampoco hacen
-    falta), que ya cae dentro de ese alfabeto en ambos casos.
-    `secrets.token_urlsafe(64)` produce siempre una cadena de 86
-    caracteres: dentro del rango exigido y con 512 bits de entropía
-    aleatoria, muy por encima del mínimo que pide la especificación.
-    """
+    """Generate a valid PKCE verifier for Google and TikTok."""
     return secrets.token_urlsafe(64)
 
 
 def _challenge_base64url(code_verifier: str) -> str:
-    """PKCE estándar (RFC 7636), el que usa Google.
-
-    ``code_challenge = BASE64URL-ENCODE(SHA256(ASCII(code_verifier)))``,
-    sin relleno ``=`` (confirmado con Context7,
-    developers.google.com/identity/protocols/oauth2/native-app).
-    """
+    """Return the standard RFC 7636 PKCE challenge used by Google."""
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
 def _challenge_hex(code_verifier: str) -> str:
-    """El `code_challenge` propio de TikTok: SHA256 en hexadecimal, no base64url.
-
-    Ver el docstring del módulo para la cita exacta de la documentación.
-    """
+    """Return TikTok's hexadecimal SHA-256 PKCE challenge."""
     return hashlib.sha256(code_verifier.encode("ascii")).hexdigest()
 
 
@@ -209,27 +113,17 @@ _GENERADOR_CHALLENGE = {
 
 
 def calcular_code_challenge(platform: Platform, code_verifier: str) -> str:
-    """Deriva el `code_challenge` de `code_verifier` con la codificación de `platform`."""
+    """Derive the code challenge using the platform's required encoding."""
     if platform not in _GENERADOR_CHALLENGE:
         raise ValueError(AYUDA_META)
     return _GENERADOR_CHALLENGE[platform](code_verifier)
 
 
 def verificar_state(esperado: str, recibido: str | None) -> None:
-    """Aborta si `recibido` no coincide exactamente con `esperado`.
-
-    Comparación en tiempo constante (`secrets.compare_digest`): el `state`
-    no es un secreto de alto valor como un token, pero es la única defensa
-    anti-CSRF de todo el intercambio, así que se compara con el mismo
-    cuidado. `recibido=None` (la redirección no traía `state` en absoluto)
-    se trata igual que un valor que no coincide: nunca se asume que "sin
-    dato" equivale a "válido".
-    """
+    """Abort unless the received state exactly matches the expected state."""
     if recibido is None or not secrets.compare_digest(esperado, recibido):
         raise EstadoInvalido(
-            "el parámetro 'state' recibido no coincide con el generado al "
-            "iniciar la autorización (posible CSRF); abortando sin canjear "
-            "ningún código. Vuelve a ejecutar 'socialctl auth'."
+            "received 'state' does not match the value generated when authorization started (possible CSRF); aborting without exchanging any code. Run 'socialcli auth' again."
         )
 
 
@@ -242,18 +136,11 @@ def construir_url_autorizacion(
     code_verifier: str,
     youtube_management: bool = False,
 ) -> str:
-    """URL a la que enviar al usuario para que autorice la app.
-
-    `state` y `code_verifier` son obligatorios y deben venir de
-    `generar_state()` y `generar_code_verifier()` respectivamente, generados
-    de nuevo para cada intento de autorización (nunca reutilizados entre
-    intentos): son la defensa anti-CSRF y la de PKCE, y ambas dependen de
-    que el valor sea impredecible y de un solo uso.
-    """
+    """Build the URL where the user authorizes their own app."""
     if platform not in URL_AUTORIZACION:
         raise ValueError(AYUDA_META)
     if youtube_management and platform is not Platform.YOUTUBE:
-        raise ValueError("el permiso --management solo está disponible para YouTube")
+        raise ValueError("the --management permission is only available for YouTube")
 
     code_challenge = calcular_code_challenge(platform, code_verifier)
 
@@ -296,18 +183,7 @@ def canjear_codigo(
     *,
     code_verifier: str,
 ) -> dict:
-    """Canjea el código de autorización por tokens y devuelve el secreto a guardar.
-
-    `code_verifier` debe ser el MISMO que generó el `code_challenge` enviado
-    en `construir_url_autorizacion` para este mismo intento: es la prueba de
-    posesión que exige PKCE. Sin él (o con uno distinto), TikTok y -si Google
-    llegara a exigirlo también en el futuro- Google rechazan el canje.
-
-    Un fallo de red real al hacer la petición (host inalcanzable, timeout,
-    DNS) se traduce aquí en `RuntimeError` en vez de escapar como excepción
-    cruda; ver el docstring del módulo para el detalle de qué familias de
-    `httpx` se cubren y por qué ningún mensaje interpola el error original.
-    """
+    """Exchange an authorization code for tokens and return credentials to persist."""
     if platform not in URL_TOKEN:
         raise ValueError(AYUDA_META)
 
@@ -338,38 +214,30 @@ def canjear_codigo(
         # mano por el usuario, pero se cubre por si acaso, igual que en los
         # adaptadores de este proyecto.
         raise RuntimeError(
-            f"no se pudo contactar con {platform.value} para canjear el "
-            "código de autorización: la URL configurada no es válida. "
-            "Vuelve a ejecutar el comando auth."
+            f'could not contact {platform.value} to exchange the authorization code: the configured URL is invalid. Run the auth command again.'
         ) from None
     except httpx.TimeoutException:
         # Subclase de httpx.HTTPError: debe ir antes que ese except para no
         # quedar inalcanzable.
         raise RuntimeError(
-            f"se agotó el tiempo de espera al contactar con {platform.value} "
-            "para canjear el código de autorización. Vuelve a ejecutar el "
-            "comando auth."
+            f'timed out while contacting {platform.value} to exchange the authorization code. Run the auth command again.'
         ) from None
     except httpx.HTTPError:
         raise RuntimeError(
-            f"no se pudo conectar con {platform.value} para canjear el "
-            "código de autorización. Comprueba tu conexión a internet y "
-            "vuelve a ejecutar el comando auth."
+            f'could not connect to {platform.value} to exchange the authorization code. Check your internet connection and run the auth command again.'
         ) from None
     except Exception:
         # Resguardo final para cualquier fallo imprevisto que no sea de las
         # familias anteriores: nunca se interpola el propio error (podría
         # arrastrar la petición, con el client_secret y el code_verifier).
         raise RuntimeError(
-            f"ocurrió un error inesperado al canjear el código de "
-            f"autorización con {platform.value}. Vuelve a ejecutar el "
-            "comando auth."
+            f'an unexpected error occurred while exchanging the authorization code with {platform.value}. Run the auth command again.'
         ) from None
 
     if respuesta.status_code != 200:
         raise RuntimeError(
-            f"{platform.value} rechazó el código de autorización "
-            f"(HTTP {respuesta.status_code}). Vuelve a ejecutar el comando auth."
+            f"{platform.value} rejected the authorization code "
+            f"(HTTP {respuesta.status_code}). Run the auth command again."
         )
 
     try:
@@ -381,8 +249,7 @@ def canjear_codigo(
         # el mensaje: en teoría podría arrastrar algún dato sensible del
         # intercambio.
         raise RuntimeError(
-            f"{platform.value} respondió con un formato inesperado al "
-            "canjear el código de autorización"
+            f'{platform.value} returned an unexpected format while exchanging the authorization code'
         ) from None
 
     secreto = dict(credenciales_app)
@@ -409,17 +276,7 @@ def canjear_codigo(
 def intercambiar_token_meta(
     client_id: str, client_secret: str, token_corto: str, client: httpx.Client
 ) -> str:
-    """Canjea un token de USUARIO de Meta por uno de larga duración (~60 días).
-
-    Confirmado con Context7 (developers.facebook.com/docs/facebook-login/
-    guides/access-tokens/get-long-lived): `GET /oauth/access_token` con
-    `grant_type=fb_exchange_token`, `client_id`, `client_secret` (el App ID
-    y App secret de la app de Meta, no un secreto de la marca) y
-    `fb_exchange_token=<token pegado>`.
-
-    Un fallo de red real al hacer la petición se traduce en `RuntimeError`
-    en vez de escapar como excepción cruda (ver el docstring del módulo).
-    """
+    """Exchange a Meta USER token for a long-lived token of approximately 60 days."""
     try:
         respuesta = client.get(
             f"{GRAFO}/oauth/access_token",
@@ -433,98 +290,76 @@ def intercambiar_token_meta(
     except httpx.InvalidURL:
         # No hereda de httpx.HTTPError, así que necesita su propio except.
         raise RuntimeError(
-            "no se pudo contactar con Meta para intercambiar el token: la "
-            "URL configurada no es válida. Vuelve a ejecutar el comando auth."
+            'could not contact Meta to exchange the token: the configured URL is invalid. Run the auth command again.'
         ) from None
     except httpx.TimeoutException:
         # Subclase de httpx.HTTPError: debe ir antes que ese except para no
         # quedar inalcanzable.
         raise RuntimeError(
-            "se agotó el tiempo de espera al contactar con Meta para "
-            "intercambiar el token. Vuelve a ejecutar el comando auth."
+            'contacting Meta to exchange the token timed out. Run the auth command again.'
         ) from None
     except httpx.HTTPError:
         raise RuntimeError(
-            "no se pudo conectar con Meta para intercambiar el token. "
-            "Comprueba tu conexión a internet y vuelve a ejecutar el "
-            "comando auth."
+            'could not connect to Meta to exchange the token. Check your internet connection and run the auth command again.'
         ) from None
     except Exception:
         # Resguardo final: nunca se interpola el propio error, podría
         # arrastrar la petición con el App secret o el token pegado.
         raise RuntimeError(
-            "ocurrió un error inesperado al intercambiar el token con Meta. "
-            "Vuelve a ejecutar el comando auth."
+            'an unexpected error occurred while exchanging the token with Meta. Run the auth command again.'
         ) from None
 
     if respuesta.status_code != 200:
         raise RuntimeError(
-            f"Meta rechazó el intercambio de token (HTTP {respuesta.status_code}). "
-            "Revisa el App ID, el App secret y que el token pegado sea válido "
-            "y no haya caducado."
+            f'Meta rejected the token exchange (HTTP {respuesta.status_code}). Check the app ID, app secret and whether the pasted token is valid and unexpired.'
         )
     try:
         return respuesta.json()["access_token"]
     except Exception:
         raise RuntimeError(
-            "Meta respondió con un formato inesperado al intercambiar el token"
+            "Meta returned an unexpected format while exchanging the token"
         ) from None
 
 
 def obtener_paginas_meta(token_usuario: str, client: httpx.Client) -> list[dict]:
-    """Lista las páginas administradas por el usuario, con su token de página.
-
-    Confirmado con Context7 (misma fuente que `intercambiar_token_meta`):
-    `GET /me/accounts` con el token de usuario de larga duración devuelve,
-    por cada página, `id`, `name` y `access_token` -este último ya es un
-    token de PÁGINA de larga duración ("do not have an expiration date"),
-    sin ningún paso adicional.
-
-    Un fallo de red real al hacer la petición se traduce en `RuntimeError`
-    en vez de escapar como excepción cruda (ver el docstring del módulo).
-    """
+    """List Pages administered by the user, including their Page tokens."""
     try:
         respuesta = client.get(f"{GRAFO}/me/accounts", params={"access_token": token_usuario})
     except httpx.InvalidURL:
         # No hereda de httpx.HTTPError, así que necesita su propio except.
         raise RuntimeError(
-            "no se pudo contactar con Meta para listar las páginas: la URL "
-            "configurada no es válida. Vuelve a ejecutar el comando auth."
+            'could not contact Meta to list pages: the configured URL is invalid. Run the auth command again.'
         ) from None
     except httpx.TimeoutException:
         # Subclase de httpx.HTTPError: debe ir antes que ese except para no
         # quedar inalcanzable.
         raise RuntimeError(
-            "se agotó el tiempo de espera al contactar con Meta para "
-            "listar las páginas. Vuelve a ejecutar el comando auth."
+            'contacting Meta to list pages timed out. Run the auth command again.'
         ) from None
     except httpx.HTTPError:
         raise RuntimeError(
-            "no se pudo conectar con Meta para listar las páginas. "
-            "Comprueba tu conexión a internet y vuelve a ejecutar el "
-            "comando auth."
+            'could not connect to Meta to list pages. Check your internet connection and run the auth command again.'
         ) from None
     except Exception:
         # Resguardo final: nunca se interpola el propio error, podría
         # arrastrar la petición con el token de usuario de larga duración.
         raise RuntimeError(
-            "ocurrió un error inesperado al listar las páginas de Meta. "
-            "Vuelve a ejecutar el comando auth."
+            'an unexpected error occurred while listing Meta pages. Run the auth command again.'
         ) from None
 
     if respuesta.status_code != 200:
         raise RuntimeError(
-            f"Meta rechazó la petición de páginas (HTTP {respuesta.status_code})."
+            f"Meta rejected the pages request (HTTP {respuesta.status_code})."
         )
     try:
         paginas = respuesta.json()["data"]
     except Exception:
         raise RuntimeError(
-            "Meta respondió con un formato inesperado al listar las páginas"
+            "Meta returned an unexpected format while listing pages"
         ) from None
 
     if not isinstance(paginas, list):
         raise RuntimeError(
-            "Meta respondió con un formato inesperado al listar las páginas"
+            "Meta returned an unexpected format while listing pages"
         )
     return paginas

@@ -145,15 +145,15 @@ def test_prepare_binds_digest_media_and_rejects_duplicate(brand):
     assert change.capability == "instagram_public_api_write_grant_unverified"
     assert store.load(change.id) == change
 
-    with pytest.raises(StoryError, match="duplicada"):
+    with pytest.raises(StoryError, match="Duplicate"):
         prepare_story(brand, store, story(brand))
 
 
 @pytest.mark.parametrize(
     ("suffix", "url", "message"),
     [
-        (".png", "https://cdn.example/story.png", "formato de imagen"),
-        (".jpg", "http://cdn.example/story.jpg", "URL pública insegura"),
+        (".png", "https://cdn.example/story.png", "image format"),
+        (".jpg", "http://cdn.example/story.jpg", "unsafe public URL"),
     ],
 )
 def test_prepare_rejects_invalid_format_or_public_url(brand, suffix, url, message):
@@ -190,12 +190,12 @@ def test_prepare_checks_real_formats_and_documented_story_limits(brand, monkeypa
 
     invalid = story(brand)
     invalid.media.path.write_bytes(b"x" * invalid.media.size_bytes)
-    with pytest.raises(StoryError, match="legible y real|bytes JPEG"):
+    with pytest.raises(StoryError, match="readable and actual|JPEG bytes"):
         prepare_story(brand, StoryStore(brand.raiz), invalid)
 
     invalid_video = story(brand, suffix=".mp4")
     invalid_video.media.path.write_bytes(b"x" * invalid_video.media.size_bytes)
-    with pytest.raises(StoryError, match="contenedor MP4 o MOV"):
+    with pytest.raises(StoryError, match="MP4 or MOV container"):
         prepare_story(brand, StoryStore(brand.raiz), invalid_video)
 
 
@@ -203,7 +203,7 @@ def test_prepare_rejects_real_video_outside_duration_limit(brand):
     value = story(brand, suffix=".short.mp4")
     # Lying in the model cannot bypass the duration observed with ffprobe.
     value.media.duration_s = 30.0
-    with pytest.raises(StoryError, match="entre 3 y 60"):
+    with pytest.raises(StoryError, match="between 3 and 60"):
         prepare_story(brand, StoryStore(brand.raiz), value)
 
 
@@ -224,7 +224,7 @@ def test_apply_requires_exact_digest_before_any_client_call(brand):
     store = StoryStore(brand.raiz)
     change = prepare_story(brand, store, story(brand))
 
-    with pytest.raises(StoryError, match="huella exacta"):
+    with pytest.raises(StoryError, match="exact.*fingerprint"):
         apply_story(None, store, change.id, "0" * 64, brand=brand)
     assert store.load(change.id).status == "prepared"
 
@@ -239,7 +239,7 @@ def test_apply_expired_never_writes(brand, monkeypatch):
 
     result = apply_story(None, store, change.id, change.fingerprint, brand=brand)
     assert result.status == "expired"
-    assert "expirado" in result.last_error
+    assert "expired" in result.last_error
 
 
 def test_facebook_apply_is_explicit_handoff_without_adapter(brand):
@@ -249,7 +249,7 @@ def test_facebook_apply_is_explicit_handoff_without_adapter(brand):
     result = apply_story(None, store, change.id, change.fingerprint, brand=brand)
 
     assert result.status == "handoff_required"
-    assert "API pública" in result.last_error
+    assert "public API" in result.last_error
     assert "Business Suite" in result.last_error
     assert result.remote_id is None
 
@@ -363,7 +363,7 @@ def test_public_url_preflight_uses_persisted_bytes_across_local_get_race(brand):
         )
 
     assert result.status == "blocked"
-    assert "bytes de la media pública" in result.last_error
+    assert "public media bytes" in result.last_error
     assert writes == []
 
 
@@ -456,7 +456,7 @@ def test_expired_local_approval_with_container_requires_remote_expired_before_re
     assert unresolved.status == "container_created"
     assert client.status_calls == 1
     equivalent = story(brand, expires=future + timedelta(hours=2))
-    with pytest.raises(StoryError, match="duplicada.*container_created"):
+    with pytest.raises(StoryError, match="Duplicate.*container_created"):
         prepare_story(brand, store, equivalent)
 
     client.status = "EXPIRED"
@@ -483,7 +483,7 @@ def test_expired_uncertain_blocks_equivalent_effect_until_explicit_reconciliatio
     equivalent.public_url = "https://other.example/same-approved-bytes.jpg"
     equivalent.text = "Otra referencia editorial"
     equivalent.source_video_id = "abcdefghijk"
-    with pytest.raises(StoryError, match="duplicada.*uncertain"):
+    with pytest.raises(StoryError, match="Duplicate.*uncertain"):
         prepare_story(brand, store, equivalent)
 
     class ReconcileExpired:
@@ -520,7 +520,7 @@ def test_expired_sent_or_verified_still_blocks_duplicate(brand, monkeypatch, sta
 
     equivalent = story(brand, expires=future + timedelta(hours=2))
     equivalent.public_url = "https://other.example/same-approved-bytes.jpg"
-    with pytest.raises(StoryError, match=f"duplicada.*{status}"):
+    with pytest.raises(StoryError, match=f"Duplicate.*{status}"):
         prepare_story(brand, store, equivalent)
 
 
@@ -582,7 +582,7 @@ def test_missing_permission_is_actionable_blocked_state(brand):
     result = apply_story(DeniedClient(), store, change.id, change.fingerprint)
 
     assert result.status == "blocked"
-    assert "grant de escritura sigue sin verificar" in result.last_error
+    assert "write grant remains unverified" in result.last_error
     assert result.container_id is None
 
 

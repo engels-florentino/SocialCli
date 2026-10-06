@@ -223,7 +223,7 @@ def test_colision_de_ids_descarta_el_segundo_con_aviso(brand):
         "riesgo_duplicado": False, "fecha": "2026-09-02T10:00:00",
     }])
 
-    with pytest.warns(UserWarning, match=r"dos posts reclaman.*youtube.*vid-duplicado"):
+    with pytest.warns(UserWarning, match='two posts claim.*youtube.*vid-duplicado'):
         mapa = mapa_de_slugs(brand)
 
     # El primero en orden alfabético gana

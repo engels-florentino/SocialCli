@@ -83,7 +83,7 @@ def test_brand_new_marca_ya_existente_da_error_util(tmp_path):
     resultado = runner.invoke(app, ["brand", "new", "Nueva", "--root", str(tmp_path)])
 
     assert resultado.exit_code == 1
-    assert "ya existe una carpeta" in resultado.stdout
+    assert 'a directory already exists' in resultado.stdout
     assert "Traceback" not in resultado.output
 
 
@@ -93,7 +93,7 @@ def test_brand_new_nombre_invalido_da_error_util(tmp_path):
     resultado = runner.invoke(app, ["brand", "new", "../fuera-de-la-raiz", "--root", str(tmp_path)])
 
     assert resultado.exit_code == 1
-    assert "no puede contener separadores de ruta" in resultado.stdout
+    assert 'cannot contain path separators' in resultado.stdout
     assert "Traceback" not in resultado.output
 
 
@@ -133,7 +133,7 @@ def test_sin_confirmar_no_publica(social, monkeypatch):
     ], input="n\n")
 
     assert llamadas == []
-    assert "cancelado" in resultado.stdout.lower()
+    assert 'canceled' in resultado.stdout.lower()
 
 
 def test_ctrl_c_en_la_confirmacion_termina_con_130_y_dice_cancelado(social, monkeypatch):
@@ -161,7 +161,7 @@ def test_ctrl_c_en_la_confirmacion_termina_con_130_y_dice_cancelado(social, monk
 
     assert resultado.exit_code == 130
     assert llamadas == []
-    assert "cancelado" in resultado.stdout.lower()
+    assert 'canceled' in resultado.stdout.lower()
     assert "Traceback" not in resultado.output
 
 
@@ -182,8 +182,8 @@ def test_confirmar_con_si_en_espanol_publica(social, monkeypatch):
 
     assert resultado.exit_code == 0
     assert llamadas == [1]
-    assert "[y/N]" not in resultado.stdout
-    assert "[s/N]" in resultado.stdout
+    assert "[s/N]" not in resultado.stdout
+    assert '[y/N]' in resultado.stdout
 
 
 def test_con_yes_publica_y_escribe_resultado(social, monkeypatch):
@@ -195,7 +195,7 @@ def test_con_yes_publica_y_escribe_resultado(social, monkeypatch):
     ])
 
     assert resultado.exit_code == 0
-    assert "facebook: publicación confirmada https://facebook.com/1" in resultado.stdout
+    assert 'facebook: publication confirmed https://facebook.com/1' in resultado.stdout
     destino = social / "Histopast" / "posts" / "2026-09-07-prueba" / "resultado.json"
     datos = json.loads(destino.read_text(encoding="utf-8"))
     assert datos["resultados"][0]["status"] == "publicado"
@@ -245,7 +245,7 @@ def test_errores_de_validacion_abortan_sin_publicar(social, monkeypatch):
     ])
 
     assert resultado.exit_code == 1
-    assert "exige imagen o video" in resultado.stdout
+    assert 'requires an image or video' in resultado.stdout
     assert llamadas == []
 
 
@@ -278,7 +278,7 @@ def test_aviso_de_slug_no_coincide_se_muestra_en_el_preview(social):
     ])
 
     assert resultado.exit_code == 0
-    assert "no coincide con el nombre real de la carpeta" in resultado.stdout
+    assert 'does not match the actual directory name' in resultado.stdout
 
 
 def test_nombre_de_marca_invalido_da_error_util(social):
@@ -287,7 +287,7 @@ def test_nombre_de_marca_invalido_da_error_util(social):
         "--root", str(social),
     ])
     assert resultado.exit_code == 1
-    assert "no puede contener separadores de ruta" in resultado.stdout
+    assert 'cannot contain path separators' in resultado.stdout
 
 
 def test_accounts_invalido_da_error_util(social):
@@ -298,7 +298,7 @@ def test_accounts_invalido_da_error_util(social):
     ])
 
     assert resultado.exit_code == 1
-    assert "un mapping (clave: valor) de cuentas" in resultado.stdout
+    assert 'an account mapping (key: value)' in resultado.stdout
 
 
 def test_error_de_persistencia_no_revienta_con_traza(social, monkeypatch):
@@ -315,7 +315,7 @@ def test_error_de_persistencia_no_revienta_con_traza(social, monkeypatch):
         carpeta.chmod(permisos_originales)
 
     assert resultado.exit_code == 1
-    assert "no se pudo guardar" in resultado.stdout.lower()
+    assert 'could not save' in resultado.stdout.lower()
     assert "Traceback" not in resultado.output
 
 
@@ -324,7 +324,7 @@ def test_retry_sin_intento_previo(social):
         "retry", "2026-09-07-prueba", "--brand", "Histopast", "--root", str(social),
     ])
     assert resultado.exit_code == 1
-    assert "no hay un intento previo" in resultado.stdout.lower()
+    assert 'no previous attempt' in resultado.stdout.lower()
 
 
 def test_retry_fichero_corrupto(social):
@@ -335,7 +335,7 @@ def test_retry_fichero_corrupto(social):
         "retry", "2026-09-07-prueba", "--brand", "Histopast", "--root", str(social),
     ])
     assert resultado.exit_code == 1
-    assert "no se pudo interpretar" in resultado.stdout.lower()
+    assert 'could not parse' in resultado.stdout.lower()
 
 
 def test_retry_sin_redes_fallidas(social):
@@ -354,7 +354,7 @@ def test_retry_sin_redes_fallidas(social):
         "retry", "2026-09-07-prueba", "--brand", "Histopast", "--root", str(social),
     ])
     assert resultado.exit_code == 0
-    assert "no hay redes fallidas que reintentar" in resultado.stdout.lower()
+    assert 'there are no failed platforms to retry' in resultado.stdout.lower()
 
 
 def test_retry_republica_solo_las_fallidas_y_preserva_las_demas(social, monkeypatch):
@@ -416,7 +416,7 @@ def test_retry_republica_solo_las_fallidas_y_preserva_las_demas(social, monkeypa
     # reintento porque ya estaba publicado, no porque el usuario haya
     # escrito `--only` (aquí ni siquiera existe esa opción); el preview de
     # `retry` no debe atribuir la exclusión a `--only`.
-    assert "no se reintenta en este intento" in resultado.stdout
+    assert 'not retried in this attempt' in resultado.stdout
     assert "--only" not in resultado.stdout
 
     datos = json.loads((carpeta / "resultado.json").read_text(encoding="utf-8"))
@@ -445,7 +445,7 @@ def test_retry_avisa_si_post_yml_ya_no_incluye_una_red_fallida(social):
 
     assert resultado.exit_code == 0
     assert "tiktok" in resultado.stdout
-    assert "ya no incluye" in resultado.stdout.lower()
+    assert 'no longer includes' in resultado.stdout.lower()
 
 
 def test_retry_no_reintenta_automaticamente_tras_aviso_de_duplicado(social, monkeypatch):
@@ -492,7 +492,7 @@ def test_retry_no_reintenta_automaticamente_tras_aviso_de_duplicado(social, monk
 
     assert llamadas == []
     assert resultado.exit_code == 1
-    assert "riesgo de publicación duplicada" in resultado.stdout
+    assert 'duplicate publication risk' in resultado.stdout
 
 
 def test_retry_no_reintenta_si_riesgo_duplicado_aunque_el_mensaje_no_diga_duplicar(
@@ -544,7 +544,7 @@ def test_retry_no_reintenta_si_riesgo_duplicado_aunque_el_mensaje_no_diga_duplic
 
     assert llamadas == []
     assert resultado.exit_code == 1
-    assert "riesgo de publicación duplicada" in resultado.stdout
+    assert 'duplicate publication risk' in resultado.stdout
 
 
 def test_retry_reintenta_si_falta_el_campo_riesgo_duplicado_en_un_resultado_antiguo(
@@ -716,7 +716,7 @@ def test_retry_relee_riesgo_duplicado_desde_resultado_json_no_de_memoria(social,
 
     assert llamadas == []
     assert segundo.exit_code == 1
-    assert "riesgo de publicación duplicada" in segundo.stdout
+    assert 'duplicate publication risk' in segundo.stdout
 
 
 # --- _esperar_codigo: servidor local real (no monkeypatcheado) ---
@@ -846,7 +846,7 @@ def test_esperar_codigo_con_error_del_proveedor_devuelve_la_pagina_de_error():
     assert recibido["error"] == "access_denied"
     pagina = cuerpo["valor"].decode("utf-8")
     assert pagina == cli._PAGINA_ERROR_AUTORIZACION
-    assert "Listo" not in pagina
+    assert 'Done' not in pagina
     # La página nunca interpola lo que trae la redirección.
     assert "VALOR-DEL-PROVEEDOR-1234" not in pagina
     assert "access_denied" not in pagina
@@ -872,7 +872,7 @@ def test_esperar_codigo_con_state_no_coincidente_devuelve_la_pagina_de_aviso():
     assert recibido["state"] == "UN-STATE-DISTINTO"
     pagina = cuerpo["valor"].decode("utf-8")
     assert pagina == cli._PAGINA_ESTADO_INVALIDO
-    assert "Listo" not in pagina
+    assert 'Done' not in pagina
     assert "UN-STATE-DISTINTO" not in pagina
     assert "el-state-esperado" not in pagina
 
@@ -884,7 +884,7 @@ def test_auth_marca_desconocida_da_error_util(tmp_path):
     resultado = runner.invoke(app, ["auth", "youtube", "--brand", "Nadie", "--root", str(tmp_path)])
 
     assert resultado.exit_code == 1
-    assert "no existe la marca" in resultado.stdout
+    assert 'brand does not exist' in resultado.stdout
     assert "Traceback" not in resultado.output
 
 
@@ -896,7 +896,7 @@ def test_auth_red_desconocida_da_error_util(tmp_path):
     )
 
     assert resultado.exit_code == 1
-    assert "red desconocida" in resultado.stdout
+    assert 'unknown platform' in resultado.stdout
     assert "Traceback" not in resultado.output
 
 
@@ -932,7 +932,7 @@ def test_auth_youtube_guarda_las_credenciales_con_pkce_y_state_correctos(tmp_pat
     ], input="cid\ncsecret\n")
 
     assert resultado.exit_code == 0, resultado.stdout
-    assert "Credenciales de youtube guardadas" in resultado.stdout
+    assert 'Credentials for youtube saved' in resultado.stdout
     assert "csecret" not in resultado.stdout
 
     secreto = json.loads((tmp_path / "Histopast" / ".secrets" / "youtube.json").read_text())
@@ -988,7 +988,7 @@ def test_auth_youtube_state_no_coincidente_aborta_sin_guardar_nada(tmp_path, mon
     # de autorización (impresa siempre, se verifique o no el state) ya
     # contiene "state=...", así que esa subcadena aparecía igual aunque se
     # quitara la comprobación real.
-    assert "no coincide con el generado" in resultado.stdout
+    assert 'does not match the value generated' in resultado.stdout
     assert not ruta_token.called  # la aserción que de verdad pincha: nunca se llega a canjear el codigo
     assert not (tmp_path / "Histopast" / ".secrets" / "youtube.json").exists()
 
@@ -1091,7 +1091,7 @@ def test_auth_tiktok_guarda_el_open_id_automaticamente_en_accounts_yml(tmp_path,
     texto_accounts = (tmp_path / "Histopast" / "accounts.yml").read_text(encoding="utf-8")
     assert 'open_id: "oid-real-1"' in texto_accounts
     # Los comentarios de la plantilla deben seguir intactos.
-    assert "IDs de las cuentas de esta marca" in texto_accounts
+    assert 'Account identifiers for this brand' in texto_accounts
 
     # El open_id vive solo en accounts.yml, no duplicado en el secreto.
     secreto = json.loads((tmp_path / "Histopast" / ".secrets" / "tiktok.json").read_text())
@@ -1112,7 +1112,7 @@ def test_auth_tiktok_sin_open_id_en_la_respuesta_avisa_y_no_falla(tmp_path, monk
     # La autenticación no debe fallar por esto: el token ya se obtuvo y es
     # lo importante.
     assert resultado.exit_code == 0, resultado.stdout
-    assert "Credenciales de tiktok guardadas" in resultado.stdout
+    assert 'Credentials for tiktok saved' in resultado.stdout
     assert "open_id" in resultado.stdout  # el aviso menciona qué falta
     assert "at-secreto-reconocible-2" not in resultado.stdout
 
@@ -1255,7 +1255,7 @@ def test_publish_avisa_en_que_red_esta_trabajando(social, monkeypatch):
     ])
 
     assert resultado.exit_code == 0, resultado.stdout
-    assert "Publicando en facebook" in resultado.stdout
+    assert 'Publishing on facebook' in resultado.stdout
 
 
 # --- Hallazgo I3 (revisión final): `--only` no dejaba publicar en las redes
@@ -1297,7 +1297,7 @@ def test_only_publica_la_red_valida_aunque_otra_tenga_errores_de_validacion(
     assert llamadas == [1]
     # El preview sigue mostrando el problema de Instagram (fidelidad): no se
     # oculta solo porque no se vaya a publicar ahí.
-    assert "exige imagen o video" in resultado.stdout
+    assert 'requires an image or video' in resultado.stdout
 
 
 def test_only_sigue_bloqueando_si_la_propia_red_solicitada_tiene_errores(
@@ -1366,7 +1366,7 @@ def test_preview_marca_las_redes_excluidas_por_only(social):
 
     assert resultado.exit_code == 0, resultado.stdout
     assert "instagram" in resultado.stdout.lower()
-    assert "no solicitada" in resultado.stdout.lower()
+    assert 'not requested' in resultado.stdout.lower()
 
 
 def test_sin_only_el_preview_no_marca_ninguna_exclusion(social, monkeypatch):
@@ -1378,7 +1378,7 @@ def test_sin_only_el_preview_no_marca_ninguna_exclusion(social, monkeypatch):
     ])
 
     assert resultado.exit_code == 0
-    assert "no solicitada" not in resultado.stdout.lower()
+    assert 'not requested' not in resultado.stdout.lower()
 
 
 # --- Hallazgo I4 (revisión final): la salvaguarda de auditoría de TikTok
@@ -1417,8 +1417,8 @@ def test_preview_de_tiktok_muestra_falta_de_auditoria_antes_de_aprobar(tmp_path)
         "--root", str(tmp_path), "--dry-run",
     ])
 
-    assert "Problemas detectados: 0" not in resultado.stdout
-    assert "no está auditada" in resultado.stdout
+    assert 'Problems found: 0' not in resultado.stdout
+    assert 'not audited' in resultado.stdout
     # No se publica nada (aborta antes de llegar al --dry-run): la
     # aprobación nunca llega a pedirse sobre un post condenado a fallar.
     assert resultado.exit_code == 1

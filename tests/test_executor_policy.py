@@ -84,7 +84,7 @@ def test_slot_persistence_failure_blocks_admission(tmp_path, monkeypatch):
     def fail(*args):
         raise OSError("credential=do-not-display")
     monkeypatch.setattr(executor, "write_json", fail)
-    with ScheduleStore(brand.raiz).executor_lock(), pytest.raises(ScheduleError, match="estado del ejecutor"):
+    with ScheduleStore(brand.raiz).executor_lock(), pytest.raises(ScheduleError, match='executor state'):
         list(executor.admitted_groups(ScheduleStore(brand.raiz), datetime.fromisoformat("2026-09-12T14:10:00+00:00")))
 
 

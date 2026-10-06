@@ -1,4 +1,4 @@
-"""Comandos CLI acotados para inspección y ChangeSets de metadatos."""
+"""Bounded CLI commands for inspection and metadata ChangeSets."""
 
 from __future__ import annotations
 
@@ -32,12 +32,12 @@ from socialctl.workspace import default_root
 
 DEFAULT_ROOT = default_root()
 
-content_app = typer.Typer(help="Inspecciona y prepara cambios de contenido existente.")
-changes_app = typer.Typer(help="Consulta y aplica ChangeSets previamente preparados.")
+content_app = typer.Typer(help="Inspect and prepare changes to existing content.")
+changes_app = typer.Typer(help="Inspect and apply previously prepared ChangeSets.")
 
 
 def make_http_client() -> httpx.Client:
-    """Punto pequeño de construcción para poder probar el CLI sin red real."""
+    """Small construction hook for testing CLI without live network."""
     return httpx.Client(timeout=30.0)
 
 
@@ -58,7 +58,7 @@ def _json(data: object) -> str:
 
 
 def render_change_preview(change: ChangeSet) -> str:
-    """Muestra el snippet final completo y un diff exacto antes de aprobar."""
+    """Display complete final snippet and exact diff before approval."""
     before = _json(change.before).splitlines()
     after = _json(change.after).splitlines()
     diff = "\n".join(
@@ -69,28 +69,28 @@ def render_change_preview(change: ChangeSet) -> str:
             tofile="snippet propuesto",
             lineterm="",
         )
-    ) or "(sin diferencias)"
+    ) or "(no differences)"
     return (
         f"ChangeSet: {change.id}\n"
-        f"Marca/canal objetivo: {change.target_account}\n"
-        f"Vídeo: {change.video_id}\n"
-        f"Huella exacta para aprobar: {change.fingerprint}\n\n"
-        f"Snippet propuesto completo:\n{_json(change.after)}\n\n"
+        f"Target brand/channel: {change.target_account}\n"
+        f"Video: {change.video_id}\n"
+        f"Exact fingerprint for approval: {change.fingerprint}\n\n"
+        f"Complete proposed snippet:\n{_json(change.after)}\n\n"
         f"Diff:\n{diff}\n\n"
-        "Límites V1: un vídeo, solo snippet. Lotes y otras partes usan content edit-batch. "
-        "Restauración propone un nuevo cambio con changes restore --dry-run."
+        "V1 limitations: one video, snippet only. Batches and other parts use content edit-batch. "
+        "Restoration proposes a new change with changes restore --dry-run."
     )
 
 
 @content_app.command("show")
 def content_show(
-    video_id: str = typer.Argument(..., help="ID remoto del vídeo de YouTube."),
+    video_id: str = typer.Argument(..., help="Remote YouTube video ID."),
     brand: str = typer.Option(
-        ..., "--brand", help="Marca propietaria; nunca se infiere."
+        ..., "--brand", help="Owning brand; never inferred."
     ),
-    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Raíz del proyecto Social."),
+    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
 ) -> None:
-    """Muestra el snippet remoto tras verificar canal autenticado y propiedad."""
+    """Display remote snippet after verifying authenticated channel and ownership."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as client:
@@ -113,17 +113,17 @@ def content_show(
 @content_app.command("edit")
 def content_edit(
     file: Path = typer.Option(
-        ..., "--file", help="YAML version 1 con video_id y patch."
+        ..., "--file", help="Version 1 YAML with video_id and patch."
     ),
     brand: str = typer.Option(
-        ..., "--brand", help="Marca propietaria; nunca se infiere."
+        ..., "--brand", help="Owning brand; never inferred."
     ),
-    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Raíz del proyecto Social."),
+    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
     dry_run: bool = typer.Option(
-        False, "--dry-run", help="Muestra propuesta; nunca escribe en YouTube."
+        False, "--dry-run", help="Display proposal; never write to YouTube."
     ),
 ) -> None:
-    """Prepara una propuesta local inmutable para exactamente un vídeo."""
+    """Prepare immutable local proposal for exactly one video."""
     selected = _brand(root, brand)
     try:
         edit = load_edit_file(file)
@@ -134,21 +134,21 @@ def content_edit(
     except (ChangeError, YouTubeManagementError, OSError) as exc:
         _fail(str(exc))
     if dry_run:
-        typer.echo("DRY-RUN remoto: no se ha escrito nada en YouTube.")
+        typer.echo("Remote DRY-RUN: no YouTube writes performed.")
     else:
-        typer.echo("Propuesta preparada: este comando no escribe en YouTube.")
+        typer.echo("Proposal prepared: this command does not write to YouTube.")
     typer.echo(render_change_preview(change))
 
 
 @changes_app.command("status")
 def changes_status(
-    change_id: str = typer.Argument(..., help="UUID del ChangeSet."),
+    change_id: str = typer.Argument(..., help="ChangeSet UUID."),
     brand: str = typer.Option(
-        ..., "--brand", help="Marca propietaria; nunca se infiere."
+        ..., "--brand", help="Owning brand; never inferred."
     ),
-    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Raíz del proyecto Social."),
+    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
 ) -> None:
-    """Muestra propuesta, estado y diario local completos."""
+    """Display complete local proposal, state and journal."""
     selected = _brand(root, brand)
     try:
         batch_store = BatchStore(selected.raiz)
@@ -161,16 +161,16 @@ def changes_status(
 
 @changes_app.command("apply")
 def changes_apply(
-    change_id: str = typer.Argument(..., help="UUID del ChangeSet."),
+    change_id: str = typer.Argument(..., help="ChangeSet UUID."),
     brand: str = typer.Option(
-        ..., "--brand", help="Marca propietaria; nunca se infiere."
+        ..., "--brand", help="Owning brand; never inferred."
     ),
-    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Raíz del proyecto Social."),
+    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
     yes: bool = typer.Option(
-        False, "--yes", help="No sustituye la aprobación exacta de la huella."
+        False, "--yes", help="Does not replace exact fingerprint approval."
     ),
 ) -> None:
-    """Aplica un snippet tras escribir exactamente la huella mostrada."""
+    """Apply snippet after entering exact displayed fingerprint."""
     selected = _brand(root, brand)
     store = ChangeStore(selected.raiz)
     try:
@@ -182,13 +182,13 @@ def changes_apply(
         _fail(str(exc))
     typer.echo(render_change_preview(change))
     if yes:
-        typer.echo("AVISO: --yes no sustituye la aprobación exacta de este ChangeSet.")
+        typer.echo("NOTICE: --yes does not replace exact approval of this ChangeSet.")
     try:
-        approval = typer.prompt("Escribe exactamente la huella para aprobar")
+        approval = typer.prompt("Enter the exact fingerprint to approve")
     except (EOFError, KeyboardInterrupt):
-        _fail("Aplicación cancelada: no se recibió la aprobación exacta.")
+        _fail("Application cancelled: exact approval was not received.")
     if approval != change.fingerprint:
-        _fail("Aplicación cancelada: la aprobación no coincide con la huella exacta.")
+        _fail("Application cancelled: approval does not match exact fingerprint.")
 
     try:
         with make_http_client() as client:
@@ -198,7 +198,7 @@ def changes_apply(
     except (ChangeError, YouTubeManagementError, OSError) as exc:
         _fail(str(exc))
     typer.echo(
-        f"ChangeSet {result.id} aplicado y verificado por relectura. Estado: {result.status}."
+        f"ChangeSet {result.id} applied and verified by reread. Status: {result.status}."
     )
 
 

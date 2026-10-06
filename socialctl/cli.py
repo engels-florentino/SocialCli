@@ -1,14 +1,4 @@
-"""CLI de socialctl.
-
-Contiene el único punto de parada de todo el proyecto: el usuario ve el
-preview con el texto de las cuatro redes y qué archivo va a cada una,
-aprueba una sola vez (o pasa ``--yes`` para saltarse esa pregunta de forma
-explícita), y a partir de ahí se publica en todas sin volver a preguntar
-red por red. Si hay problemas de validación, o si el guardado del
-resultado falla, no se publica nada (o se avisa con toda claridad de lo
-que sí llegó a publicarse pese a ello); publicar algo que no cumple es
-peor que no publicar.
-"""
+"""The socialcli command-line interface."""
 
 from __future__ import annotations
 
@@ -95,8 +85,8 @@ from socialctl.scheduler import (
     schedule_digest,
 )
 
-app = typer.Typer(help="Publica contenido ya producido en YouTube, Facebook, Instagram y TikTok.")
-brand_app = typer.Typer(help="Gestión de marcas.")
+app = typer.Typer(help="Publish already produced content on YouTube, Facebook, Instagram and TikTok.")
+brand_app = typer.Typer(help="Brand management.")
 app.add_typer(brand_app, name="brand")
 app.add_typer(content_app, name="content")
 app.add_typer(changes_app, name="changes")
@@ -136,8 +126,8 @@ TIMEOUT_CALLBACK_S = 300.0  # 5 minutos: tiempo razonable para completar el logi
 
 _PAGINA_LISTO = (
     "<!doctype html><html><head><meta charset='utf-8'>"
-    "<title>socialctl</title></head><body>"
-    "<h1>Listo. Puedes cerrar esta pestaña.</h1>"
+    "<title>socialcli</title></head><body>"
+    "<h1>Done. You can close this tab.</h1>"
     "</body></html>"
 )
 
@@ -152,31 +142,22 @@ _PAGINA_LISTO = (
 # volcar ningún dato de la petición.
 _PAGINA_ERROR_AUTORIZACION = (
     "<!doctype html><html><head><meta charset='utf-8'>"
-    "<title>socialctl</title></head><body>"
-    "<h1>La autorización no se completó.</h1>"
-    "<p>Vuelve a la terminal para ver el detalle.</p>"
+    "<title>socialcli</title></head><body>"
+    "<h1>Authorization did not complete.</h1>"
+    "<p>Return to the terminal for details.</p>"
     "</body></html>"
 )
 _PAGINA_ESTADO_INVALIDO = (
     "<!doctype html><html><head><meta charset='utf-8'>"
-    "<title>socialctl</title></head><body>"
-    "<h1>Algo fue mal con esta autorización y no se ha usado.</h1>"
-    "<p>Vuelve a la terminal y ejecuta de nuevo el comando 'auth'.</p>"
+    "<title>socialcli</title></head><body>"
+    "<h1>Something went wrong with this authorization and it was not used.</h1>"
+    "<p>Return to the terminal and run the 'auth' command again.</p>"
     "</body></html>"
 )
 
 
 def _pagina_para(recibido: dict[str, str], estado_esperado: str | None) -> str:
-    """Elige, entre las tres páginas estáticas de arriba, la que corresponde
-    al resultado de la redirección.
-
-    No hace la verificación anti-CSRF de verdad -esa sigue viviendo, sin
-    cambios, en `verificar_state` y sigue siendo la que decide si se canjea
-    el código-: esto es solo lo que ve el usuario en la pestaña del
-    navegador, así que una comparación simple basta. `estado_esperado=None`
-    (nadie pidió distinguir el `state`) se salta esa comprobación y muestra
-    éxito salvo que la redirección trajera un `error`.
-    """
+    """Select the static OAuth callback page matching the result."""
     if "error" in recibido:
         return _PAGINA_ERROR_AUTORIZACION
     if estado_esperado is not None and recibido.get("state") != estado_esperado:
@@ -193,20 +174,14 @@ def _pagina_para(recibido: dict[str, str], estado_esperado: str | None) -> str:
 # patrón podría hacer falta para otra red el día de mañana.
 _AVISO_ESPERA_LARGA = {
     Platform.INSTAGRAM: (
-        " (Instagram puede tardar varios minutos comprobando que el vídeo "
-        "ya está procesado; no te preocupes si tarda)"
+        ' (Instagram may take several minutes to verify video processing; allow it time)'
     ),
 }
 
 
 def _mostrar_progreso(platform: Platform) -> None:
-    """Avisa por stdout de en qué red se está trabajando antes de publicar.
-
-    Es el callback `on_progreso` de `publicar()` (`socialctl/publisher.py`):
-    sin él, publicar en las cuatro redes de forma secuencial -y esperar el
-    sondeo de Instagram en medio- no daba ninguna señal de vida al usuario.
-    """
-    typer.echo(f"Publicando en {platform.value}...{_AVISO_ESPERA_LARGA.get(platform, '')}")
+    """Report the active platform before publication."""
+    typer.echo(f"Publishing on {platform.value}...{_AVISO_ESPERA_LARGA.get(platform, '')}")
 
 
 def _esperar_codigo(
@@ -214,39 +189,7 @@ def _esperar_codigo(
     estado_esperado: str | None = None,
     timeout_s: float = TIMEOUT_CALLBACK_S,
 ) -> dict[str, str]:
-    """Levanta un servidor local de un solo uso en localhost:`puerto` y
-    devuelve los parámetros de consulta de la primera petición que reciba
-    (típicamente `code` y `state`, o `error`/`error_description` si el
-    usuario canceló la autorización).
-
-    `estado_esperado` es el `state` generado al iniciar este intento (ver
-    `generar_state` en `socialctl/authflow.py`); se usa únicamente para
-    elegir qué página estática mostrar (`_pagina_para`), no para la
-    verificación real -esa la sigue haciendo `verificar_state` en el
-    llamador, después de que esta función devuelva-. `None` (el valor por
-    defecto) se salta esa distinción y muestra éxito salvo que la
-    redirección traiga un `error`.
-
-    Propiedades de seguridad y robustez, todas deliberadas:
-
-    - De un solo uso: `handle_request()` atiende como máximo UNA petición y
-      termina; nunca se queda escuchando una segunda.
-    - Nunca se queda escuchando indefinidamente: `servidor.timeout` hace que
-      la propia espera de una conexión expire a los `timeout_s` segundos (5
-      minutos por defecto) en vez de bloquear para siempre si el usuario
-      nunca completa el login en el navegador.
-    - Se cierra siempre: `server_close()` vive en un `finally`, así que el
-      puerto queda libre tanto si llega la petición, como si expira el
-      plazo, como si `handle_request()` lanza algo inesperado.
-    - Puerto ya ocupado: si otro proceso ya está escuchando en `puerto`,
-      `HTTPServer(...)` lanza `OSError` al construirse (antes de intentar
-      atender nada); se convierte aquí en un `RuntimeError` con un mensaje
-      accionable en vez de dejar escapar la traza cruda de sockets.
-    - Las páginas que puede ver el usuario al terminar (`_pagina_para`) son
-      estáticas y ninguna contiene el código, el `state`, el `error` ni
-      ningún otro dato de la petición: nunca reflejan de vuelta lo que han
-      recibido.
-    """
+    """Run a single-use localhost callback server and return the authorization code."""
     recibido: dict[str, str] = {}
 
     class _Manejador(http.server.BaseHTTPRequestHandler):
@@ -265,8 +208,7 @@ def _esperar_codigo(
         servidor = http.server.HTTPServer(("localhost", puerto), _Manejador)
     except OSError as exc:
         raise RuntimeError(
-            f"no se pudo abrir el puerto {puerto} en localhost ({exc}). "
-            "¿Hay otro proceso usándolo? Ciérralo e inténtalo de nuevo."
+            f'could not open port {puerto} in localhost ({exc}). Is another process using it? Close it and try again.'
         ) from None
 
     servidor.timeout = timeout_s
@@ -279,36 +221,28 @@ def _esperar_codigo(
 
 
 def _fallar(mensaje: str) -> None:
-    """Imprime ``mensaje`` por stdout y termina el comando con código 1."""
+    """Print an error and exit the command with code 1."""
     typer.echo(mensaje)
     raise typer.Exit(1)
 
 
 def _confirmar(mensaje: str) -> bool:
-    """Pide una confirmación de sí/no en español.
-
-    No se usa ``typer.confirm`` (que es en realidad ``click.confirm``)
-    porque su wording está fijo en inglés («[y/N]», y «Error: invalid
-    input» ante una respuesta no reconocida) y no se puede localizar; este
-    proyecto exige mensajes de cara al usuario en español. Sin respuesta
-    (EOF) se interpreta como "no", igual que una entrada vacía: nunca se
-    publica nada sin un "sí" explícito.
-    """
-    typer.echo(f"{mensaje} [s/N]: ", nl=False)
+    """Request explicit confirmation; empty input or EOF declines. English and legacy Spanish affirmative inputs are accepted."""
+    typer.echo(f"{mensaje} [y/N]: ", nl=False)
     while True:
         try:
             valor = input().strip().lower()
         except EOFError:
             valor = "n"
-        if valor in ("s", "si", "sí"):
+        if valor in ("y", "yes", "s", "si", "sí"):
             return True
         if valor in ("n", "no", ""):
             return False
-        typer.echo("Respuesta no reconocida (responde 's' o 'n'): ", nl=False)
+        typer.echo("Unrecognized answer (enter 'y' or 'n'): ", nl=False)
 
 
 def _cargar_marca(root: Path, nombre: str) -> Brand:
-    """Carga una marca o termina el comando con un mensaje claro."""
+    """Load the explicitly named brand or exit with a readable error."""
     try:
         return cargar_brand(root, nombre)
     except _EXCEPCIONES_MARCA as exc:
@@ -316,44 +250,34 @@ def _cargar_marca(root: Path, nombre: str) -> Brand:
 
 
 def _cargar_post_con_avisos(brand: Brand, slug: str, *, avisos: list[str] | None = None) -> Post:
-    """Carga un post mostrando cualquier aviso emitido al hacerlo.
-
-    ``cargar_post`` emite un ``UserWarning`` cuando el 'slug' declarado
-    dentro de post.yml no coincide con el nombre real de la carpeta. El
-    filtro de avisos por defecto de Python deduplica cada aviso dentro de
-    un mismo proceso y lo manda a stderr, así que en un flujo de preview
-    seguido de publicación -todo en el mismo proceso del CLI- es fácil que
-    el usuario no llegue a verlo nunca. Aquí se captura explícitamente,
-    con un filtro que nunca lo deduplica, y se muestra por stdout junto al
-    resto del preview para que no pase inadvertido.
-    """
+    """Load a post and display any loading warnings."""
     with warnings.catch_warnings(record=True) as capturados:
         warnings.simplefilter("always")
         try:
             post = cargar_post(brand, slug)
         except _EXCEPCIONES_POST as exc:
             for aviso in capturados:
-                typer.echo(f"AVISO: {aviso.message}")
+                typer.echo(f"WARNING: {aviso.message}")
             typer.echo(str(exc))
             raise typer.Exit(1)
 
     for aviso in capturados:
         if avisos is None:
-            typer.echo(f"AVISO: {aviso.message}")
+            typer.echo(f"WARNING: {aviso.message}")
         else:
-            avisos.append(f"AVISO: {aviso.message}")
+            avisos.append(f"WARNING: {aviso.message}")
     return post
 
 
 def _mostrar_comentario(result):
     if result.publication_id:
-        typer.echo(f"Intento durable: {result.publication_id}")
+        typer.echo(f'Durable attempt: {result.publication_id}')
     if result.first_comment_status:
-        typer.echo(f"Primer comentario: {result.first_comment_status} (medio: {result.platform_id or 'sin confirmar'})")
+        typer.echo(f"First comment: {result.first_comment_status} (media: {result.platform_id or 'unconfirmed'})")
     if result.first_comment_change_id:
-        typer.echo(f"ChangeSet comentario: {result.first_comment_change_id}")
+        typer.echo(f'Comment ChangeSet: {result.first_comment_change_id}')
     for warning in result.warnings:
-        typer.echo(f"AVISO: {warning}")
+        typer.echo(f"WARNING: {warning}")
 
 
 def _publicar_impl(
@@ -363,38 +287,10 @@ def _publicar_impl(
     dry_run: bool,
     yes: bool,
     only: list[Platform] | None,
-    motivo_exclusion: str = "no solicitada con --only",
+    motivo_exclusion: str = "not requested with --only",
     retry_guard: bool = False,
 ) -> None:
-    """Lógica compartida por `publish` y `retry` una vez que post y brand ya
-    están cargados (y sus posibles avisos, ya mostrados).
-
-    No pide confirmación más que una vez, y solo si hace falta: `publish` y
-    `retry` son las dos únicas puertas de entrada a esta función, así que el
-    punto de parada único del proyecto sigue viviendo aquí, no duplicado en
-    cada comando.
-
-    Hallazgo de revisión (I3): `--only` prometía en `SKILL.md` dejar publicar
-    en las redes que sí cumplen aunque otra falle su validación, pero el
-    código de antes validaba TODO el post y abortaba si cualquier red tenía
-    errores, sin mirar `only` -así que `--only` no servía para lo que
-    promete: un post con una red que no cumple quedaba sin ninguna salida,
-    ni siquiera para publicar en la que sí cumple. Ahora los errores que
-    bloquean son solo los de las redes pedidas (`destinos`): una red no
-    solicitada puede tener problemas de validación sin impedir publicar en
-    las demás, pero la garantía de fondo sigue intacta -nunca se publica una
-    red que SÍ está en `destinos` y tiene errores-. El preview sigue
-    mostrando todas las redes del post, íntegras (fidelidad), pero marca con
-    claridad cuáles quedan fuera y por qué (ver `render_preview`).
-
-    `motivo_exclusion` se reenvía tal cual a `render_preview`: `publish` usa
-    el valor por defecto ("no solicitada con --only", el motivo real de su
-    filtro), pero `retry` reutiliza `destinos` con un motivo distinto -una
-    red queda fuera de un reintento porque ya se publicó antes o porque
-    quedó marcada `riesgo_duplicado`, nunca porque el usuario haya escrito
-    `--only`- y pasa aquí su propio texto para que la marca del preview siga
-    siendo cierta también en ese caso.
-    """
+    """Validate, preview and publish an already loaded post; shared by publish and retry."""
     if only is not None:
         destinos = [d for d in only if d in post.platforms]
     else:
@@ -411,21 +307,21 @@ def _publicar_impl(
 
     if only is not None and not destinos:
         _fallar(
-            "ninguna de las redes pedidas está en este post; no hay nada que publicar."
+            "none of the requested platforms are in this post; there is nothing to publish."
         )
 
     errores_bloqueantes = {p: es for p, es in errores.items() if p in destinos}
     if any(errores_bloqueantes.values()):
-        typer.echo("\nNo se publica nada: corrige los problemas de arriba.")
+        typer.echo("\nNothing will be published: fix the problems above.")
         raise typer.Exit(1)
 
     if dry_run:
-        typer.echo("\n--dry-run: no se ha publicado nada.")
+        typer.echo("\n--dry-run: nothing was published.")
         raise typer.Exit(0)
 
     if not yes:
         try:
-            confirmado = _confirmar(f"\n¿Publicar en las {len(destinos)} redes?")
+            confirmado = _confirmar(f"\nPublish on the {len(destinos)} platforms?")
         except KeyboardInterrupt:
             # Typer/Click convierten un Ctrl+C no atrapado en el código de
             # salida 130 sin imprimir nada (ver `_main` en typer/core.py):
@@ -435,10 +331,10 @@ def _publicar_impl(
             # informa y se relanza tal cual (nunca se traga la
             # interrupción), para que typer siga terminando con 130 como
             # siempre.
-            typer.echo("\nCancelado. No se ha publicado nada.")
+            typer.echo("\nCanceled. Nothing was published.")
             raise
         if not confirmado:
-            typer.echo("Cancelado. No se ha publicado nada.")
+            typer.echo("Canceled. Nothing was published.")
             raise typer.Exit(0)
 
     resultados = publicar(post, brand, solo=destinos, on_progreso=_mostrar_progreso,
@@ -456,8 +352,7 @@ def _publicar_impl(
     except PersistenciaError as exc:
         typer.echo(f"\n{exc}")
         typer.echo(
-            "Los resultados de arriba SÍ se han intentado publicar; "
-            "solo ha fallado guardarlos en disco."
+            'Publication WAS attempted for the results above; only saving them to disk failed.'
         )
         raise typer.Exit(1)
 
@@ -467,50 +362,37 @@ def _publicar_impl(
 
 @brand_app.command("new")
 def brand_new(
-    nombre: str,
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
+    nombre: str = typer.Argument(..., metavar="NAME", help="Name of the new brand."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
 ) -> None:
-    """Crea la carpeta de una marca nueva a partir de las plantillas."""
+    """Create a new brand directory from templates."""
     try:
         brand = crear_brand(root, nombre)
     except (BrandYaExiste, NombreDeMarcaInvalido) as exc:
         _fallar(str(exc))
 
-    typer.echo(f"Marca creada en {brand.raiz}")
-    typer.echo("Siguiente paso: rellena brand.md y accounts.yml, y autentica cada red.")
+    typer.echo(f"Brand created at {brand.raiz}")
+    typer.echo("Next: complete brand.md and accounts.yml, then authenticate each platform.")
 
 
 def _auth_meta(brand: Brand, platform: Platform) -> None:
-    """Autentica Facebook o Instagram: ambos publican con el token de la
-    misma Página de Facebook (ver `accounts.yml`, donde `instagram.ig_user_id`
-    debe ser una cuenta Business vinculada a esa Página), así que ambos
-    flujos son idénticos salvo por dónde se guarda el resultado.
-
-    A diferencia del brief original (pegar directamente un token de PÁGINA
-    ya de larga duración), aquí se pide un token de USUARIO -el que el
-    Explorador de la API de Graph genera por defecto, de corta duración- y
-    el propio comando hace el intercambio en dos pasos (ver
-    `socialctl/authflow.py` para la documentación citada): más fácil de
-    obtener a mano y de menor privilegio mientras vive sin canjear.
-    """
+    """Authenticate Facebook or Instagram using the configured Page's token."""
     typer.echo(AYUDA_META)
 
-    client_id = typer.prompt("App ID de la app de Meta")
-    client_secret = typer.prompt("App secret de la app de Meta", hide_input=True)
+    client_id = typer.prompt("Meta app ID")
+    client_secret = typer.prompt("Meta app secret", hide_input=True)
     token_usuario = typer.prompt(
-        "Pega aquí el token de USUARIO obtenido en el Explorador de la API de Graph",
+        "Paste the USER token obtained from the Graph API Explorer",
         hide_input=True,
     )
 
     page_id = (brand.cuentas.get("facebook") or {}).get("page_id")
     if not page_id:
         _fallar(
-            f"falta facebook.page_id en {brand.raiz / 'accounts.yml'}: "
-            "configúralo antes de autenticar Facebook o Instagram (ambos "
-            "publican con el token de esa Página)."
+            f"facebook.page_id is missing in {brand.raiz / 'accounts.yml'}: configure it before authenticating Facebook or Instagram (both publish with that Page's token)."
         )
 
-    typer.echo("Canjeando el token con Meta (puede tardar unos segundos)...")
+    typer.echo("Exchanging the token with Meta (this may take a few seconds)...")
     try:
         with httpx.Client(timeout=30) as client:
             token_larga_duracion = intercambiar_token_meta(
@@ -524,41 +406,31 @@ def _auth_meta(brand: Brand, platform: Platform) -> None:
     if pagina is None:
         disponibles = ", ".join(
             f"{p.get('name')!r} ({p.get('id')!r})" for p in paginas
-        ) or "ninguna"
+        ) or 'none'
         _fallar(
-            f"la Página con id {page_id!r} (configurada en accounts.yml) no "
-            "está entre las páginas administradas por el usuario que ha "
-            f"autorizado el token. Páginas disponibles: {disponibles}."
+            f'the Page with ID {page_id!r} (configured in accounts.yml) is not among the Pages administered by the user who authorized the token. Available Pages: {disponibles}.'
         )
 
     token_pagina = pagina.get("access_token")
     if not isinstance(token_pagina, str) or not token_pagina:
-        _fallar("Meta no ha devuelto un token de página válido para esa Página.")
+        _fallar("Meta did not return a valid page token for that Page.")
 
     brand.guardar_secreto(platform, {"access_token": token_pagina})
-    typer.echo(f"Credenciales de {platform.value} guardadas para {brand.nombre}.")
+    typer.echo(f"Credentials for {platform.value} saved for {brand.nombre}.")
 
 
 def _auth_oauth_redireccion(
     brand: Brand, platform: Platform, *, youtube_management: bool = False
 ) -> None:
-    """Autentica YouTube o TikTok mediante redirección a un servidor local.
-
-    Genera `state` (CSRF) y el par PKCE (`code_verifier`/`code_challenge`)
-    de nuevo en cada intento -nunca se reutilizan-, abre el navegador en la
-    URL de autorización, espera la redirección en un servidor de un solo
-    uso (`_esperar_codigo`), verifica que el `state` recibido coincide
-    exactamente con el generado (si no, aborta sin canjear nada: posible
-    CSRF) y canjea el código por tokens.
-    """
+    """Authenticate YouTube or TikTok through a localhost redirect."""
     if platform is Platform.YOUTUBE:
-        client_id = typer.prompt("client_id de Google Cloud")
-        client_secret = typer.prompt("client_secret de Google Cloud", hide_input=True)
+        client_id = typer.prompt("Google Cloud client_id")
+        client_secret = typer.prompt("Google Cloud client_secret", hide_input=True)
         credenciales_app = {"client_id": client_id, "client_secret": client_secret}
         identificador = client_id
     else:
-        client_key = typer.prompt("client_key de TikTok")
-        client_secret = typer.prompt("client_secret de TikTok", hide_input=True)
+        client_key = typer.prompt("TikTok client_key")
+        client_secret = typer.prompt("TikTok client_secret", hide_input=True)
         credenciales_app = {"client_key": client_key, "client_secret": client_secret}
         identificador = client_key
 
@@ -573,7 +445,7 @@ def _auth_oauth_redireccion(
         code_verifier=code_verifier,
         youtube_management=youtube_management,
     )
-    typer.echo(f"Abriendo el navegador para autorizar {platform.value}...")
+    typer.echo(f"Opening the browser to authorize {platform.value}...")
     typer.echo(url)
     webbrowser.open(url)
 
@@ -584,7 +456,7 @@ def _auth_oauth_redireccion(
 
     if "error" in recibido:
         detalle = recibido.get("error_description") or recibido["error"]
-        _fallar(f"{platform.value} rechazó la autorización: {detalle}")
+        _fallar(f"{platform.value} rejected authorization: {detalle}")
 
     try:
         verificar_state(estado, recibido.get("state"))
@@ -594,8 +466,7 @@ def _auth_oauth_redireccion(
     codigo = recibido.get("code")
     if not codigo:
         _fallar(
-            "no se recibió el código de autorización (¿se cerró la pestaña "
-            "antes de completar el login?). Vuelve a intentarlo."
+            'no authorization code was received (was the tab closed before login completed?). Try again.'
         )
 
     try:
@@ -611,34 +482,15 @@ def _auth_oauth_redireccion(
         _guardar_open_id_tiktok(brand, secreto)
 
     brand.guardar_secreto(platform, secreto)
-    typer.echo(f"Credenciales de {platform.value} guardadas para {brand.nombre}.")
+    typer.echo(f"Credentials for {platform.value} saved for {brand.nombre}.")
 
 
 def _guardar_open_id_tiktok(brand: Brand, secreto: dict) -> None:
-    """Extrae el `open_id` del `secreto` recién canjeado y lo guarda en accounts.yml.
-
-    `canjear_codigo` ya deja el `open_id` en `secreto` cuando la respuesta
-    de TikTok lo incluye -que es el caso normal: confirmado con Context7
-    que `/v2/oauth/token/` lo trae directamente, sin falta de una llamada
-    aparte a `/v2/user/info/` (ver el docstring de `canjear_codigo`)-. Esta
-    función lo saca de ahí (no se duplica en `.secrets/tiktok.json`: vive
-    solo en `accounts.yml`, igual que `page_id` o `ig_user_id`) y lo
-    escribe con `Brand.guardar_open_id_tiktok`, que conserva los
-    comentarios del fichero.
-
-    Ningún fallo de este paso accesorio puede hacer fracasar la
-    autenticación: el `access_token` ya se obtuvo y es lo importante, así
-    que cualquier problema aquí (accounts.yml con una forma inesperada,
-    error de E/S, o que la respuesta de TikTok simplemente no trajera el
-    `open_id`) se degrada a un aviso por pantalla con instrucciones para
-    rellenarlo a mano, nunca a una excepción que impida guardar el token.
-    """
+    """Save the newly exchanged TikTok open_id in accounts.yml when available."""
     open_id = secreto.pop("open_id", None)
     if not open_id:
         typer.echo(
-            "Aviso: la respuesta de TikTok no incluyó el open_id de la cuenta. "
-            "El token de acceso sí se ha guardado. Añade tiktok.open_id a mano "
-            "en accounts.yml (ver el comentario de esa sección, o SETUP.md)."
+            "Warning: TikTok did not return the account open_id. The access token was saved. Add tiktok.open_id manually in accounts.yml (see that section's comment or SETUP.md)."
         )
         return
 
@@ -646,44 +498,32 @@ def _guardar_open_id_tiktok(brand: Brand, secreto: dict) -> None:
         anterior = brand.guardar_open_id_tiktok(open_id)
     except Exception:
         typer.echo(
-            "Aviso: no se pudo guardar el open_id automáticamente en "
-            f"{brand.raiz / 'accounts.yml'} (revisa que la sección 'tiktok:' "
-            "tenga la forma esperada). El token de acceso sí se ha guardado; "
-            "añade tiktok.open_id a mano."
+            f"Warning: could not save open_id automatically in {brand.raiz / 'accounts.yml'} (check the structure of the 'tiktok:' section). The access token was saved; add tiktok.open_id manually."
         )
         return
 
     if anterior is not None:
         typer.echo(
-            f"Aviso: el open_id de TikTok en accounts.yml cambia de "
-            f"'{anterior}' a '{open_id}'."
+            f"Warning: TikTok open_id in accounts.yml changes from '{anterior}' to '{open_id}'."
         )
     else:
-        typer.echo(f"open_id de TikTok guardado en accounts.yml: {open_id}")
+        typer.echo(f"TikTok open_id saved in accounts.yml: {open_id}")
 
 
 @app.command()
 def auth(
-    red: str,
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca a autenticar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
+    red: str = typer.Argument(..., metavar="PLATFORM", help="Platform to authenticate, or status."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand to authenticate."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
     management: bool = typer.Option(
         False,
         "--management",
-        help="YouTube: pide también youtube.force-ssl para editar metadatos.",
+        help="YouTube: also request youtube.force-ssl to edit metadata.",
     ),
-    status_platform: Platform | None = typer.Option(None, "--platform", help="Red explícita para auth status."),
-    json_output: bool = typer.Option(False, "--json", help="auth status: salida versionada."),
+    status_platform: Platform | None = typer.Option(None, "--platform", help="Explicit platform for auth status."),
+    json_output: bool = typer.Option(False, "--json", help="auth status: versioned output."),
 ) -> None:
-    """Obtiene y guarda las credenciales iniciales de una red para una marca.
-
-    YouTube y TikTok: abre el navegador para autorizar la app y recibe el
-    código en un servidor local de un solo uso (ver `_auth_oauth_redireccion`).
-    Facebook e Instagram: pide pegar un token de usuario del Explorador de la
-    API de Graph y lo canjea por el token de página que hace falta (ver
-    `_auth_meta`). Ningún secreto pegado o recibido se muestra en pantalla ni
-    se filtra en un mensaje de error.
-    """
+    """Obtain and save a platform's initial credentials for an explicit brand."""
     if red == "status":
         from socialctl.inventory_cli import show_auth_status
         show_auth_status(root, brand_nombre, status_platform, json_output)
@@ -694,10 +534,10 @@ def auth(
         platform = Platform(red)
     except ValueError:
         validas = ", ".join(p.value for p in Platform)
-        _fallar(f"red desconocida: {red!r}. Redes válidas: {validas}")
+        _fallar(f'unknown platform: {red!r}. Valid platforms: {validas}')
 
     if management and platform is not Platform.YOUTUBE:
-        _fallar("--management solo está disponible para YouTube")
+        _fallar("--management is only available for YouTube")
 
     if platform in (Platform.FACEBOOK, Platform.INSTAGRAM):
         _auth_meta(brand, platform)
@@ -710,24 +550,13 @@ def auth(
 @app.command()
 def publish(
     slug: str,
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca a publicar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Muestra el preview y no publica."),
-    yes: bool = typer.Option(False, "--yes", help="No pedir confirmación."),
-    only: list[str] = typer.Option(None, "--only", help="Publicar solo en estas redes."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand to publish."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the preview without publishing."),
+    yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt."),
+    only: list[str] = typer.Option(None, "--only", help="Publish only on these platforms."),
 ) -> None:
-    """Valida todas las redes del post, muestra el preview y publica.
-
-    Reglas: si hay problemas de validación en una red que se va a publicar
-    se aborta sin publicar nada (código 1) y se listan; con `--only`, solo
-    cuentan los problemas de las redes pedidas -una red no solicitada puede
-    tener problemas sin bloquear las demás, pero nunca se publica una red
-    solicitada que sí los tenga-. Con `--dry-run` termina justo después del
-    preview, sin publicar (código 0). Sin `--yes` pide confirmación una
-    única vez para las redes implicadas; a partir de ahí se publica en
-    todas sin volver a preguntar. El código de salida es 1 si alguna red
-    terminó en error.
-    """
+    """Validate every platform, display the complete preview, then publish approved content."""
     brand = _cargar_marca(root, brand_nombre)
     post = _cargar_post_con_avisos(brand, slug)
 
@@ -737,7 +566,7 @@ def publish(
             destinos = [Platform(r) for r in only]
         except ValueError:
             validas = ", ".join(p.value for p in Platform)
-            _fallar(f"--only con una red desconocida. Redes válidas: {validas}")
+            _fallar(f"--only contains an unknown platform. Valid platforms: {validas}")
 
     _publicar_impl(post, brand, dry_run=dry_run, yes=yes, only=destinos)
 
@@ -745,18 +574,18 @@ def publish(
 @app.command("schedule")
 def schedule(
     slug: str,
-    at: str = typer.Option(..., "--at", help="Instante ISO 8601 con zona horaria."),
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca a programar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Muestra el preview y no guarda la cola."),
-    yes: bool = typer.Option(False, "--yes", help="Aprueba la cola sin volver a preguntar."),
-    only: list[str] = typer.Option(None, "--only", help="Programar solo estas redes."),
-    approval_digest: str | None = typer.Option(None, "--approval-digest", help="Digest del preview aprobado previamente."),
+    at: str = typer.Option(..., "--at", help="ISO 8601 timestamp with timezone."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand to schedule."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the preview without saving the queue."),
+    yes: bool = typer.Option(False, "--yes", help="Approve the queue without another prompt."),
+    only: list[str] = typer.Option(None, "--only", help="Schedule only these platforms."),
+    approval_digest: str | None = typer.Option(None, "--approval-digest", help="Digest of the previously approved preview."),
     preview_json: bool = typer.Option(False, "--preview-json", hidden=True),
 ) -> None:
-    """Valida y añade un post de Facebook/Instagram a la cola local."""
+    """Validate and add a Facebook/Instagram post to the local queue."""
     if preview_json and (not dry_run or yes or approval_digest):
-        _fallar("--preview-json exige --dry-run y no admite aprobación")
+        _fallar("--preview-json requires --dry-run and does not support approval")
     brand = _cargar_marca(root, brand_nombre)
     if is_remote(brand.raiz):
         _fallar(REMOTE_NOTICE)
@@ -770,21 +599,21 @@ def schedule(
         try:
             destinos = [Platform(item) for item in only]
         except ValueError:
-            _fallar("--only solo admite youtube, facebook, instagram o tiktok")
+            _fallar("--only solo allows youtube, facebook, instagram o tiktok")
     else:
         destinos = list(post.platforms)
     destinos = [p for p in destinos if p in (Platform.FACEBOOK, Platform.INSTAGRAM)]
     if not destinos:
-        _fallar("schedule solo admite Facebook e Instagram y el post no contiene esas redes")
+        _fallar("schedule only supports Facebook and Instagram, and the post contains neither")
     if any(p not in post.platforms for p in destinos):
-        _fallar("el post no contiene todas las redes solicitadas")
+        _fallar("the post does not contain all requested platforms")
     try:
         displayed_hashes = {p.value: approval_hash(post, brand, p) for p in destinos}
         displayed_digest = schedule_digest(post.slug, displayed_hashes, scheduled_at)
     except ScheduleError as exc:
         _fallar(str(exc))
     errores = validar_todo(post, brand)
-    preview = render_preview(post, errores, destinos=destinos, motivo_exclusion="no solicitada para esta programación")
+    preview = render_preview(post, errores, destinos=destinos, motivo_exclusion="not requested for this schedule")
     bloqueantes = [p for p in destinos if errores.get(p)]
     if preview_json:
         from socialctl.schedule_remote import SchedulePreview
@@ -793,21 +622,21 @@ def schedule(
                                        valid=not bloqueantes, preview="\n".join([*preview_warnings, preview]),
                                        digest=displayed_digest, scheduled_at=scheduled_at.isoformat())
         except ValueError:
-            _fallar("preview no seguro; revisa el contenido localmente antes de continuar")
+            _fallar("unsafe preview; review the content locally before continuing")
         typer.echo(response.model_dump_json())
         raise typer.Exit(1 if bloqueantes else 0)
     typer.echo(preview)
     typer.echo(f"Approval digest: {displayed_digest}")
     if bloqueantes:
-        typer.echo("\nNo se programa nada: corrige los problemas de arriba.")
+        typer.echo("\nNothing will be scheduled: fix the problems above.")
         raise typer.Exit(1)
     if dry_run:
-        typer.echo(f"\n--dry-run: se programaría para {scheduled_at.isoformat()}.")
+        typer.echo(f"\n--dry-run: would schedule for {scheduled_at.isoformat()}.")
         raise typer.Exit(0)
     if approval_digest and not hmac.compare_digest(approval_digest, displayed_digest):
-        _fallar("el digest no coincide con el preview aprobado; ejecuta --dry-run y aprueba el contenido actual")
-    if not yes and not _confirmar(f"\n¿Guardar {len(destinos)} programación(es) en la cola local?"):
-        typer.echo("Cancelado. No se ha guardado ninguna programación.")
+        _fallar("digest does not match the approved preview; run --dry-run and approve the current content")
+    if not yes and not _confirmar(f"\nSave {len(destinos)} schedule(s) to the local queue?"):
+        typer.echo("Canceled. No schedule was saved.")
         raise typer.Exit(0)
     # Re-read disk/account changes as well as media bytes after confirmation.
     current_brand = _cargar_marca(root, brand_nombre)
@@ -815,7 +644,7 @@ def schedule(
     try:
         if ({p.value: approval_hash(current_post, current_brand, p) for p in destinos} != displayed_hashes
                 or {p.value: approval_hash(post, brand, p) for p in destinos} != displayed_hashes):
-            _fallar("el contenido cambió después del preview; vuelve a ejecutar --dry-run")
+            _fallar("content changed after the preview; run --dry-run again")
     except ScheduleError as exc:
         _fallar(str(exc))
     store = ScheduleStore(brand.raiz)
@@ -835,46 +664,46 @@ def schedule(
         _fallar(str(exc))
     for entry in nuevas:
         typer.echo(f"Programado: {entry.id} → {scheduled_at.isoformat()}")
-    typer.echo(f"Cola actualizada: {len(destinos)} entrada(s).")
+    typer.echo(f"Queue updated: {len(destinos)} entry/entries.")
 
 
 @app.command("schedule-status")
 def schedule_status(
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca cuya cola consultar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand whose queue to inspect."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
 ) -> None:
-    """Muestra la cola de programación de una marca."""
+    """Display the brand's scheduling queue."""
     brand = _cargar_marca(root, brand_nombre)
     if is_remote(brand.raiz):
         typer.echo(REMOTE_NOTICE)
         return
     entries = ScheduleStore(brand.raiz).load()
     if not entries:
-        typer.echo("La cola está vacía.")
+        typer.echo("The queue is empty.")
         return
     for entry in entries:
-        error = " — error registrado (detalle omitido)" if entry.last_error else ""
+        error = " — error recorded (details omitted)" if entry.last_error else ""
         typer.echo(f"{entry.id} | {entry.scheduled_at.isoformat()} | {entry.status} | intentos={entry.attempts}{error}")
 
 
 @app.command("schedule-batch")
 def schedule_batch(
     fichero: Path,
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca a programar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Muestra los previews y no guarda la cola."),
-    yes: bool = typer.Option(False, "--yes", help="Omite la pregunta después de mostrar los previews."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand to schedule."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show previews without saving the queue."),
+    yes: bool = typer.Option(False, "--yes", help="Skip the prompt after showing previews."),
 ) -> None:
-    """Programa varios posts desde un YAML, de forma atómica."""
+    """Schedule multiple posts atomically from a YAML batch."""
     brand = _cargar_marca(root, brand_nombre)
     if is_remote(brand.raiz):
         _fallar(REMOTE_NOTICE)
     try:
         datos = yaml.safe_load(fichero.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
-        _fallar(f"no se pudo leer el lote {fichero}: {exc}")
+        _fallar(f"could not read the batch {fichero}: {exc}")
     if not isinstance(datos, list) or not datos:
-        _fallar("el lote debe ser una lista YAML no vacía")
+        _fallar("batch must be a nonempty YAML list")
     nuevas: list[ScheduleEntry] = []
     previews: list[
         tuple[int, Post, list[Platform], datetime, dict[Platform, list]]
@@ -884,31 +713,31 @@ def schedule_batch(
     now = now_utc()
     for index, item in enumerate(datos, start=1):
         if not isinstance(item, dict) or not isinstance(item.get("slug"), str) or not isinstance(item.get("at"), str):
-            _fallar(f"entrada {index} del lote necesita 'slug' y 'at'")
+            _fallar(f"entry {index} in the batch requires 'slug' and 'at'")
         try:
             at = parse_scheduled_at(item["at"])
             post = _cargar_post_con_avisos(brand, item["slug"])
         except ScheduleError as exc:
-            _fallar(f"entrada {index}: {exc}")
+            _fallar(f"entry {index}: {exc}")
         only = item.get("only", ["facebook", "instagram"])
         if not isinstance(only, list):
-            _fallar(f"entrada {index}: 'only' debe ser una lista")
+            _fallar(f"entry {index}: 'only' must be a list")
         try:
             plataformas = [Platform(value) for value in only]
         except ValueError:
-            _fallar(f"entrada {index}: red desconocida en 'only'")
+            _fallar(f"entry {index}: unknown platform in 'only'")
         plataformas = [p for p in plataformas if p in (Platform.FACEBOOK, Platform.INSTAGRAM) and p in post.platforms]
         errores = validar_todo(post, brand)
         if any(errores.get(p) for p in plataformas):
             problemas.append(
-                f"entrada {index} ({post.slug}): hay problemas de validación"
+                f"entry {index} ({post.slug}): validation problems found"
             )
         previews.append((index, post, plataformas, at, errores))
         for platform in plataformas:
             try:
                 content_hash = approval_hash(post, brand, platform)
             except ScheduleError as exc:
-                _fallar(f"entrada {index} ({post.slug}/{platform.value}): {exc}")
+                _fallar(f"entry {index} ({post.slug}/{platform.value}): {exc}")
             nuevas.append(ScheduleEntry(
                 id=f"{post.slug}/{platform.value}", brand=brand.nombre,
                 slug=post.slug, platform=platform.value, scheduled_at=at,
@@ -918,27 +747,27 @@ def schedule_batch(
             aprobaciones.append((post, platform, content_hash))
     for index, post, plataformas, at, errores in previews:
         typer.echo(
-            f"\n=== Entrada {index}: {post.slug} → {at.isoformat()} ==="
+            f"\n=== Entry {index}: {post.slug} → {at.isoformat()} ==="
         )
         typer.echo(
             render_preview(
                 post,
                 errores,
                 destinos=plataformas,
-                motivo_exclusion="no incluida en esta entrada del lote",
+                motivo_exclusion='not included in this batch entry',
             )
         )
-    typer.echo(f"Entradas válidas: {len(nuevas)}")
+    typer.echo(f"Valid entries: {len(nuevas)}")
     for entry in sorted(nuevas, key=lambda value: value.scheduled_at):
         typer.echo(f"  {entry.id} → {entry.scheduled_at.isoformat()}")
     if problemas:
-        typer.echo("\nNo se programa nada: corrige los problemas de arriba.")
+        typer.echo("\nNothing will be scheduled: fix the problems above.")
         _fallar("; ".join(problemas))
     if dry_run:
-        typer.echo("--dry-run: no se ha guardado la cola.")
+        typer.echo("--dry-run: the queue was not saved.")
         raise typer.Exit(0)
-    if not yes and not _confirmar("¿Guardar este lote en la cola local?"):
-        typer.echo("Cancelado. No se ha guardado ninguna programación.")
+    if not yes and not _confirmar("Save this batch to the local queue?"):
+        typer.echo("Canceled. No schedule was saved.")
         raise typer.Exit(0)
     # Las huellas se toman antes de renderizar. Se vuelven a calcular tras la
     # aprobación para que ni ``--yes`` ni una mutación concurrente de la media
@@ -948,46 +777,46 @@ def schedule_batch(
             current_hash = approval_hash(post, brand, platform)
         except ScheduleError as exc:
             _fallar(
-                f"{post.slug}/{platform.value}: no se pudo verificar de nuevo "
-                f"la aprobación después del preview: {exc}"
+                f"{post.slug}/{platform.value}: could not reverify "
+                f"approval after the preview: {exc}"
             )
         if not hmac.compare_digest(current_hash, displayed_hash):
             _fallar(
-                f"{post.slug}/{platform.value}: el contenido, la media o la cuenta "
-                "cambió después del preview; vuelve a ejecutar --dry-run y aprueba "
-                "el nuevo contenido"
+                f"{post.slug}/{platform.value}: content, media or account "
+                "changed after the preview; run --dry-run again and approve "
+                "the new content"
             )
     try:
         ScheduleStore(brand.raiz).add_many(nuevas)
     except ScheduleError as exc:
         _fallar(str(exc))
-    typer.echo(f"Cola actualizada: {len(nuevas)} entrada(s).")
+    typer.echo(f"Queue updated: {len(nuevas)} entry/entries.")
 
 
 @app.command("schedule-cancel")
 def schedule_cancel(
     entry_id: str,
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca cuya programación cancelar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand whose schedule to cancel."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
 ) -> None:
-    """Cancela una programación que aún no se ha ejecutado."""
+    """Cancel a schedule that has not run."""
     brand = _cargar_marca(root, brand_nombre)
     store = ScheduleStore(brand.raiz)
     try:
         store.cancel(entry_id, now_utc())
     except ScheduleError as exc:
         _fallar(str(exc))
-    typer.echo(f"Cancelado: {entry_id}")
+    typer.echo(f"Canceled: {entry_id}")
 
 
 @app.command("schedule-reschedule")
 def schedule_reschedule(
     entry_id: str,
-    at: str = typer.Option(..., "--at", help="Nuevo instante ISO 8601 con zona horaria."),
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca cuya programación cambiar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
+    at: str = typer.Option(..., "--at", help="New ISO 8601 timestamp with timezone."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand whose schedule to change."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
 ) -> None:
-    """Cambia la hora de una programación pendiente."""
+    """Change the time of a pending schedule."""
     brand = _cargar_marca(root, brand_nombre)
     try:
         scheduled_at = parse_scheduled_at(at)
@@ -995,15 +824,15 @@ def schedule_reschedule(
         store.reschedule(entry_id, scheduled_at, now_utc())
     except ScheduleError as exc:
         _fallar(str(exc))
-    typer.echo(f"Reprogramado: {entry_id} → {scheduled_at.isoformat()}")
+    typer.echo(f"Rescheduled: {entry_id} → {scheduled_at.isoformat()}")
 
 
 @app.command("run-due")
 def run_due(
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca cuya cola ejecutar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand whose queue to run."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
 ) -> None:
-    """Ejecuta una vez las publicaciones aprobadas cuya hora ya llegó."""
+    """Run approved publications whose scheduled time has arrived, once."""
     brand = _cargar_marca(root, brand_nombre)
     store = ScheduleStore(brand.raiz)
     from socialctl.executor import heartbeat
@@ -1024,12 +853,12 @@ def run_due(
 
 
 def _run_due_locked(brand: Brand, store: ScheduleStore) -> None:
-    """Procesa una cola mientras el llamador conserva el lock del executor."""
+    """Process the queue while holding its executor lock."""
     store.assert_ready()
     recuperadas = store.recover_stale()
     if recuperadas:
         typer.echo(
-            f"Se aislaron {recuperadas} ejecución(es) interrumpida(s) para revisión manual."
+            f"Isolated {recuperadas} interrupted execution(s) for manual review."
         )
     from socialctl.executor import admitted_groups
     due = (entry for group in admitted_groups(store, now_utc(), clock=now_utc) for entry in group)
@@ -1058,7 +887,7 @@ def _run_due_locked(brand: Brand, store: ScheduleStore) -> None:
             if pp.content_origin is None and pp.source_video_id is None:
                 # The stored v2 hash above authorizes only this unchanged entry.
                 legacy_approved_platforms = frozenset({platform})
-                typer.echo(f"{entry.id}: entrada anterior: origen no verificado")
+                typer.echo(f"{entry.id}: legacy entry: source unverified")
             errores = validar_todo(
                 post, brand, legacy_approved_platforms=legacy_approved_platforms
             ).get(platform, [])
@@ -1071,12 +900,12 @@ def _run_due_locked(brand: Brand, store: ScheduleStore) -> None:
                     moment=now_utc(),
                     last_error=error,
                 )
-                typer.echo(f"{entry.id}: error de validación — {error}")
+                typer.echo(f"{entry.id}: validation error — {error}")
                 continue
             if platform is Platform.INSTAGRAM:
                 from socialctl.hosted_media import verify_scheduled_instagram
                 verify_scheduled_instagram(post, brand, entry=entry)
-            typer.echo(f"Publicando {entry.id}...")
+            typer.echo(f"Publishing {entry.id}...")
             def persist_media(result):
                 store.transition(entry.id, {"running"}, status="running", moment=now_utc(),
                                  platform_id=result.platform_id)
@@ -1111,8 +940,8 @@ def _run_due_locked(brand: Brand, store: ScheduleStore) -> None:
             _mostrar_comentario(resultado)
         except Exception as exc:
             error = (
-                f"ejecución interrumpida ({type(exc).__name__}): confirma el "
-                "resultado remoto antes de reintentar"
+                f"execution interrupted ({type(exc).__name__}): confirm the "
+                "remote result before retrying"
             )
             store.transition(
                 entry.id,
@@ -1129,7 +958,7 @@ def schedule_health(
     brand_nombre: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(RAIZ_POR_DEFECTO),
 ) -> None:
-    """Estado durable del ejecutor; stale indica más de tres minutos sin latido."""
+    """Display durable executor health; stale means no heartbeat for more than three minutes."""
     from socialctl.executor import health
     brand = _cargar_marca(root, brand_nombre)
     if is_remote(brand.raiz):
@@ -1143,10 +972,10 @@ def schedule_health(
 
 @app.command("schedule-install")
 def schedule_install(
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca para instalar el agente."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand to install the agent for."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
 ) -> None:
-    """Instala el ejecutor periódico de la cola como agente launchd de macOS."""
+    """Install the periodic queue executor as a macOS launchd agent."""
     brand = _cargar_marca(root, brand_nombre)
     try:
         ScheduleStore(brand.raiz).assert_ready()
@@ -1158,11 +987,7 @@ def schedule_install(
     plist_path = agent_dir / f"{label}.plist"
     log_dir = brand.raiz / ".socialctl"
     log_dir.mkdir(parents=True, exist_ok=True)
-    uv_path = shutil.which("uv")
-    if uv_path:
-        program = [uv_path, "run", "--project", str(root.resolve()), "socialctl"]
-    else:
-        program = [sys.executable, "-m", "socialctl"]
+    program = [sys.executable, "-m", "socialctl"]
     payload = {
         "Label": label,
         "ProgramArguments": program + ["run-due", "--brand", brand.nombre, "--root", str(root.resolve())],
@@ -1180,68 +1005,36 @@ def schedule_install(
         subprocess.run([launchctl, "bootout", f"{domain}/{label}"], check=False, capture_output=True)
         result = subprocess.run([launchctl, "bootstrap", domain, str(plist_path)], check=False, capture_output=True)
         if result.returncode != 0:
-            typer.echo("Aviso: el plist se guardó, pero launchd no pudo cargarlo; revisa el log del sistema.")
-    typer.echo(f"Agente instalado: {plist_path}")
-    typer.echo("launchd lo ejecutará cada 60 segundos; la Mac debe estar encendida y despierta.")
+            typer.echo("Warning: the plist was saved, but launchd could not load it; check the system log.")
+    typer.echo(f"Agent installed: {plist_path}")
+    typer.echo("launchd will run it every 60 seconds; the Mac must be powered on and awake.")
 
 
 @app.command("schedule-uninstall")
 def schedule_uninstall(
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca cuyo agente quitar."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand whose agent to remove."),
 ) -> None:
-    """Quita el agente launchd local de una marca."""
+    """Remove a brand's local launchd agent."""
     label = f"com.socialctl.{brand_nombre.lower()}.run-due"
     plist_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
     if not plist_path.exists():
-        typer.echo(f"No existe el agente: {plist_path}")
+        typer.echo(f"Agent does not exist: {plist_path}")
         return
     launchctl = shutil.which("launchctl")
     if launchctl:
         subprocess.run([launchctl, "bootout", f"gui/{os.getuid()}/{label}"], check=False, capture_output=True)
     plist_path.unlink()
-    typer.echo(f"Agente eliminado: {plist_path}")
+    typer.echo(f"Agent removed: {plist_path}")
 
 
 @app.command()
 def retry(
     slug: str,
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca a republicar."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
-    yes: bool = typer.Option(False, "--yes", help="No pedir confirmación."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand to retry."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
+    yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt."),
 ) -> None:
-    """Republica solo las redes que quedaron en error en el intento anterior.
-
-    Antes de reintentar nada, vuelve a cargar post.yml -puede haber
-    cambiado desde el intento fallido- y, a través de `_publicar_impl`,
-    vuelve a validar TODO el post, pero (desde que se arregló `--only`)
-    solo bloquean los problemas de las redes que de verdad se van a
-    reintentar (`only=[seguras]`, más abajo): un error de validación en una
-    red que no se reintenta en este intento -porque ya quedó publicada, o
-    porque está marcada `riesgo_duplicado`- no aborta el reintento de las
-    demás. Si una red que antes falló ya no figura en post.yml, se avisa y
-    no se reintenta (probablemente se quitó a propósito).
-
-    Si una red quedó en ERROR con `riesgo_duplicado=True` en resultado.json
-    -el campo que marcan explícitamente Instagram y TikTok cuando la
-    respuesta de la red llega en un estado ambiguo después de haber
-    aceptado el contenido, ver `PostResult` en `socialctl/models.py`-,
-    retry NUNCA la reintenta en automático: republicarla a ciegas es
-    exactamente el escenario que ese campo advierte. Exige comprobar la
-    cuenta a mano y, con conocimiento de causa, usar
-    `publish --only <red> --yes` para forzarlo.
-
-    Esta decisión depende del campo estructurado, nunca del texto de
-    `error`: una versión anterior de este comando buscaba la palabra
-    "duplicar" dentro del mensaje, lo que un adaptador futuro que
-    expresara el mismo riesgo con otras palabras no dispararía -un fallo
-    silencioso y grave, porque el resultado sería publicar dos veces-. Un
-    resultado.json antiguo puede no incluir ese campo. Para Meta se consultan
-    además los diarios durables de esta marca, slug y plataforma antes de elegir
-    redes y de nuevo bajo lock antes del uploader: cualquier medio confirmado o
-    incierto bloquea retry aunque resultado.json falte o contenga un error viejo.
-    No se infiere cronología de varios intentos por sus nombres de fichero.
-    Un publish explícito sigue siendo una publicación nueva intencionada.
-    """
+    """Retry failed platforms only after validation and preview, excluding outcomes that may duplicate publications."""
     brand = _cargar_marca(root, brand_nombre)
     post = _cargar_post_con_avisos(brand, slug)
 
@@ -1257,30 +1050,30 @@ def retry(
     fichero = brand.dir_posts / post.slug / "resultado.json"
     if not fichero.exists():
         if protected:
-            _fallar("resultado.json ausente; el diario durable requiere reconciliación, no una nueva subida.")
-        _fallar(f"no hay un intento previo en {fichero}; nada que reintentar.")
+            _fallar("resultado.json is missing; the durable journal requires reconciliation, not another upload.")
+        _fallar(f'no previous attempt in {fichero}; nothing to retry.')
 
     try:
         contenido = json.loads(fichero.read_text(encoding="utf-8"))
         if not isinstance(contenido, dict):
-            raise ValueError("la raíz del JSON no es un objeto")
+            raise ValueError("JSON root is not an object")
         entradas = contenido["resultados"]
         if not isinstance(entradas, list):
-            raise ValueError("'resultados' no es una lista")
+            raise ValueError("'resultados' is not a list")
         previos: dict[str, dict] = {}
         for entrada in entradas:
             if not isinstance(entrada, dict) or not isinstance(entrada.get("platform"), str):
-                raise ValueError("una entrada de 'resultados' no tiene la forma esperada")
+                raise ValueError("a 'resultados' entry does not have the expected structure")
             previos[entrada["platform"]] = entrada
     except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
-        _fallar(f"no se pudo interpretar {fichero}: {exc}")
+        _fallar(f"could not parse {fichero}: {exc}")
 
     fallidas = {
         plataforma for plataforma, entrada in previos.items()
         if entrada.get("status") == PostStatus.ERROR.value
     }
     if not fallidas:
-        typer.echo("No hay redes fallidas que reintentar.")
+        typer.echo("There are no failed platforms to retry.")
         raise typer.Exit(1 if protected else 0)
 
     actuales = {p.value for p in post.platforms}
@@ -1289,12 +1082,12 @@ def retry(
 
     if faltantes:
         typer.echo(
-            f"Aviso: post.yml ya no incluye {', '.join(faltantes)} "
-            "(estaban en error en el intento anterior); no se reintentan."
+            f"Warning: post.yml no longer includes {', '.join(faltantes)} "
+            "(they failed in the previous attempt); they will not be retried."
         )
 
     if not vigentes:
-        typer.echo("No queda ninguna red fallida vigente que reintentar.")
+        typer.echo("No failed platform remaining in this post can be retried.")
         raise typer.Exit(0)
 
     # Estrictamente `is True`, no `bool(...)`: un valor no booleano colado en
@@ -1310,28 +1103,28 @@ def retry(
 
     if arriesgadas:
         typer.echo(
-            "\nATENCIÓN: estas redes no se reintentan en automático por "
-            "riesgo de publicación duplicada (el intento anterior ya avisó "
-            "de que el contenido puede haberse publicado):"
+            "\nWARNING: these platforms will not be retried automatically because of "
+            "duplicate publication risk (the previous attempt warned "
+            "that the content may have been published):"
         )
         for p in arriesgadas:
             typer.echo(f"  - {p}: {previos[p].get('error')}")
         typer.echo(
-            "Comprueba la cuenta a mano antes de volver a publicar en ellas "
-            "(por ejemplo con: socialctl publish ... --only <red> --yes)."
+            "Check the account manually before publishing on these platforms again "
+            "(for example: socialcli publish ... --only <platform> --yes)."
         )
 
     if not seguras:
         raise typer.Exit(1)
 
-    typer.echo(f"\nReintentando: {', '.join(seguras)}")
+    typer.echo(f"\nRetrying: {', '.join(seguras)}")
 
     codigo_publish = 0
     try:
         _publicar_impl(
             post, brand, dry_run=False, yes=yes,
             only=[Platform(p) for p in seguras],
-            motivo_exclusion="no se reintenta en este intento",
+            motivo_exclusion="not retried in this attempt",
             retry_guard=True,
         )
     except typer.Exit as exc:
@@ -1348,12 +1141,7 @@ DIAS_DE_FALLO_PARA_AVISAR = 3
 
 
 def _redes_en_fallo(snapshot: Snapshot) -> set[Platform]:
-    """Redes de un snapshot que quedaron en `error` o `sin_credenciales`.
-
-    `sin_permiso` no cuenta a propósito: ese caso ya se explica entero en cada
-    ejecución, con el scope que falta y el comando `auth`. El aviso existe
-    para el fallo que pasa desapercibido, no para el que ya grita.
-    """
+    """Return platforms with error or missing-credential read states."""
     return {
         platform
         for platform, lectura in snapshot.redes.items()
@@ -1363,19 +1151,7 @@ def _redes_en_fallo(snapshot: Snapshot) -> set[Platform]:
 
 
 def _avisar_de_fallos_persistentes(marca: Brand, snapshot: Snapshot) -> None:
-    """Avisa de una red que lleva tres días seguidos sin leerse (spec §5).
-
-    La «rutina» del spec no es otra cosa que este comando ejecutado a diario,
-    así que el aviso lo da él: mira los dos snapshots anteriores al de hoy y,
-    si una red falló en los tres, lo dice por pantalla. Cuesta dos lecturas de
-    disco y ninguna petición más, y es la diferencia entre enterarse hoy de
-    que un token caducó o dentro de tres semanas, con el histórico ya roto.
-
-    Se mira el snapshot **anterior por fecha**, no «ayer»: si la rutina no
-    corrió un día, tres snapshots seguidos en fallo siguen significando lo
-    mismo. Con menos de dos snapshots previos no hay nada que afirmar y no se
-    avisa.
-    """
+    """Warn when a platform fails in three consecutive snapshots."""
     anterior = snapshot_anterior(marca, antes_de=snapshot.fecha)
     if anterior is None:
         return
@@ -1390,92 +1166,32 @@ def _avisar_de_fallos_persistentes(marca: Brand, snapshot: Snapshot) -> None:
     )
     for platform in sorted(persistentes, key=lambda p: p.value):
         typer.echo(
-            f"AVISO: {platform.value} lleva {DIAS_DE_FALLO_PARA_AVISAR} días "
-            f"seguidos sin leerse (también el {anterior.fecha.isoformat()} y "
-            f"el {trasanterior.fecha.isoformat()}). Casi siempre es un token "
-            f"caducado: ejecuta socialctl auth {platform.value} "
+            f"WARNING: {platform.value} has gone {DIAS_DE_FALLO_PARA_AVISAR} days "
+            f"without a successful read (also on {anterior.fecha.isoformat()} and "
+            f"on {trasanterior.fecha.isoformat()}). This usually means an "
+            f"expired token: run socialcli auth {platform.value} "
             f"--brand {marca.nombre}"
         )
 
 
 def _limpiar_snapshots_y_avisar(marca: Brand) -> None:
-    """Corre la retención de un año con cada `stats` y dice qué se ha borrado.
-
-    La decisión y el mecanismo -qué es un año, qué fichero queda fuera,
-    cómo se borra por nombre y no por `mtime`- viven en
-    `limpiar_snapshots_antiguos` (`socialctl/metricas/almacen.py`); lo que
-    hace este envoltorio es lo que le toca a `cli.py`: decidir que se llama
-    en cada ejecución de `stats` (spec §5) y convertir el resultado en algo
-    que el usuario lea. «Nada se pierde en silencio» es un principio ya
-    establecido del proyecto (ver `_guardar_lo_leido`): si se borra algo,
-    se dice, aunque sea rutina y no un error.
-
-    Un fallo al borrar (permisos, por ejemplo) se avisa igual que un
-    borrado, pero nunca aborta `stats`: para entonces el snapshot de hoy ya
-    está en disco, y un fichero viejo que no se puede borrar es un
-    problema de espacio, no de datos perdidos -al contrario, seguir sin
-    poder borrarlo es la forma en que no se pierde nada-.
-    """
+    """Apply one-year snapshot retention and report deletions or failures."""
     borrados, fallidos = limpiar_snapshots_antiguos(marca)
     if borrados:
         nombres = ", ".join(ruta.name for ruta in borrados)
         typer.echo(
-            f"Limpieza: borrados {len(borrados)} snapshot(s) de más de "
-            f"{RETENCION_SNAPSHOTS_DIAS} días ({nombres})."
+            f"Cleanup: deleted {len(borrados)} snapshot(s) older than "
+            f"{RETENCION_SNAPSHOTS_DIAS} days ({nombres})."
         )
     for ruta, exc in fallidos:
         typer.echo(
-            f"AVISO: no se pudo borrar el snapshot antiguo {ruta} ({exc}). "
-            "Sigue en disco; bórralo a mano si quieres liberar el espacio."
+            f"WARNING: could not delete the old snapshot {ruta} ({exc}). "
+            "It remains on disk; delete it manually to free the space."
         )
 
 
 def _fusionar_snapshot_del_dia(marca: Brand, nuevo: Snapshot) -> Snapshot:
-    """Con `--only`, fusiona la lectura de hoy con el snapshot que ya
-    hubiera del día en vez de reemplazarlo entero.
-
-    Hallazgo al ejecutar contra cuentas reales: un `stats --brand X` leía
-    las cuatro redes y guardaba el snapshot del día; un `stats --brand X
-    --only instagram` posterior, el MISMO día, sobrescribía ese fichero
-    entero y dejaba solo instagram, tirando las otras tres -con su cuota de
-    API ya gastada, que no se recupera hasta el día siguiente-. El spec
-    (§4) decía sin matices que un segundo `stats` el mismo día
-    "sobrescribe", y eso es correcto para una lectura completa (se quiere
-    el dato más fresco, no dos ficheros), pero destructivo con `--only`:
-    pedir UNA red no puede significar perder las otras tres.
-
-    Dónde vive la fusión: aquí, en el comando, no en
-    `almacen.guardar_snapshot` (que no cambia de firma: sigue escribiendo
-    exactamente lo que se le pasa, y `cargar_snapshot` tampoco cambia).
-    `guardar_snapshot`/`cargar_snapshot` son primitivas de lectura/escritura
-    que ya usan otras tareas (`snapshot_anterior`, el resumen...) y no
-    tienen por qué conocer `--only`, que es un concepto del CLI, no del
-    almacén; meter esta política ahí dentro obligaría a cualquier llamador
-    futuro que sí quiera sobrescribir sin matices a esquivarla. `stats` ya
-    sabe si se pidió `--only` -es quien decide `destinos`-, así que es quien
-    debe decidir si fusiona. Por eso esta función solo se llama cuando
-    `only` está presente; una lectura completa nunca pasa por aquí y sigue
-    sobrescribiendo tal cual, sin cambios.
-
-    Casos:
-
-    - Sin snapshot previo hoy: nada que fusionar, se guarda `nuevo` tal
-      cual (fusionar con `{}` es un no-op).
-    - Una red no pedida hoy: se conserva intacta la entrada de `anterior`
-      (ni se toca su `estado`, ni sus piezas).
-    - Una red pedida hoy que hoy FALLA pero el snapshot de hoy ya tenía un
-      dato bueno (`OK`) para ella: se conserva ese dato bueno (`cuenta`,
-      `piezas`, `audiencia`) -una lectura fallida no es un dato mejor que
-      uno bueno de hace una hora-, pero `estado` y `error` son los de HOY,
-      nunca los de antes: no se puede fingir que la red va bien cuando el
-      intento de hoy ha fallado. Con esto, el resumen y `piezas.yml` siguen
-      viendo los últimos números buenos en vez de un hueco, y el aviso de
-      fallos persistentes (`_avisar_de_fallos_persistentes`, que mira
-      `estado`) sigue detectando el fallo de hoy con normalidad -no queda
-      tapado por el dato bueno que se conserva-.
-    - La `fecha` del snapshot fusionado es la de `nuevo` (la de hoy),
-      siempre.
-    """
+    """Merge selected-platform reads with today's snapshot, retaining other platforms and previous good data when a read fails."""
     anterior = cargar_snapshot(marca, nuevo.fecha)
     if anterior is None:
         return nuevo
@@ -1498,22 +1214,9 @@ def _fusionar_snapshot_del_dia(marca: Brand, nuevo: Snapshot) -> Snapshot:
 
 
 def _guardar_lo_leido(marca: Brand, snapshot: Snapshot) -> Path:
-    """Escribe los tres ficheros del día y, si uno falla, dice cuál y qué quedó escrito.
-
-    Los tres son independientes y se escriben en este orden: el snapshot
-    (el dato crudo), `piezas.yml` (lo editorial) y `resumen.md` (la vista
-    legible, que se regenera entera a partir de los dos anteriores). Cada
-    uno se escribe de forma atómica (ver `escribir_atomico` en
-    `socialctl/metricas/almacen.py`), así que un fallo nunca deja un fichero
-    a medias; lo que sí puede pasar es que se escriban unos y otros no, y
-    eso es justo lo que este envoltorio cuenta.
-
-    Sin esto, un `piezas.yml` ilegible o un disco lleno salían como una
-    traza de Python que no le decía al usuario ni qué fichero mirar ni qué
-    se había guardado ya. Aquí sale en español y con las dos cosas.
-    """
+    """Write the day's snapshot, editorial inventory and report atomically, reporting any incomplete set of writes."""
     pasos = (
-        ("el snapshot del día", lambda: guardar_snapshot(marca, snapshot)),
+        ("today's snapshot", lambda: guardar_snapshot(marca, snapshot)),
         ("piezas.yml", lambda: actualizar_piezas(marca, snapshot)),
         ("resumen.md", lambda: escribir_resumen(marca, snapshot)),
     )
@@ -1528,17 +1231,17 @@ def _guardar_lo_leido(marca: Brand, snapshot: Snapshot) -> Path:
         except PiezasIlegibles as exc:
             _fallar_guardando(
                 escritos, pendientes,
-                f"no se pudo actualizar piezas.yml: {exc}",
-                "Ese fichero se ha dejado intacto a propósito: lo editorial "
-                "que contiene no se puede volver a pedir a ninguna API.",
+                f"could not update piezas.yml: {exc}",
+                "That file was preserved: its editorial content "
+                "cannot be retrieved again from an API.",
             )
         except OSError as exc:
             _fallar_guardando(
                 escritos, pendientes,
-                f"no se pudo escribir {nombre}: {exc}",
-                "Ninguno de los ficheros queda a medias: se escriben de "
-                "forma atómica, así que lo que no se guardó conserva su "
-                "contenido anterior entero.",
+                f"could not write {nombre}: {exc}",
+                "Files are written "
+                "atomically, so unsaved files retain their "
+                "complete previous content.",
             )
         escritos.append(f"{nombre} ({ruta})")
         pendientes.remove(nombre)
@@ -1552,45 +1255,36 @@ def _guardar_lo_leido(marca: Brand, snapshot: Snapshot) -> Path:
 def _fallar_guardando(
     escritos: list[str], pendientes: list[str], motivo: str, coletilla: str
 ) -> None:
-    """Termina `stats` diciendo en español qué se guardó y qué no."""
+    """Exit stats with a clear account of saved and unsaved files."""
     lineas = [f"ERROR: {motivo}"]
     lineas.append(
-        "Sí se guardó: " + "; ".join(escritos) + "."
+        "Saved: " + "; ".join(escritos) + "."
         if escritos
-        else "No se guardó ninguno de los ficheros de esta ejecución."
+        else "None of this run's files were saved."
     )
     if pendientes:
-        lineas.append("No se guardó: " + ", ".join(pendientes) + ".")
+        lineas.append("Not saved: " + ", ".join(pendientes) + ".")
     if coletilla:
         lineas.append(coletilla)
     _fallar("\n".join(lineas))
 
 
+def _metric_read_label(state: str) -> str:
+    """Render English metric-read labels while preserving stored state codes."""
+    return {"sin_credenciales": "missing_credentials", "sin_permiso": "missing_permission",
+            "no_disponible": "unavailable"}.get(state, state)
+
+
 @app.command()
 def stats(
-    brand_nombre: str = typer.Option(..., "--brand", help="Marca de la que leer métricas."),
-    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Carpeta Social/ que contiene las marcas."),
-    only: list[str] = typer.Option(None, "--only", help="Leer solo estas redes."),
+    brand_nombre: str = typer.Option(..., "--brand", help="Brand whose metrics to read."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
+    only: list[str] = typer.Option(None, "--only", help="Read only these platforms."),
     desde: str = typer.Option(
-        None, "--desde", help="Solo piezas publicadas desde esta fecha (AAAA-MM-DD)."
+        None, "--since", "--desde", help="Only content published since this date (YYYY-MM-DD)."
     ),
 ) -> None:
-    """Lee las métricas de las redes y guarda un snapshot de la marca.
-
-    Solo lectura: no publica, no borra y no modifica nada en ninguna red. Una
-    red que falle no impide leer las demás; su motivo queda en el snapshot y
-    se imprime aquí.
-
-    Sin `--only` (lectura completa), el snapshot de hoy se sobrescribe
-    entero: se quiere el dato más fresco de las cuatro redes, no arrastrar
-    nada de antes. Con `--only`, el snapshot de hoy se FUSIONA con el que ya
-    hubiera -las redes pedidas se actualizan, las demás se conservan tal
-    cual- en vez de perderlas (ver `_fusionar_snapshot_del_dia`).
-
-    Cada ejecución borra además los snapshots de más de un año -nunca
-    `piezas.yml` ni `resumen.md`- y dice qué ha borrado (ver
-    `limpiar_snapshots_antiguos` en `socialctl/metricas/almacen.py`).
-    """
+    """Read platform metrics and save a brand snapshot. Selected-platform reads merge with today's data; old snapshots expire after one year."""
     marca = _cargar_marca(root, brand_nombre)
 
     fecha_desde = None
@@ -1598,7 +1292,7 @@ def stats(
         try:
             fecha_desde = date.fromisoformat(desde)
         except ValueError:
-            _fallar(f"'--desde {desde}' no es una fecha AAAA-MM-DD válida.")
+            _fallar(f"'--desde {desde}' is not a valid YYYY-MM-DD date.")
 
     # Mismo patrón que `publish` (`socialctl/cli.py:638-643`): la opción se
     # declara como texto y se convierte aquí, para que una red desconocida dé
@@ -1609,14 +1303,14 @@ def stats(
             destinos = [Platform(r) for r in only]
         except ValueError:
             validas = ", ".join(p.value for p in Platform)
-            _fallar(f"--only con una red desconocida. Redes válidas: {validas}")
+            _fallar(f"--only contains an unknown platform. Valid platforms: {validas}")
     else:
         destinos = list(LECTORES)
 
     redes = {}
     with httpx.Client(timeout=60.0) as client:
         for platform in destinos:
-            typer.echo(f"Leyendo {platform.value}...")
+            typer.echo(f"Reading {platform.value}...")
             redes[platform] = leer_red(platform, marca, client, fecha_desde)
 
     snapshot = Snapshot(fecha=date.today(), marca=marca.nombre, redes=redes)
@@ -1639,9 +1333,9 @@ def stats(
     typer.echo("")
     for platform, lectura in redes.items():
         if lectura.estado is EstadoLectura.OK:
-            typer.echo(f"{platform.value}: ok, {len(lectura.piezas)} piezas")
+            typer.echo(f"{platform.value}: ok, {len(lectura.piezas)} content items")
         else:
-            typer.echo(f"{platform.value}: {lectura.estado.value} — {lectura.error}")
+            typer.echo(f"{platform.value}: {_metric_read_label(lectura.estado.value)} — {lectura.error}")
 
     typer.echo(f"\nSnapshot: {ruta}")
 

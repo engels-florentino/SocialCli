@@ -39,8 +39,8 @@ def test_newer_reach_report_replaces_same_video_day_without_double_count():
 def test_missing_reach_is_unknown_not_zero():
     assert reach_for_video({}, 'abcdefghijk', date(2026, 9, 21)) is None
     text = render_resumen(_snapshot(date(2026, 9, 21), 254), anterior=None, piezas=[])
-    assert 'no existen en la API' not in text
-    assert 'sin informe de alcance' in text.lower()
+    assert 'no existen in la API' not in text
+    assert 'no imported reach report' in text.lower()
 
 
 def test_summary_shows_imported_reach_with_provenance():

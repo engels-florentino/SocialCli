@@ -93,11 +93,11 @@ def test_stale_binding_rejects_before_any_write(tmp_path, tamper):
 
 def test_duplicate_members_and_unowned_member_rejected_before_proposal(tmp_path):
     brand = brand_at(tmp_path)
-    with pytest.raises(ChangeError, match="duplicado"):
+    with pytest.raises(ChangeError, match='duplicate'):
         proposal(tmp_path, names=("video-1", "video-1"), brand=brand)
     api = API()
     api.videos["video-2"]["snippet"]["channelId"] = "other"
-    with pytest.raises(Exception, match="pertenece"):
+    with pytest.raises(Exception, match="belong"):
         proposal(tmp_path, api=api, brand=brand)
     assert not list((tmp_path / "MarcaA" / ".socialctl").glob("metadata-batches/*.json"))
 
@@ -189,7 +189,7 @@ def test_durable_intent_failure_prevents_put_and_restarts_read_only(tmp_path, mo
     def interrupted(_):
         raise OSError("simulated directory fsync failure")
     monkeypatch.setattr(store, "_sync_directory", interrupted)
-    with pytest.raises(ChangeError, match="guardar"):
+    with pytest.raises(ChangeError, match="save"):
         module.apply_batch(client, store, batch.id, batch.fingerprint)
     assert api.writes == []
 

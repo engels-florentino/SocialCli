@@ -160,7 +160,7 @@ def test_approval_and_changed_asset_prevent_writes(env):
     with pytest.raises(ApprovalMismatch):
         apply_resource(client, store, change.id, "wrong")
     asset.write_bytes(OLD)
-    with pytest.raises(ChangeError, match="archivo|bytes|huella"):
+    with pytest.raises(ChangeError, match='file|bytes|fingerprint'):
         apply_resource(client, store, change.id, change.fingerprint)
     assert not api.writes
 
@@ -297,7 +297,7 @@ def test_partial_permissions_do_not_become_empty_list_or_backup_success(env):
 def test_no_invented_caption_pagination(env):
     api, client, store, asset = env
     api.extra_list = {"nextPageToken": "unexpected"}
-    with pytest.raises(ResourceError, match="incompleta|pagin"):
+    with pytest.raises(ResourceError, match="incomplete|pagin"):
         client.list_captions("video-1")
 
 
@@ -482,7 +482,7 @@ def test_new_proposal_cannot_blindly_repeat_an_uncertain_insert(env):
         raise httpx.ReadTimeout("lost")
     api.on_write = timeout
     apply_resource(client, store, first.id, first.fingerprint)
-    with pytest.raises(ChangeError, match="incierto|pendiente"):
+    with pytest.raises(ChangeError, match="uncertain|pending"):
         apply_resource(client, store, second.id, second.fingerprint)
     assert len(api.writes) == 1
 
@@ -496,7 +496,7 @@ def test_file_changed_during_ownership_reads_is_rejected(env):
         asset.write_bytes(OLD)
         return rows
     client.list_captions = listing
-    with pytest.raises(ChangeError, match="archivo"):
+    with pytest.raises(ChangeError, match='file'):
         apply_resource(client, store, change.id, change.fingerprint)
     assert not api.writes
 
@@ -525,7 +525,7 @@ def test_download_body_is_bounded_while_streaming(env, monkeypatch):
     import socialctl.management.youtube_resources as resources
     api, client, store, asset = env
     monkeypatch.setattr(resources, "MAX_CAPTION", 10)
-    with pytest.raises(ChangeError, match="límite"):
+    with pytest.raises(ChangeError, match="limit"):
         client.download_caption("video-1", "caption-1")
 
 
@@ -535,7 +535,7 @@ def test_mutated_immutable_proposal_is_rejected(env):
     raw = json.loads(store.path_for(change.id).read_text())
     raw["language"] = "fr"
     store.path_for(change.id).write_text(json.dumps(raw))
-    with pytest.raises(ChangeError, match="huella"):
+    with pytest.raises(ChangeError, match="fingerprint"):
         apply_resource(client, store, change.id, change.fingerprint)
     assert not api.writes
 
@@ -548,7 +548,7 @@ def test_ambiguous_authenticated_channels_are_rejected(env):
             return httpx.Response(200, json={"items": [{"id": "channel-a"}, {"id": "channel-b"}]})
         return original(request)
     client.client = httpx.Client(transport=httpx.MockTransport(handler))
-    with pytest.raises(ChangeError, match="canal|identidad"):
+    with pytest.raises(ChangeError, match="channel|identity"):
         insert((api, client, store, asset))
     assert not api.writes
 
@@ -591,7 +591,7 @@ def test_incomplete_or_malformed_channel_identity_blocks_prewrite(env, metadata)
             return httpx.Response(200, json={"items": [{"id": "channel-a"}], **metadata})
         return original(request)
     client.client = httpx.Client(transport=httpx.MockTransport(handler))
-    with pytest.raises(ChangeError, match="identidad|canal"):
+    with pytest.raises(ChangeError, match="identity|channel"):
         apply_resource(client, store, change.id, change.fingerprint)
     assert not api.writes
     assert store.load(change.id).status == "proposed"

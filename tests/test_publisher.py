@@ -133,7 +133,7 @@ def test_preview_muestra_las_redes_y_los_problemas(post, brand):
     texto = render_preview(post, validar_todo(post, brand))
     assert "facebook" in texto.lower()
     assert "instagram" in texto.lower()
-    assert "exige imagen o video" in texto
+    assert 'requires an image or video' in texto
 
 
 def test_preview_muestra_la_subcarpeta_completa_de_la_media(tmp_path, brand):
@@ -203,8 +203,7 @@ def test_preview_youtube_no_incrusta_hashtags_en_el_texto_y_los_muestra_como_eti
     # Y los hashtags deben verse, pero como lo que son: un metadato aparte,
     # nunca como parte del texto publicado.
     assert (
-        "Etiquetas (metadato de la red; NO aparecen en el texto anterior): "
-        "historia, roma" in texto
+        'Tags (platform metadata; do NOT appear in the text above): historia, roma' in texto
     )
 
 
@@ -230,8 +229,8 @@ def test_preview_youtube_muestra_private_como_valor_por_defecto(brand):
 
     texto = render_preview(post, validar_todo(post, brand))
 
-    assert "Privacidad: private" in texto
-    assert "PÚBLICO" not in texto
+    assert 'Privacy: private' in texto
+    assert 'PUBLIC' not in texto
 
 
 def test_preview_youtube_avisa_con_claridad_si_va_a_salir_publico(brand):
@@ -252,8 +251,8 @@ def test_preview_youtube_avisa_con_claridad_si_va_a_salir_publico(brand):
 
     texto = render_preview(post, validar_todo(post, brand))
 
-    assert "Privacidad: public" in texto
-    assert "PÚBLICO" in texto
+    assert 'Privacy: public' in texto
+    assert 'PUBLIC' in texto
 
 
 def test_preview_youtube_muestra_unlisted_sin_aviso_de_publico(brand):
@@ -274,8 +273,8 @@ def test_preview_youtube_muestra_unlisted_sin_aviso_de_publico(brand):
 
     texto = render_preview(post, validar_todo(post, brand))
 
-    assert "Privacidad: unlisted" in texto
-    assert "PÚBLICO" not in texto
+    assert 'Privacy: unlisted' in texto
+    assert 'PUBLIC' not in texto
 
 
 def test_preview_de_otras_redes_no_muestra_linea_de_privacidad(brand):
@@ -292,7 +291,7 @@ def test_preview_de_otras_redes_no_muestra_linea_de_privacidad(brand):
 
     texto = render_preview(post, validar_todo(post, brand))
 
-    assert "Privacidad:" not in texto
+    assert 'Privacy:' not in texto
 
 
 def test_preview_de_las_demas_redes_sigue_mostrando_los_hashtags_compuestos(brand):
@@ -327,7 +326,7 @@ def test_preview_de_las_demas_redes_sigue_mostrando_los_hashtags_compuestos(bran
     assert texto.count(esperado) == 3
     # Ninguna de las tres necesita la linea de "etiquetas aparte": sus
     # hashtags ya estan dentro del texto anterior.
-    assert "Etiquetas (metadato de la red" not in texto
+    assert 'Tags (platform metadata' not in texto
 
 
 def test_preview_facebook_incluye_el_enlace_al_final_del_texto_si_lo_hay(brand):
@@ -379,24 +378,24 @@ def test_preview_marca_las_redes_que_only_deja_fuera(brand):
 
     texto = render_preview(post_dos_redes, errores, destinos=[Platform.FACEBOOK])
 
-    assert "no solicitada" in texto.lower()
+    assert 'not requested' in texto.lower()
     # Ambas redes siguen apareciendo íntegras (fidelidad): la exclusión se
     # marca, no se oculta el contenido de la red descartada.
     assert "facebook" in texto.lower()
     assert "instagram" in texto.lower()
-    assert "exige imagen o video" in texto  # el problema de Instagram sigue visible
+    assert 'requires an image or video' in texto  # el problema de Instagram sigue visible
 
 
 def test_preview_sin_destinos_no_marca_ninguna_exclusion(post, brand):
     texto = render_preview(post, validar_todo(post, brand))
-    assert "no solicitada" not in texto.lower()
+    assert 'not requested' not in texto.lower()
 
 
 def test_preview_con_destinos_igual_a_todas_las_redes_no_marca_exclusion(post, brand):
     """Si `destinos` cubre TODAS las redes del post (--only con todas), no
     hay ninguna exclusión real que anunciar."""
     texto = render_preview(post, validar_todo(post, brand), destinos=list(post.platforms))
-    assert "no solicitada" not in texto.lower()
+    assert 'not requested' not in texto.lower()
 
 
 # --- Hallazgo Menor 4 (revisión final del arreglo de --only): `retry`
@@ -446,7 +445,7 @@ def test_preview_sin_motivo_explicito_sigue_usando_el_de_only_por_defecto(brand)
 
     texto = render_preview(post_dos_redes, errores, destinos=[Platform.FACEBOOK])
 
-    assert "no solicitada con --only" in texto
+    assert 'not requested with --only' in texto
 
 
 # --- Hallazgo Menor 5: "Problemas detectados: N" ya no es necesariamente el
@@ -475,7 +474,7 @@ def test_preview_desglosa_problemas_bloqueantes_si_only_excluye_una_red_con_erro
     # así que 0 problemas bloquean, aunque el total no sea 0.
     texto = render_preview(post_dos_redes, errores, destinos=[Platform.FACEBOOK])
 
-    assert f"Problemas detectados: {total} (0 en las redes que se van a publicar)" in texto
+    assert f'Problems found: {total} (0 on the platforms selected for publication)' in texto
 
 
 def test_preview_no_desglosa_si_el_total_coincide_con_lo_bloqueante(brand):
@@ -498,8 +497,8 @@ def test_preview_no_desglosa_si_el_total_coincide_con_lo_bloqueante(brand):
     # bloqueantes coinciden y no hace falta desglosar.
     texto = render_preview(post_dos_redes, errores, destinos=[Platform.INSTAGRAM])
 
-    assert f"Problemas detectados: {total}" in texto
-    assert "en las redes que se van a publicar" not in texto
+    assert f'Problems found: {total}' in texto
+    assert 'on the platforms selected for publication' not in texto
 
 
 def test_un_fallo_no_impide_publicar_en_las_demas(post, brand, monkeypatch):
@@ -668,7 +667,7 @@ def test_historial_youtube_etiqueta_estado_y_momento_de_observacion(post, brand)
     )
 
     historial = (brand.raiz / "historial.md").read_text(encoding="utf-8")
-    assert "subida confirmada; privado (observado 2026-09-13T20:00:00Z)" in historial
+    assert 'upload confirmed; private (observed 2026-09-13T20:00:00Z)' in historial
 
 
 def test_historial_youtube_sin_lectura_no_presenta_intencion_como_observacion(post, brand):
@@ -686,8 +685,8 @@ def test_historial_youtube_sin_lectura_no_presenta_intencion_como_observacion(po
     )
 
     historial = (brand.raiz / "historial.md").read_text(encoding="utf-8")
-    assert "subida confirmada; visibilidad no verificada" in historial
-    assert "(observado" not in historial
+    assert 'upload confirmed; visibility unverified' in historial
+    assert '(observed' not in historial
 
 
 # --- Robustez adicional: aislamiento de fallos en validar_todo/publicar,
@@ -714,7 +713,7 @@ def test_validar_todo_sin_adaptador_registrado_no_revienta(post, brand, monkeypa
 
     assert errores[Platform.FACEBOOK] == []
     motivos = [e.motivo for e in errores[Platform.INSTAGRAM]]
-    assert any("no hay ningun adaptador registrado" in m for m in motivos)
+    assert any('no adapter is registered' in m for m in motivos)
 
 
 def test_publicar_sin_adaptador_registrado_da_resultado_de_error(post, brand, monkeypatch):
@@ -724,7 +723,7 @@ def test_publicar_sin_adaptador_registrado_da_resultado_de_error(post, brand, mo
 
     assert resultados[0].platform is Platform.FACEBOOK
     assert resultados[0].status is PostStatus.ERROR
-    assert "no hay ningun adaptador registrado" in resultados[0].error
+    assert 'no adapter is registered' in resultados[0].error
     assert resultados[0].riesgo_duplicado is False
 
 
@@ -742,11 +741,10 @@ def test_pendiente_confirmacion_no_se_confunde_con_publicado_en_historial(post, 
     linea_instagram = next(l for l in lineas if l.startswith("- instagram"))
 
     assert linea_facebook == (
-        "- facebook: OK publicación confirmada https://facebook.com/1"
+        '- facebook: OK publication confirmed https://facebook.com/1'
     )
     assert linea_instagram == (
-        "- instagram: PENDIENTE pendiente_confirmacion "
-        "https://instagram.com/pendiente"
+        '- instagram: PENDING pending_confirmation https://instagram.com/pendiente'
     )
 
 
@@ -772,7 +770,7 @@ def test_anexar_historial_conserva_entradas_previas(post, brand):
     ])
 
     historial = (brand.raiz / "historial.md").read_text(encoding="utf-8")
-    assert "# Historial de Histopast" in historial  # cabecera de crear_brand
+    assert '# History of Histopast' in historial  # cabecera de crear_brand
     assert post.slug in historial
     assert otro_post.slug in historial
     assert "https://facebook.com/1" in historial
@@ -900,7 +898,7 @@ def test_guardar_resultado_falla_con_error_claro_si_no_hay_permisos_de_escritura
     finally:
         brand.dir_posts.chmod(permisos_originales)
 
-    assert "no se pudo guardar" in str(exc.value)
+    assert 'could not save' in str(exc.value)
 
 
 def test_anexar_historial_falla_con_error_claro_si_no_hay_permisos_de_escritura(post, brand):
@@ -913,7 +911,7 @@ def test_anexar_historial_falla_con_error_claro_si_no_hay_permisos_de_escritura(
     finally:
         fichero.chmod(permisos_originales)
 
-    assert "no se pudo anexar" in str(exc.value)
+    assert 'could not append' in str(exc.value)
 
 
 # --- Hallazgo 1: guardar_resultado debe fusionar por plataforma, no
@@ -1120,8 +1118,8 @@ def test_validar_todo_distingue_fallo_de_construccion_del_de_validate(post, bran
     errores = validar_todo(post, brand)
 
     motivos = [e.motivo for e in errores[Platform.FACEBOOK]]
-    assert any("no se pudo crear el adaptador" in m for m in motivos)
-    assert not any("la validacion" in m for m in motivos)
+    assert any('could not create the adapter' in m for m in motivos)
+    assert not any('validation' in m for m in motivos)
 
 
 def test_publicar_revalidates_origin_before_adapter_upload(brand, monkeypatch):
@@ -1154,4 +1152,4 @@ def test_legacy_context_cannot_exempt_other_platform_or_adapter_validation(brand
     assert any(e.campo == 'media' for e in errors[Platform.FACEBOOK])
     result = publicar(post, brand, legacy_approved_platforms=frozenset({Platform.FACEBOOK}))
     assert result[0].status is PostStatus.ERROR
-    assert 'archivo' in result[0].error
+    assert 'file' in result[0].error

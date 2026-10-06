@@ -99,7 +99,7 @@ def test_meta_no_tiene_flujo_de_redireccion():
         construir_url_autorizacion(
             Platform.FACEBOOK, "cid", REDIRECT, state="e", code_verifier=VERIFIER
         )
-    assert "Explorador" in str(exc.value)
+    assert 'Explorer' in str(exc.value)
 
 
 # --- PKCE: generación ---
@@ -234,7 +234,7 @@ def test_canjear_codigo_timeout_da_mensaje_limpio_sin_traza():
             )
 
     mensaje = str(exc.value)
-    assert "tiempo de espera" in mensaje.lower()
+    assert 'timed out' in mensaje.lower()
     assert "auth" in mensaje.lower()
     assert "SECRETO-TIMEOUT" not in mensaje
 
@@ -254,7 +254,7 @@ def test_canjear_codigo_fallo_de_conexion_da_mensaje_limpio_sin_traza():
             )
 
     mensaje = str(exc.value)
-    assert "conectar" in mensaje.lower()
+    assert 'connect' in mensaje.lower()
     assert "SECRETO-CONEXION" not in mensaje
     assert "VERIFIER-CONEXION-SECRETO" not in mensaje
 
@@ -288,7 +288,7 @@ def test_canjear_codigo_url_invalida_no_filtra_el_secreto(monkeypatch):
             )
 
     mensaje = str(exc.value)
-    assert "no es válida" in mensaje.lower()
+    assert 'invalid' in mensaje.lower()
     assert "SECRETO-URL-INVALIDA" not in mensaje
     # La petición que provocó el fallo sí llevaba el secreto: si no lo
     # llevara, la aserción anterior sería trivial y no probaría nada.
@@ -318,12 +318,12 @@ def test_canjear_codigo_resguardo_final_no_filtra_el_secreto(monkeypatch):
             )
 
     mensaje = str(exc.value)
-    assert "inesperado" in mensaje.lower()
+    assert 'unexpected' in mensaje.lower()
     assert "SECRETO-INESPERADO" not in mensaje
     assert "VERIFIER-INESPERADO-SECRETO" not in mensaje
     # Ni siquiera el tipo o el texto de la excepción original se interpolan.
     assert "ValueError" not in mensaje
-    assert "fallo interno inesperado del transporte" not in mensaje
+    assert 'fallo interno unexpected del transporte' not in mensaje
 
 
 # --- canjear_codigo: TikTok ---
@@ -409,7 +409,7 @@ def test_canjear_codigo_meta_lanza_value_error():
             canjear_codigo(
                 Platform.FACEBOOK, "codigo", {}, REDIRECT, client, code_verifier="x",
             )
-    assert "Explorador" in str(exc.value)
+    assert 'Explorer' in str(exc.value)
 
 
 # --- Meta: intercambio de token de usuario -> pagina ---
@@ -463,7 +463,7 @@ def test_intercambiar_token_meta_timeout_da_mensaje_limpio_sin_traza():
             intercambiar_token_meta("app-id", "SECRETO-APP", "TOKEN-CORTO-TIMEOUT", client)
 
     mensaje = str(exc.value)
-    assert "tiempo de espera" in mensaje.lower()
+    assert 'timed out' in mensaje.lower()
     assert "SECRETO-APP" not in mensaje
     assert "TOKEN-CORTO-TIMEOUT" not in mensaje
 
@@ -479,7 +479,7 @@ def test_intercambiar_token_meta_fallo_de_conexion_da_mensaje_limpio_sin_traza()
             intercambiar_token_meta("app-id", "SECRETO-APP-CONEXION", "token-corto", client)
 
     mensaje = str(exc.value)
-    assert "conectar" in mensaje.lower()
+    assert 'connect' in mensaje.lower()
     assert "SECRETO-APP-CONEXION" not in mensaje
 
 
@@ -504,7 +504,7 @@ def test_intercambiar_token_meta_url_invalida_no_filtra_el_token(monkeypatch):
             intercambiar_token_meta("app-id", "app-secret", "TOKEN-CORTO-URL-INVALIDA", client)
 
     mensaje = str(exc.value)
-    assert "no es válida" in mensaje.lower()
+    assert 'invalid' in mensaje.lower()
     assert "TOKEN-CORTO-URL-INVALIDA" not in mensaje
     assert "TOKEN-CORTO-URL-INVALIDA" in str(peticion_capturada["valor"].url)
 
@@ -523,7 +523,7 @@ def test_intercambiar_token_meta_resguardo_final_no_filtra_el_token(monkeypatch)
             intercambiar_token_meta("app-id", "app-secret", "TOKEN-CORTO-INESPERADO", client)
 
     mensaje = str(exc.value)
-    assert "inesperado" in mensaje.lower()
+    assert 'unexpected' in mensaje.lower()
     assert "TOKEN-CORTO-INESPERADO" not in mensaje
     assert "ValueError" not in mensaje
 
@@ -586,7 +586,7 @@ def test_obtener_paginas_meta_timeout_da_mensaje_limpio_sin_traza():
             obtener_paginas_meta("TOKEN-USUARIO-TIMEOUT", client)
 
     mensaje = str(exc.value)
-    assert "tiempo de espera" in mensaje.lower()
+    assert 'timed out' in mensaje.lower()
     assert "TOKEN-USUARIO-TIMEOUT" not in mensaje
 
 
@@ -601,7 +601,7 @@ def test_obtener_paginas_meta_fallo_de_conexion_da_mensaje_limpio_sin_traza():
             obtener_paginas_meta("TOKEN-USUARIO-CONEXION", client)
 
     mensaje = str(exc.value)
-    assert "conectar" in mensaje.lower()
+    assert 'connect' in mensaje.lower()
     assert "TOKEN-USUARIO-CONEXION" not in mensaje
 
 
@@ -622,7 +622,7 @@ def test_obtener_paginas_meta_url_invalida_no_filtra_el_token(monkeypatch):
             obtener_paginas_meta("TOKEN-USUARIO-URL-INVALIDA", client)
 
     mensaje = str(exc.value)
-    assert "no es válida" in mensaje.lower()
+    assert 'invalid' in mensaje.lower()
     assert "TOKEN-USUARIO-URL-INVALIDA" not in mensaje
     assert "TOKEN-USUARIO-URL-INVALIDA" in str(peticion_capturada["valor"].url)
 
@@ -641,6 +641,6 @@ def test_obtener_paginas_meta_resguardo_final_no_filtra_el_token(monkeypatch):
             obtener_paginas_meta("TOKEN-USUARIO-INESPERADO", client)
 
     mensaje = str(exc.value)
-    assert "inesperado" in mensaje.lower()
+    assert 'unexpected' in mensaje.lower()
     assert "TOKEN-USUARIO-INESPERADO" not in mensaje
     assert "ValueError" not in mensaje

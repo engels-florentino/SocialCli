@@ -109,7 +109,7 @@ def test_run_due_holds_changed_approved_text_without_publishing(
     assert calls == []
     entry = ScheduleStore(brand.raiz).get("clip/facebook")
     assert entry.status == "manual_review"
-    assert "huella de aprobación no coincide" in (entry.last_error or "")
+    assert 'approval fingerprint does not match' in (entry.last_error or "")
 
 
 @pytest.mark.parametrize("hash_kind", ["legacy", "missing"])
@@ -156,7 +156,7 @@ def test_run_due_holds_legacy_and_missing_approval_without_publishing(
     assert calls == []
     entry = ScheduleStore(brand.raiz).get("clip/facebook")
     assert entry.status == "manual_review"
-    assert "revisión manual" in (entry.last_error or "")
+    assert 'manual review' in (entry.last_error or "")
 
 
 def test_run_due_rejects_overlapping_executor_with_cli_error(tmp_path):
@@ -171,7 +171,7 @@ def test_run_due_rejects_overlapping_executor_with_cli_error(tmp_path):
         )
 
     assert result.exit_code == 1
-    assert "ya hay otro ejecutor" in result.stdout
+    assert 'another executor' in result.stdout
     assert "Traceback" not in result.output
 
 
@@ -197,7 +197,7 @@ def test_failure_after_remote_acceptance_is_manual_review_with_remote_id(
     entry = ScheduleStore(brand.raiz).get("clip/facebook")
     assert entry.status == "manual_review"
     assert entry.platform_id == "remote-1"
-    assert "resultado remoto" in (entry.last_error or "")
+    assert 'remote result' in (entry.last_error or "")
 
 
 def test_unexpected_adapter_exception_is_not_left_retryable(tmp_path, monkeypatch):
@@ -222,7 +222,7 @@ def test_unexpected_adapter_exception_is_not_left_retryable(tmp_path, monkeypatc
     entry = ScheduleStore(brand.raiz).get("clip/facebook")
     assert entry.status == "manual_review"
     assert "unexpected adapter failure" not in (entry.last_error or "")
-    assert "incierto" in (entry.last_error or "")
+    assert 'uncertain' in (entry.last_error or "")
 
 
 def test_claim_is_directory_durable_before_publish(tmp_path, monkeypatch):
@@ -291,7 +291,7 @@ def test_claim_directory_sync_failure_prevents_publish(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "no se pudo guardar la cola" in result.stdout
+    assert 'could not save the queue' in result.stdout
     assert calls == []
     assert ScheduleStore(brand.raiz).get("clip/facebook").status == "running"
 
@@ -340,13 +340,13 @@ def test_schedule_batch_dry_run_shows_full_selected_content_without_writes(
 
     assert result.exit_code == 0, result.stdout
     assert "--- FACEBOOK ---" in result.stdout
-    assert "Titulo: Título del lote" in result.stdout
+    assert 'Title: Título del lote' in result.stdout
     assert "Cuerpo aprobado" in result.stdout
     assert "#historia" in result.stdout
-    assert "Primer comentario: Comentario aprobado" in result.stdout
+    assert 'First comment: Comentario aprobado' in result.stdout
     assert "Media: cover.png (1x1)" in result.stdout
-    assert "Problemas detectados: 0" in result.stdout
-    assert "--dry-run: no se ha guardado la cola." in result.stdout
+    assert 'Problems found: 0' in result.stdout
+    assert '--dry-run: the queue was not saved.' in result.stdout
     assert not (brand.raiz / ".socialctl" / "schedules.json").exists()
 
 
@@ -386,7 +386,7 @@ def test_schedule_batch_yes_rejects_payload_changed_after_displayed_preview(
 
     assert result.exit_code == 1
     assert "Cuerpo aprobado" in result.stdout
-    assert "cambió después del preview" in result.stdout
+    assert 'changed after the preview' in result.stdout
     assert not (brand.raiz / ".socialctl" / "schedules.json").exists()
 
 
@@ -424,8 +424,8 @@ def test_schedule_batch_yes_still_displays_preview_before_queue_write(
     assert result.exit_code == 0, result.stdout
     assert "--- FACEBOOK ---" in result.stdout
     assert "Cuerpo aprobado" in result.stdout
-    assert "Primer comentario: Comentario aprobado" in result.stdout
-    assert "Cola actualizada: 1 entrada(s)." in result.stdout
+    assert 'First comment: Comentario aprobado' in result.stdout
+    assert 'Queue updated: 1 entry/entries.' in result.stdout
     assert ScheduleStore(brand.raiz).get("clip/facebook").status == "approved"
 
 
@@ -484,7 +484,7 @@ def test_pre_origin_approved_video_keeps_hash_and_only_valid_approval_runs(tmp_p
     assert after == [(before[0][0], before[0][1], expected_status, before[0][3])]
     assert path.read_bytes() == original_post
     assert len(calls) == (stored == 'valid')
-    assert ('entrada anterior: origen no verificado' in result.output) == (stored == 'valid')
+    assert ('legacy entry: source unverified' in result.output) == (stored == 'valid')
     # Repeated ticks never upload again to repair a failed/missing first comment.
     runner.invoke(app, ['run-due', '--brand', 'Histopast', '--root', str(tmp_path)])
     assert len(calls) == (stored == 'valid')
@@ -502,7 +502,7 @@ def test_explicit_wrong_origin_is_blocked_even_with_matching_approved_hash(tmp_p
     result = runner.invoke(app, ['run-due', '--brand', 'Histopast', '--root', str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert store.get('clip/facebook').status == 'error'
-    assert 'comentario exacto' in result.output
+    assert 'exact comment' in result.output
 
 
 @pytest.mark.parametrize('command', ['publish', 'schedule-batch'])
@@ -516,7 +516,7 @@ def test_new_origin_required_for_all_proposal_routes(tmp_path, monkeypatch, comm
         args = [command, 'clip']
     result = runner.invoke(app, args + ['--dry-run', '--brand', 'Histopast', '--root', str(tmp_path)])
     assert result.exit_code == 1, result.output
-    assert 'declara standalone o youtube_long' in result.output
+    assert 'declare standalone or youtube_long' in result.output
     assert not ScheduleStore(brand.raiz).load()
 
 
@@ -536,7 +536,7 @@ def test_legacy_origin_exception_still_requires_original_bytes_and_identity(tmp_
     result = runner.invoke(app, ['run-due', '--brand', 'Histopast', '--root', str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert store.get('clip/facebook').status == 'manual_review'
-    assert 'entrada anterior: origen no verificado' not in result.output
+    assert 'legacy entry: source unverified' not in result.output
 
 
 def test_legacy_instagram_still_checks_hosted_media(tmp_path, monkeypatch):

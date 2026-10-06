@@ -23,14 +23,14 @@ MAX_EVENTS = 20000  # Never evict replay protection silently.
 def verify_challenge(mode, provided_token, challenge, expected_token):
     if (mode != "subscribe" or not all(isinstance(v, str) and v for v in (provided_token, expected_token, challenge))
             or len(challenge) > 4096 or not hmac.compare_digest(provided_token.encode(), expected_token.encode())):
-        raise MetaError("verificación webhook rechazada")
+        raise MetaError("webhook verification rejected")
     return challenge
 
 
 class WebhookStore:
     def __init__(self, brand, platform):
         if platform not in {"facebook", "instagram"}:
-            raise MetaError("plataforma webhook no admitida")
+            raise MetaError("unsupported webhook platform")
         self.brand, self.platform = brand, platform
         self.account_id = meta_id((brand.cuentas.get(platform) or {}).get("page_id" if platform == "facebook" else "ig_user_id"))
         self.root = brand.raiz / ".socialctl" / "meta-webhooks"
@@ -42,7 +42,7 @@ class WebhookStore:
         guard.root = self.root
         guard._ensure_root()
         if self.path.is_symlink():
-            raise MetaError("webhook DB no admite enlaces simbólicos")
+            raise MetaError("webhook DB does not accept symlinks")
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         os.close(fd)
         conn = sqlite3.connect(self.path, timeout=5)
@@ -61,33 +61,33 @@ class WebhookStore:
     def ingest(self, raw, signature, app_secret):
         if (not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_BODY or not isinstance(signature, str)
                 or not isinstance(app_secret, str) or not app_secret):
-            raise MetaError("cuerpo/firma/secreto webhook inválido")
+            raise MetaError("invalid webhook body/signature/secret")
         expected = "sha256=" + hmac.new(app_secret.encode(), raw, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature.encode(), expected.encode()):
-            raise MetaError("firma webhook no válida")
+            raise MetaError("invalid webhook signature")
         try:
             data = parse_json(raw, limit=MAX_BODY)
         except (ValueError, TypeError, RecursionError):
-            raise MetaError("JSON webhook inválido") from None
+            raise MetaError("invalid webhook JSON") from None
         if not isinstance(data, dict) or data.get("object") != ("page" if self.platform == "facebook" else "instagram"):
-            raise MetaError("objeto webhook no coincide con la plataforma")
+            raise MetaError("webhook object does not match platform")
         entries = data.get("entry")
         if not isinstance(entries, list) or not 1 <= len(entries) <= 100:
-            raise MetaError("entradas webhook vacías/excesivas")
+            raise MetaError("empty/excessive webhook entries")
         events = []
         for entry in entries:
             if not isinstance(entry, dict) or entry.get("id") != self.account_id:
-                raise MetaError("cuenta webhook no seleccionada")
+                raise MetaError("webhook account not selected")
             timestamp = entry.get("time")
             changes = entry.get("changes")
             if type(timestamp) is not int or not 0 <= timestamp <= 2**53 or not isinstance(changes, list) or not 1 <= len(changes) <= 100:
-                raise MetaError("tiempo/cambios webhook inválidos")
+                raise MetaError("invalid webhook time/changes")
             for change in changes:
                 if not isinstance(change, dict) or change.get("field") not in ({"feed"} if self.platform == "facebook" else {"comments", "mentions"}):
-                    raise MetaError("campo webhook fuera de contenido normal; no se ingiere mensajería")
+                    raise MetaError("webhook field outside normal content; messaging is not ingested")
                 value = change.get("value")
                 if not isinstance(value, dict):
-                    raise MetaError("valor webhook inválido")
+                    raise MetaError("invalid webhook value")
                 media = value.get("media")
                 target = value.get("post_id") if self.platform == "facebook" else value.get("media_id", media.get("id") if isinstance(media, dict) else None)
                 meta_id(target, composite=self.platform == "facebook")
@@ -96,7 +96,7 @@ class WebhookStore:
                 identifier = hashlib.sha256(canonical.encode()).hexdigest()
                 events.append((identifier, target, timestamp, canonical))
         if len(events) > 1000:
-            raise MetaError("demasiados eventos en un cuerpo")
+            raise MetaError("too many events in one body")
         counts = {"accepted": 0, "duplicates": 0, "out_of_order": 0}
         with self.database() as conn:
             count = conn.execute("SELECT count(*) FROM events").fetchone()[0]
@@ -105,7 +105,7 @@ class WebhookStore:
                     counts["duplicates"] += 1
                     continue
                 if count >= MAX_EVENTS:
-                    raise MetaError("almacén webhook lleno; no se borran pruebas de replay automáticamente")
+                    raise MetaError("webhook store full; replay evidence is not deleted automatically")
                 latest = conn.execute("SELECT max(source_time) FROM events WHERE target=?", (target,)).fetchone()[0]
                 stale = latest is not None and timestamp < latest
                 conn.execute("INSERT INTO events VALUES (?,?,?,?,?,?,NULL)", (identifier, target, timestamp, canonical, int(stale), "pending_read"))
@@ -116,7 +116,7 @@ class WebhookStore:
 
     def events(self, limit=100):
         if type(limit) is not int or not 1 <= limit <= 1000:
-            raise MetaError("límite de eventos fuera de rango")
+            raise MetaError("event limit out of range")
         if not self.path.exists():
             return []
         with self.database() as conn:
@@ -126,7 +126,7 @@ class WebhookStore:
     def reconcile(self, client, event_id):
         if (client.brand.nombre, str(client.brand.raiz.resolve()), client.platform.value, client.account_id) != (
                 self.brand.nombre, str(self.brand.raiz.resolve()), self.platform, self.account_id):
-            raise MetaError("evento y cliente pertenecen a otra marca/cuenta")
+            raise MetaError("event and client belong to another brand/account")
         with self.database() as conn:
             row = conn.execute("SELECT target,payload FROM events WHERE id=?", (event_id,)).fetchone()
             if row is None:

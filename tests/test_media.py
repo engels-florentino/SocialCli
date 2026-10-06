@@ -162,7 +162,7 @@ def test_video_demasiado_corto_para_tiktok(clip_vertical):
     )
     post = PlatformPost(platform=Platform.TIKTOK, body="x", media=[corto])
     errores = validar_media(post)
-    assert any("dura" in e.motivo for e in errores)
+    assert any('lasts' in e.motivo for e in errores)
 
 
 def test_video_valido_para_tiktok_no_da_errores(clip_vertical):
@@ -200,7 +200,7 @@ def test_aspect_ratio_sin_divisor_comun_muestra_dimensiones_reales(clip_vertical
 def test_instagram_sin_media_da_error():
     post = PlatformPost(platform=Platform.INSTAGRAM, body="solo texto", media=[])
     errores = validar_media(post)
-    assert any("exige" in e.motivo for e in errores)
+    assert any('requires' in e.motivo for e in errores)
 
 
 def test_facebook_sin_media_es_valido():
@@ -231,7 +231,7 @@ def test_no_descarta_un_segundo_archivo(platform):
     errors = validar_media(post)
 
     assert any(
-        error.campo == "media" and "1 archivo" in error.motivo
+        error.campo == "media" and '1 file' in error.motivo
         for error in errors
     )
 

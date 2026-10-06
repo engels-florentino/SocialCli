@@ -1,10 +1,4 @@
-"""Cola durable para publicaciones manuales en Grupos de Facebook.
-
-La Facebook Groups API y ``publish_to_groups`` ya no están disponibles. Este
-módulo no contiene cliente HTTP: prepara un paquete, registra su aprobación y
-acepta únicamente la confirmación que el usuario aporta después de publicar en
-el navegador.
-"""
+"""Durable manual Facebook Groups queue. The retired Groups API is not used; approval prepares a package, and only user confirmation after browser publication completes it."""
 from __future__ import annotations
 
 import hashlib
@@ -27,10 +21,11 @@ from socialctl.rutas import validar_ruta_relativa
 
 
 class GroupError(ChangeError):
-    """Error legible de una propuesta manual para un Grupo."""
+    """Readable error for a manual Group proposal."""
 
 
-CONFIRMATION_PHRASE = "CONFIRMO PUBLICADO MANUALMENTE"
+CONFIRMATION_PHRASE = "I CONFIRM MANUAL PUBLICATION"
+LEGACY_CONFIRMATION_PHRASE = "CONFIRMO PUBLICADO MANUALMENTE"
 CAPABILITY = "facebook_groups_api_removed_manual_browser_handoff"
 _GROUP_SEGMENT = re.compile(r"^[A-Za-z0-9._-]{1,200}$")
 _POST_SEGMENT = re.compile(r"^[A-Za-z0-9._-]{1,300}$")
@@ -48,19 +43,19 @@ _SECRET_PATTERNS = (
 
 def _aware(value: datetime, field: str) -> datetime:
     if value.utcoffset() is None:
-        raise GroupError(f"{field} debe incluir zona horaria")
+        raise GroupError(f"{field} must include a timezone")
     return value
 
 
 def _plain_text(value: str, field: str, *, maximum: int) -> str:
     if not isinstance(value, str) or not value.strip() or value != value.strip():
-        raise GroupError(f"{field} debe ser texto no vacío y sin espacios exteriores")
+        raise GroupError(f"{field} must be nonempty text without surrounding whitespace")
     if len(value) > maximum:
-        raise GroupError(f"{field} supera el límite local de {maximum} caracteres")
+        raise GroupError(f"{field} exceeds local limit of {maximum} characters")
     if any(ord(char) < 32 and char not in "\n\t" for char in value):
-        raise GroupError(f"{field} contiene caracteres de control")
+        raise GroupError(f"{field} contains control characters")
     if any(pattern.search(value) for pattern in _SECRET_PATTERNS):
-        raise GroupError(f"{field} parece contener un secreto o credencial; se rechazó")
+        raise GroupError(f"{field} may contain a secret or credential; rejected")
     return value
 
 
@@ -70,63 +65,63 @@ def _safe_https_parts(value: str, field: str):
         parsed = urlsplit(value)
         port = parsed.port
     except ValueError:
-        raise GroupError(f"{field} no es una URL válida") from None
+        raise GroupError(f"{field} is not a valid URL") from None
     if parsed.scheme != "https" or not parsed.hostname:
-        raise GroupError(f"{field} debe ser una URL HTTPS pública")
+        raise GroupError(f"{field} must be a public HTTPS URL")
     if parsed.username is not None or parsed.password is not None or port is not None:
-        raise GroupError(f"{field} no admite credenciales ni puertos")
+        raise GroupError(f"{field} does not accept credentials or ports")
     if parsed.fragment:
-        raise GroupError(f"{field} no admite fragmentos")
+        raise GroupError(f"{field} does not accept fragments")
     return parsed
 
 
 def validate_group_url(value: str) -> tuple[str, str]:
-    """Devuelve URL canónica y slug/id exacto del Grupo."""
+    """Return canonical Group URL and exact slug/ID."""
     parsed = _safe_https_parts(value, "group_url")
     host = (parsed.hostname or "").lower()
     if host not in {"facebook.com", "www.facebook.com", "m.facebook.com"}:
-        raise GroupError("group_url debe apuntar a un Grupo público en facebook.com")
+        raise GroupError("group_url must point to a public Group on facebook.com")
     if parsed.query:
-        raise GroupError("group_url no admite query; elimina parámetros de seguimiento o credenciales")
+        raise GroupError("group_url does not accept query parameters; remove tracking or credentials")
     parts = [part for part in parsed.path.split("/") if part]
     if len(parts) != 2 or parts[0].lower() != "groups" or not _GROUP_SEGMENT.fullmatch(parts[1]):
-        raise GroupError("group_url debe tener la forma https://www.facebook.com/groups/GRUPO")
+        raise GroupError("group_url must have the form https://www.facebook.com/groups/GROUP")
     canonical = urlunsplit(("https", "www.facebook.com", f"/groups/{parts[1]}", "", ""))
     return canonical, parts[1]
 
 
 def validate_youtube_url(value: str) -> tuple[str, str]:
-    """Acepta enlaces canónicos a un vídeo largo, nunca endpoints de API."""
+    """Accept canonical long-form video links, never API endpoints."""
     parsed = _safe_https_parts(value, "youtube_url")
     host = (parsed.hostname or "").lower()
     video_id: str | None = None
     if host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
         if parsed.path != "/watch":
-            raise GroupError("youtube_url debe apuntar a /watch?v=VIDEO_ID")
+            raise GroupError("youtube_url must point to /watch?v=VIDEO_ID")
         query = parse_qs(parsed.query, keep_blank_values=True)
         if set(query) != {"v"} or len(query["v"]) != 1:
-            raise GroupError("youtube_url solo admite el parámetro v; elimina tracking o credenciales")
+            raise GroupError("youtube_url accepts only the v parameter; remove tracking or credentials")
         video_id = query["v"][0]
     elif host == "youtu.be":
         if parsed.query:
-            raise GroupError("youtube_url corta no admite parámetros")
+            raise GroupError("short youtube_url does not accept parameters")
         parts = [part for part in parsed.path.split("/") if part]
         if len(parts) != 1:
-            raise GroupError("youtube_url corta debe tener la forma https://youtu.be/VIDEO_ID")
+            raise GroupError("short youtube_url must have the form https://youtu.be/VIDEO_ID")
         video_id = parts[0]
     else:
-        raise GroupError("youtube_url debe usar youtube.com o youtu.be; endpoints privados no se admiten")
+        raise GroupError("youtube_url must use youtube.com or youtu.be; private endpoints are not accepted")
     if not _YOUTUBE_ID.fullmatch(video_id or ""):
-        raise GroupError("youtube_url no contiene un ID de vídeo de YouTube válido")
+        raise GroupError("youtube_url does not contain a valid YouTube video ID")
     return f"https://www.youtube.com/watch?v={video_id}", video_id
 
 
 def validate_post_url(value: str, expected_group_key: str) -> str:
     parsed = _safe_https_parts(value, "post_url")
     if (parsed.hostname or "").lower() not in {"facebook.com", "www.facebook.com", "m.facebook.com"}:
-        raise GroupError("post_url debe apuntar a facebook.com")
+        raise GroupError("post_url must point to facebook.com")
     if parsed.query:
-        raise GroupError("post_url no admite query; elimina tracking o credenciales")
+        raise GroupError("post_url does not accept query parameters; remove tracking or credentials")
     parts = [part for part in parsed.path.split("/") if part]
     if (
         len(parts) != 4
@@ -135,7 +130,7 @@ def validate_post_url(value: str, expected_group_key: str) -> str:
         or parts[2].lower() not in {"posts", "permalink"}
         or not _POST_SEGMENT.fullmatch(parts[3])
     ):
-        raise GroupError("post_url debe ser una URL de post/permalink del mismo Grupo aprobado")
+        raise GroupError("post_url must be a post/permalink URL from the same approved Group")
     return urlunsplit(("https", "www.facebook.com", "/" + "/".join(parts), "", ""))
 
 
@@ -158,7 +153,7 @@ class SuggestedWindow(BaseModel):
         _aware(self.start, "window_start")
         _aware(self.end, "window_end")
         if self.end <= self.start:
-            raise ValueError("window_end debe ser posterior a window_start")
+            raise ValueError("window_end must be after window_start")
         return self
 
 
@@ -181,13 +176,13 @@ class GroupMedia(BaseModel):
             or self.width <= 0
             or self.height <= 0
         ):
-            raise ValueError("la media del Grupo requiere dimensiones visuales positivas")
+            raise ValueError("Group media requires positive visual dimensions")
         if self.kind == "image" and self.duration_s is not None:
-            raise ValueError("una imagen del Grupo no admite duración")
+            raise ValueError("Group image does not accept duration")
         if self.kind == "video" and (
             self.duration_s is None or self.duration_s <= 0
         ):
-            raise ValueError("un vídeo del Grupo requiere duración positiva")
+            raise ValueError("Group video requires positive duration")
         return self
 
 
@@ -239,11 +234,11 @@ class GroupChange(BaseModel):
     @model_validator(mode="after")
     def validate_state(self):
         if self.status == "confirmed_manual" and self.confirmation is None:
-            raise ValueError("confirmed_manual requiere confirmación del usuario")
+            raise ValueError("confirmed_manual requires user confirmation")
         if self.status != "confirmed_manual" and self.confirmation is not None:
-            raise ValueError("la evidencia solo puede existir tras confirmación manual")
+            raise ValueError("evidence can only exist after manual confirmation")
         if self.status == "awaiting_manual_confirmation" and self.handoff_opened_at is None:
-            raise ValueError("awaiting_manual_confirmation requiere un handoff abierto")
+            raise ValueError("awaiting_manual_confirmation requires an open handoff")
         return self
 
 
@@ -292,7 +287,7 @@ def _dedupe_payload(
 def _load_bound(brand, store: GroupStore, change_id: str) -> GroupChange:
     change = store.load(change_id)
     if change.brand != brand.nombre or Path(change.brand_root) != brand.raiz.resolve():
-        raise GroupError("la marca configurada ya no coincide con el ChangeSet del Grupo")
+        raise GroupError("configured brand no longer matches Group ChangeSet")
     name = _plain_text(change.destination.name, "group_name", maximum=200)
     group_url, group_key = validate_group_url(change.destination.url)
     copy = _plain_text(change.copy_text, "copy", maximum=10_000)
@@ -305,37 +300,37 @@ def _load_bound(brand, store: GroupStore, change_id: str) -> GroupChange:
         or youtube_url != change.youtube_url
         or video_id != change.youtube_video_id
     ):
-        raise GroupError("el contrato canónico del ChangeSet no coincide")
+        raise GroupError("canonical ChangeSet contract mismatch")
     if change.media is not None:
         relative = change.media.relative_path
         if ".secrets" in Path(relative).parts:
-            raise GroupError("la media persistida no puede apuntar a .secrets")
+            raise GroupError("persisted media cannot point to .secrets")
         validar_ruta_relativa(
-            brand.raiz / "media", relative, GroupError, "media persistida del Grupo"
+            brand.raiz / "media", relative, GroupError, "persisted Group media"
         )
     if change.confirmation is not None:
         if change.confirmation.confirmed_at.utcoffset() is None:
-            raise GroupError("confirmed_at debe incluir zona horaria")
+            raise GroupError("confirmed_at must include a timezone")
         if change.confirmation.post_url is not None:
             canonical_post = validate_post_url(change.confirmation.post_url, group_key)
             if canonical_post != change.confirmation.post_url:
-                raise GroupError("la URL confirmada persistida no es canónica")
+                raise GroupError("persisted confirmed URL is not canonical")
         if change.confirmation.evidence is not None:
             evidence_path = change.confirmation.evidence.relative_path
             if ".secrets" in Path(evidence_path).parts:
-                raise GroupError("la evidencia persistida no puede apuntar a .secrets")
-            validar_ruta_relativa(brand.raiz, evidence_path, GroupError, "evidencia persistida")
+                raise GroupError("persisted evidence cannot point to .secrets")
+            validar_ruta_relativa(brand.raiz, evidence_path, GroupError, "persisted evidence")
     expected = _dedupe_payload(
         change.brand, change.destination, change.copy_text, change.youtube_url,
         change.media, change.suggested_window,
     )
     if not hmac.compare_digest(change.dedupe_key, expected):
-        raise GroupError("la clave de idempotencia del ChangeSet no coincide")
+        raise GroupError("ChangeSet idempotency key mismatch")
     return change
 
 
 def load_group(brand, store: GroupStore, change_id: str) -> GroupChange:
-    """Carga pública con binding de marca y clave de idempotencia verificados."""
+    """Public load with verified brand binding and idempotency key."""
     return _load_bound(brand, store, change_id)
 
 
@@ -343,20 +338,20 @@ def _media(brand, relative: str | None) -> GroupMedia | None:
     if relative is None:
         return None
     if ".secrets" in Path(relative).parts:
-        raise GroupError("--media no puede apuntar a .secrets")
-    path = validar_ruta_relativa(brand.raiz / "media", relative, GroupError, "media del Grupo")
+        raise GroupError("--media cannot point to .secrets")
+    path = validar_ruta_relativa(brand.raiz / "media", relative, GroupError, "Group media")
     if path.is_symlink():
-        raise GroupError("la media del Grupo debe ser un archivo regular, no un enlace")
+        raise GroupError("Group media must be a regular file, not a symlink")
     try:
         resolved = path.resolve(strict=True)
     except OSError as exc:
-        raise GroupError(f"no se pudo leer la media del Grupo: {exc}") from None
+        raise GroupError(f"failed to read Group media: {exc}") from None
     if not resolved.is_file():
-        raise GroupError("la media del Grupo debe ser un archivo regular existente")
+        raise GroupError("Group media must be an existing regular file")
     try:
         kind, width, height, duration = _probe_visual_file(resolved, evidence=False)
     except GroupError as exc:
-        raise GroupError(f"media del Grupo inválida: {exc}") from None
+        raise GroupError(f"invalid Group media: {exc}") from None
     return GroupMedia(
         relative_path=relative,
         sha256=file_digest(resolved),
@@ -373,7 +368,7 @@ def _verify_media_unchanged(brand, media: GroupMedia | None) -> None:
         return
     current = _media(brand, media.relative_path)
     if current is None or current.model_dump() != media.model_dump():
-        raise GroupError("la media cambió desde el preview; prepara un ChangeSet nuevo")
+        raise GroupError("media changed since preview; prepare a new ChangeSet")
 
 
 def _iter_changes(store: GroupStore):
@@ -411,7 +406,7 @@ def prepare_group(
         for other in _iter_changes(store):
             if hmac.compare_digest(other.dedupe_key, key):
                 raise GroupError(
-                    f"propuesta duplicada: ya existe el ChangeSet {other.id} en estado {other.status}"
+                    f"duplicate proposal: ChangeSet {other.id} already exists with status {other.status}"
                 )
         moment = now_utc()
         change = GroupChange(
@@ -435,20 +430,20 @@ def prepare_group(
 
 
 def approve_handoff(brand, store: GroupStore, change_id: str, approval_digest: str) -> GroupChange:
-    """Aprueba el paquete local; no abre navegador ni realiza red."""
+    """Approve local package without browser opening or network access."""
     with store.apply_lock(change_id):
         change = _load_bound(brand, store, change_id)
         if not isinstance(approval_digest, str) or not hmac.compare_digest(
             approval_digest.encode(), change.fingerprint.encode()
         ):
-            raise ApprovalMismatch("la aprobación no coincide con la huella exacta de la propuesta")
+            raise ApprovalMismatch("approval does not match exact proposal fingerprint")
         if change.status == "handoff_ready":
             _verify_media_unchanged(brand, change.media)
             return change
         if change.status in {"awaiting_manual_confirmation", "confirmed_manual"}:
             return change
         if change.status not in {"prepared", "approved"}:
-            raise GroupError(f"el ChangeSet está en estado {change.status}")
+            raise GroupError(f"ChangeSet status is {change.status}")
         _verify_media_unchanged(brand, change.media)
         if change.status == "prepared":
             change.status = "approved"
@@ -463,13 +458,13 @@ def approve_handoff(brand, store: GroupStore, change_id: str, approval_digest: s
 
 
 def mark_handoff_opened(brand, store: GroupStore, change_id: str) -> GroupChange:
-    """Registra que el navegador se abrió; no afirma que exista un post."""
+    """Record browser opening without claiming a post exists."""
     with store.apply_lock(change_id):
         change = _load_bound(brand, store, change_id)
         if change.status in {"awaiting_manual_confirmation", "confirmed_manual"}:
             return change
         if change.status != "handoff_ready":
-            raise GroupError("el handoff debe aprobarse antes de abrir el navegador")
+            raise GroupError("handoff must be approved before opening browser")
         _verify_media_unchanged(brand, change.media)
         change.handoff_opened_at = now_utc()
         change.status = "awaiting_manual_confirmation"
@@ -484,7 +479,7 @@ def record_handoff_error(brand, store: GroupStore, change_id: str, message: str)
         change = _load_bound(brand, store, change_id)
         if change.status != "handoff_ready":
             return change
-        change.last_error = _plain_text(message, "error de navegador", maximum=500)
+        change.last_error = _plain_text(message, "browser error", maximum=500)
         _event(change, "browser_open_failed")
         store.save(change)
         return change
@@ -519,7 +514,7 @@ class _PdfName(bytes):
 
 
 class _PdfLexer:
-    """Lexer mínimo de objetos PDF; strings y comentarios nunca producen claves."""
+    """Minimal PDF object lexer; strings and comments never produce keys."""
 
     def __init__(self, data: bytes):
         self.data = data
@@ -558,7 +553,7 @@ class _PdfLexer:
                 depth -= 1
                 if depth == 0:
                     return ("string", b"")
-        raise GroupError("la evidencia PDF contiene un string literal truncado")
+        raise GroupError("PDF evidence contains a truncated literal string")
 
     def _hex_string(self) -> tuple[str, bytes]:
         self.cursor += 1
@@ -567,7 +562,7 @@ class _PdfLexer:
             self.cursor += 1
             if byte == ord(">"):
                 return ("string", b"")
-        raise GroupError("la evidencia PDF contiene un string hexadecimal truncado")
+        raise GroupError("PDF evidence contains a truncated hexadecimal string")
 
     def _name(self) -> tuple[str, bytes]:
         self.cursor += 1
@@ -587,11 +582,11 @@ class _PdfLexer:
                 index += 1
                 continue
             if index + 2 >= len(raw):
-                raise GroupError("la evidencia PDF contiene un nombre escapado inválido")
+                raise GroupError("PDF evidence contains an invalid escaped name")
             try:
                 decoded.append(int(raw[index + 1:index + 3], 16))
             except ValueError:
-                raise GroupError("la evidencia PDF contiene un nombre escapado inválido") from None
+                raise GroupError("PDF evidence contains an invalid escaped name") from None
             index += 3
         return ("name", bytes(decoded))
 
@@ -619,7 +614,7 @@ class _PdfLexer:
         if byte == ord("/"):
             return self._name()
         if byte in _PDF_DELIMITERS:
-            raise GroupError("la evidencia PDF contiene un delimitador inesperado")
+            raise GroupError("PDF evidence contains an unexpected delimiter")
         start = self.cursor
         while (
             self.cursor < len(self.data)
@@ -659,7 +654,7 @@ def _pdf_has_valid_header(header: bytes) -> bool:
 
 
 def _pdf_startxref(tail: bytes) -> int | None:
-    """Lee el cierre por líneas de código, omitiendo comentarios intermedios."""
+    """Read closure from code lines, skipping intervening comments."""
     lines = tail.replace(b"\r\n", b"\n").replace(b"\r", b"\n").split(b"\n")
     while lines and not lines[-1].strip():
         lines.pop()
@@ -677,10 +672,10 @@ def _pdf_startxref(tail: bytes) -> int | None:
 
 def _pdf_value(lexer: _PdfLexer, *, depth: int = 0):
     if depth >= 256:
-        raise GroupError("la evidencia PDF contiene objetos demasiado anidados")
+        raise GroupError("PDF evidence contains excessively nested objects")
     token = lexer.take()
     if token is None:
-        raise GroupError("la evidencia PDF contiene un valor truncado")
+        raise GroupError("PDF evidence contains a truncated value")
     kind, raw = token
     if kind == "name":
         return _PdfName(raw)
@@ -690,7 +685,7 @@ def _pdf_value(lexer: _PdfLexer, *, depth: int = 0):
         values = []
         while lexer.peek() != ("array_end", b"]"):
             if lexer.peek() is None:
-                raise GroupError("la evidencia PDF contiene un array truncado")
+                raise GroupError("PDF evidence contains a truncated array")
             values.append(_pdf_value(lexer, depth=depth + 1))
         lexer.take()
         return values
@@ -699,16 +694,16 @@ def _pdf_value(lexer: _PdfLexer, *, depth: int = 0):
         while lexer.peek() != ("dict_end", b">>"):
             key = lexer.take()
             if key is None:
-                raise GroupError("la evidencia PDF contiene un diccionario truncado")
+                raise GroupError("PDF evidence contains a truncated dictionary")
             if key[0] != "name":
-                raise GroupError("la evidencia PDF contiene una clave de diccionario inválida")
+                raise GroupError("PDF evidence contains an invalid dictionary key")
             if key[1] in dictionary:
-                raise GroupError("la evidencia PDF contiene una clave de diccionario duplicada")
+                raise GroupError("PDF evidence contains a duplicate dictionary key")
             dictionary[key[1]] = _pdf_value(lexer, depth=depth + 1)
         lexer.take()
         return dictionary
     if kind != "word":
-        raise GroupError("la evidencia PDF contiene un valor inesperado")
+        raise GroupError("PDF evidence contains an unexpected value")
     integer = _pdf_integer(raw)
     if integer is not None:
         generation = lexer.peek()
@@ -722,42 +717,42 @@ def _pdf_value(lexer: _PdfLexer, *, depth: int = 0):
             lexer.take()
             lexer.take()
             if integer < 0 or generation_number < 0:
-                raise GroupError("la evidencia PDF contiene una referencia negativa")
+                raise GroupError("PDF evidence contains a negative reference")
             return _PdfReference(integer, generation_number)
         return integer
     return raw
 
 
 def _validate_jpeg_structure(path: Path) -> None:
-    """Recorre los segmentos JPEG hasta SOS/EOI; un contenedor MJPEG no vale."""
+    """Walk JPEG segments through SOS/EOI; MJPEG containers are not accepted."""
     saw_frame = False
     saw_scan = False
     try:
         with path.open("rb") as handle:
             if handle.read(2) != b"\xff\xd8":
-                raise GroupError("la imagen JPEG no tiene marcador SOI")
+                raise GroupError("JPEG image lacks SOI marker")
             while True:
                 prefix = handle.read(1)
                 if prefix != b"\xff":
-                    raise GroupError("la imagen JPEG contiene segmentos inválidos")
+                    raise GroupError("JPEG image contains invalid segments")
                 marker = handle.read(1)
                 while marker == b"\xff":
                     marker = handle.read(1)
                 if not marker:
-                    raise GroupError("la imagen JPEG está truncada antes de EOI")
+                    raise GroupError("JPEG image is truncated before EOI")
                 code = marker[0]
                 if code == 0xD9:
                     if not saw_frame or not saw_scan or handle.read().strip(b"\x00\t\r\n "):
-                        raise GroupError("la imagen JPEG no tiene una estructura completa")
+                        raise GroupError("JPEG image lacks complete structure")
                     return
                 if code in {0x00, 0xD8, 0x01} or 0xD0 <= code <= 0xD7:
-                    raise GroupError("la imagen JPEG contiene un marcador fuera de lugar")
+                    raise GroupError("JPEG image contains a misplaced marker")
                 raw_length = handle.read(2)
                 if len(raw_length) != 2:
-                    raise GroupError("la imagen JPEG contiene un segmento truncado")
+                    raise GroupError("JPEG image contains a truncated segment")
                 length = int.from_bytes(raw_length, "big")
                 if length < 2:
-                    raise GroupError("la imagen JPEG contiene un segmento con longitud inválida")
+                    raise GroupError("JPEG image contains a segment with invalid length")
                 if code in {
                     0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
                     0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
@@ -765,34 +760,34 @@ def _validate_jpeg_structure(path: Path) -> None:
                     saw_frame = True
                 if code != 0xDA:
                     if len(handle.read(length - 2)) != length - 2:
-                        raise GroupError("la imagen JPEG contiene un segmento truncado")
+                        raise GroupError("JPEG image contains a truncated segment")
                     continue
 
                 saw_scan = True
                 if len(handle.read(length - 2)) != length - 2:
-                    raise GroupError("la imagen JPEG contiene un scan truncado")
+                    raise GroupError("JPEG image contains a truncated scan")
                 while True:
                     byte = handle.read(1)
                     if not byte:
-                        raise GroupError("la imagen JPEG está truncada antes de EOI")
+                        raise GroupError("JPEG image is truncated before EOI")
                     if byte != b"\xff":
                         continue
                     next_byte = handle.read(1)
                     while next_byte == b"\xff":
                         next_byte = handle.read(1)
                     if not next_byte:
-                        raise GroupError("la imagen JPEG está truncada antes de EOI")
+                        raise GroupError("JPEG image is truncated before EOI")
                     next_code = next_byte[0]
                     if next_code == 0x00 or 0xD0 <= next_code <= 0xD7:
                         continue
                     handle.seek(-2, 1)
                     break
     except OSError as exc:
-        raise GroupError(f"no se pudo analizar la imagen JPEG: {exc}") from None
+        raise GroupError(f"failed to analyze JPEG image: {exc}") from None
 
 
 def _decode_first_visual_frame(path: Path, field: str) -> None:
-    """Exige que ffmpeg pueda decodificar un frame; nunca escribe ni transforma."""
+    """Require ffmpeg to decode one frame; never write or transform media."""
     try:
         subprocess.run(
             [
@@ -803,22 +798,22 @@ def _decode_first_visual_frame(path: Path, field: str) -> None:
             capture_output=True,
         )
     except (subprocess.CalledProcessError, OSError):
-        raise GroupError(f"{field} no contiene una imagen o pista de vídeo decodificable") from None
+        raise GroupError(f"{field} does not contain a decodable image or video track") from None
 
 
 def _probe_visual_file(
     path: Path, *, evidence: bool,
 ) -> tuple[Literal["image", "video"], int, int, float | None]:
-    """Valida extensión, contenedor y stream visual reales con ffprobe/ffmpeg."""
+    """Validate actual extension, container and visual stream using ffprobe/ffmpeg."""
     extension = path.suffix.lower()
     allowed = set(_IMAGE_CODECS) if evidence else {*_IMAGE_CODECS, *_VIDEO_EXTENSIONS}
     if extension not in allowed:
-        expected = "JPG, PNG o WebP" if evidence else "JPG, PNG, WebP, MP4 o MOV"
-        raise GroupError(f"formato no admitido: se requiere {expected}")
+        expected = "JPG, PNG or WebP" if evidence else "JPG, PNG, WebP, MP4 or MOV"
+        raise GroupError(f"unsupported format: {expected} required")
     try:
         probe = _ffprobe(path)
     except (MediaInvalida, OSError, ValueError, json.JSONDecodeError) as exc:
-        raise GroupError(f"no se pudo validar el formato real de {path.name}: {exc}") from None
+        raise GroupError(f"failed to validate actual format of {path.name}: {exc}") from None
     streams = probe.get("streams") or []
     visual = next(
         (
@@ -828,11 +823,11 @@ def _probe_visual_file(
         None,
     )
     if visual is None:
-        raise GroupError("el archivo debe contener una imagen o pista de vídeo; audio solo no se admite")
+        raise GroupError("file must contain an image or video track; audio-only media is not accepted")
     width = visual.get("width")
     height = visual.get("height")
     if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
-        raise GroupError("el stream visual debe tener dimensiones reales positivas")
+        raise GroupError("visual stream must have positive actual dimensions")
     if _rotacion_grados(visual) % 180 == 90:
         width, height = height, width
 
@@ -841,22 +836,22 @@ def _probe_visual_file(
     if extension in _IMAGE_CODECS:
         formats = {item.strip() for item in format_name.split(",") if item.strip()}
         if codec != _IMAGE_CODECS[extension] or _IMAGE_DEMUXERS[extension] not in formats:
-            raise GroupError("la extensión de imagen no coincide con su formato real")
+            raise GroupError("image extension does not match its actual format")
         if extension in {".jpg", ".jpeg"}:
             _validate_jpeg_structure(path)
         duration = None
         kind: Literal["image", "video"] = "image"
     else:
         if "mp4" not in format_name and "mov" not in format_name:
-            raise GroupError("la extensión de vídeo no coincide con un contenedor MP4 o MOV real")
+            raise GroupError("video extension does not match an actual MP4 or MOV container")
         try:
             duration = float((probe.get("format") or {}).get("duration"))
         except (TypeError, ValueError):
-            raise GroupError("el vídeo debe tener una duración real verificable") from None
+            raise GroupError("video must have a verifiable actual duration") from None
         if duration <= 0:
-            raise GroupError("el vídeo debe tener una duración real positiva")
+            raise GroupError("video must have a positive actual duration")
         kind = "video"
-    _decode_first_visual_frame(path, "el archivo")
+    _decode_first_visual_frame(path, "the file")
     return kind, width, height, duration
 
 
@@ -865,7 +860,7 @@ def _pdf_dictionary(
     offset: int,
     expected: tuple[int, int],
 ) -> dict[bytes, object]:
-    """Resuelve un objeto directo clásico y parsea su diccionario léxicamente."""
+    """Resolve a classic direct object and lexically parse its dictionary."""
     handle.seek(offset)
     chunk = handle.read(1024 * 1024)
     lexer = _PdfLexer(chunk)
@@ -877,12 +872,12 @@ def _pdf_dictionary(
         or (object_number, generation) != expected
         or lexer.take() != ("word", b"obj")
     ):
-        raise GroupError("la evidencia PDF contiene una referencia a un objeto inexistente")
+        raise GroupError("PDF evidence references a nonexistent object")
     dictionary = _pdf_value(lexer)
     if not isinstance(dictionary, dict):
-        raise GroupError("la evidencia PDF contiene un objeto sin diccionario")
+        raise GroupError("PDF evidence contains an object without a dictionary")
     if lexer.take() != ("word", b"endobj"):
-        raise GroupError("la evidencia PDF contiene un objeto sin cierre endobj")
+        raise GroupError("PDF evidence contains an object without endobj closure")
     return dictionary
 
 
@@ -890,15 +885,15 @@ def _pdf_classic_xref(
     handle: BinaryIO,
     offset: int,
 ) -> tuple[dict[tuple[int, int], int], dict[bytes, object]]:
-    """Parsea subsecciones xref clásicas y el trailer correspondiente."""
+    """Parse classic xref subsections and corresponding trailer."""
     handle.seek(offset)
     if handle.readline().strip() != b"xref":
-        raise GroupError("la evidencia PDF no usa una tabla xref clásica parseable")
+        raise GroupError("PDF evidence does not use a parseable classic xref table")
     entries: dict[tuple[int, int], int] = {}
     while True:
         line = handle.readline()
         if not line:
-            raise GroupError("la evidencia PDF contiene una tabla xref truncada")
+            raise GroupError("PDF evidence contains a truncated xref table")
         stripped = line.strip()
         if not stripped:
             continue
@@ -906,10 +901,10 @@ def _pdf_classic_xref(
             break
         subsection = stripped.split()
         if len(subsection) != 2 or not all(part.isdigit() for part in subsection):
-            raise GroupError("la evidencia PDF contiene una subsección xref inválida")
+            raise GroupError("PDF evidence contains an invalid xref subsection")
         first, count = map(int, subsection)
         if count > 1_000_000:
-            raise GroupError("la evidencia PDF declara demasiados objetos")
+            raise GroupError("PDF evidence declares too many objects")
         for object_number in range(first, first + count):
             entry = handle.readline().strip()
             parts = entry.split()
@@ -921,14 +916,14 @@ def _pdf_classic_xref(
                 or not parts[1].isdigit()
                 or parts[2] not in {b"f", b"n"}
             ):
-                raise GroupError("la evidencia PDF contiene una entrada xref inválida")
+                raise GroupError("PDF evidence contains an invalid xref entry")
             if parts[2] == b"n":
                 entries[(object_number, int(parts[1]))] = int(parts[0])
 
     lexer = _PdfLexer(handle.read(1024 * 1024))
     trailer = _pdf_value(lexer)
     if not isinstance(trailer, dict):
-        raise GroupError("la evidencia PDF contiene un trailer truncado")
+        raise GroupError("PDF evidence contains a truncated trailer")
     return entries, trailer
 
 
@@ -940,36 +935,36 @@ def _pdf_pages(
     visiting: set[tuple[int, int]],
     seen: set[tuple[int, int]],
 ) -> int:
-    """Recorre el árbol /Pages y cuenta hojas /Page realmente resolubles."""
+    """Walk /Pages tree and count resolvable /Page leaves."""
     if reference in visiting or len(visiting) >= 10_000:
-        raise GroupError("la evidencia PDF contiene un árbol de páginas cíclico o excesivo")
+        raise GroupError("PDF evidence contains a cyclic or excessive page tree")
     if reference in seen:
-        raise GroupError("la evidencia PDF contiene un Kid duplicado o compartido")
+        raise GroupError("PDF evidence contains a duplicate or shared Kid")
     offset = xref.get(reference)
     if offset is None:
-        raise GroupError("la evidencia PDF referencia un objeto de páginas inexistente")
+        raise GroupError("PDF evidence references a nonexistent page object")
     dictionary = _pdf_dictionary(handle, offset, reference)
     node_type = dictionary.get(b"Type")
     if expected_parent is None and node_type != _PdfName(b"Pages"):
         raise GroupError(
-            "la evidencia PDF Catalog /Pages no apunta a un diccionario /Type /Pages"
+            "PDF evidence Catalog /Pages does not point to a /Type /Pages dictionary"
         )
     parent = dictionary.get(b"Parent")
     if expected_parent is not None and parent != _PdfReference(*expected_parent):
-        raise GroupError("la evidencia PDF contiene un Parent inexistente o incorrecto")
+        raise GroupError("PDF evidence contains a nonexistent or incorrect Parent")
     if expected_parent is None and parent is not None:
-        raise GroupError("la evidencia PDF contiene un Parent incorrecto en el Pages raíz")
+        raise GroupError("PDF evidence contains an incorrect Parent in root Pages")
     seen.add(reference)
     if node_type == _PdfName(b"Page"):
         return 1
     if node_type != _PdfName(b"Pages"):
-        raise GroupError("la evidencia PDF referencia un objeto que no es Page ni Pages")
+        raise GroupError("PDF evidence references an object that is neither Page nor Pages")
     declared = dictionary.get(b"Count")
     kids = dictionary.get(b"Kids")
     if not isinstance(declared, int) or not isinstance(kids, list):
-        raise GroupError("la evidencia PDF contiene un nodo Pages incompleto")
+        raise GroupError("PDF evidence contains an incomplete Pages node")
     if declared <= 0 or not kids or not all(isinstance(child, _PdfReference) for child in kids):
-        raise GroupError("la evidencia PDF no contiene páginas reales")
+        raise GroupError("PDF evidence contains no actual pages")
     visiting.add(reference)
     try:
         actual = sum(
@@ -979,25 +974,25 @@ def _pdf_pages(
     finally:
         visiting.remove(reference)
     if actual != declared:
-        raise GroupError("la evidencia PDF declara un recuento de páginas incoherente")
+        raise GroupError("PDF evidence declares an inconsistent page count")
     return actual
 
 
 def _validate_pdf(path: Path, size: int) -> None:
-    """Resuelve el xref, el catálogo y un árbol de páginas clásico real."""
+    """Resolve xref, catalog and an actual classic page tree."""
     try:
         with path.open("rb") as handle:
             header = handle.read(16)
             if not _pdf_has_valid_header(header):
-                raise GroupError("la evidencia PDF no tiene una firma PDF válida")
+                raise GroupError("PDF evidence lacks a valid PDF signature")
             tail_size = min(size, 128 * 1024)
             handle.seek(size - tail_size)
             tail = handle.read(tail_size)
             xref_offset = _pdf_startxref(tail)
             if xref_offset is None:
-                raise GroupError("la evidencia PDF no tiene un cierre y startxref parseables")
+                raise GroupError("PDF evidence lacks parseable closure and startxref")
             if xref_offset < 0 or xref_offset >= size:
-                raise GroupError("la evidencia PDF contiene un startxref fuera del archivo")
+                raise GroupError("PDF evidence contains a startxref outside the file")
             xref, trailer = _pdf_classic_xref(handle, xref_offset)
             declared_size = trailer.get(b"Size")
             if (
@@ -1005,42 +1000,42 @@ def _validate_pdf(path: Path, size: int) -> None:
                 or declared_size <= 0
                 or (xref and declared_size <= max(item[0] for item in xref))
             ):
-                raise GroupError("la evidencia PDF contiene un Size incoherente")
+                raise GroupError("PDF evidence contains an inconsistent Size")
             root = trailer.get(b"Root")
             if not isinstance(root, _PdfReference):
-                raise GroupError("la evidencia PDF no contiene un catálogo Root resoluble")
+                raise GroupError("PDF evidence contains no resolvable Root catalog")
             root_offset = xref.get(root)
             if root_offset is None:
-                raise GroupError("la evidencia PDF referencia un Root inexistente")
+                raise GroupError("PDF evidence references a nonexistent Root")
             catalog = _pdf_dictionary(handle, root_offset, root)
             if catalog.get(b"Type") != _PdfName(b"Catalog"):
-                raise GroupError("la evidencia PDF Root no es un catálogo")
+                raise GroupError("PDF evidence Root is not a catalog")
             pages = catalog.get(b"Pages")
             if not isinstance(pages, _PdfReference):
-                raise GroupError("la evidencia PDF no contiene un árbol Pages")
+                raise GroupError("PDF evidence contains no Pages tree")
             if _pdf_pages(handle, xref, pages, None, set(), set()) <= 0:
-                raise GroupError("la evidencia PDF no contiene páginas reales")
+                raise GroupError("PDF evidence contains no actual pages")
     except OSError as exc:
-        raise GroupError(f"no se pudo analizar la evidencia PDF: {exc}") from None
+        raise GroupError(f"failed to analyze PDF evidence: {exc}") from None
 
 
 def _evidence(brand, relative: str | None) -> GroupEvidence | None:
     if relative is None:
         return None
     if ".secrets" in Path(relative).parts:
-        raise GroupError("la evidencia no puede estar dentro de .secrets")
-    path = validar_ruta_relativa(brand.raiz, relative, GroupError, "evidencia")
+        raise GroupError("evidence cannot be inside .secrets")
+    path = validar_ruta_relativa(brand.raiz, relative, GroupError, "evidence")
     if path.is_symlink():
-        raise GroupError("la evidencia debe ser un archivo regular, no un enlace")
+        raise GroupError("evidence must be a regular file, not a symlink")
     try:
         resolved = path.resolve(strict=True)
     except OSError as exc:
-        raise GroupError(f"no se pudo leer la evidencia: {exc}") from None
+        raise GroupError(f"failed to read evidence: {exc}") from None
     if not resolved.is_file() or resolved.suffix.lower() not in _EVIDENCE_EXTENSIONS:
-        raise GroupError("la evidencia debe ser un JPG, PNG, WebP o PDF existente")
+        raise GroupError("evidence must be an existing JPG, PNG, WebP or PDF")
     size = resolved.stat().st_size
     if size <= 0:
-        raise GroupError("la evidencia está vacía")
+        raise GroupError("evidence is empty")
     if resolved.suffix.lower() == ".pdf":
         _validate_pdf(resolved, size)
     else:
@@ -1057,11 +1052,14 @@ def confirm_group(
     post_url: str | None = None,
     evidence: str | None = None,
 ) -> GroupChange:
-    """Registra una afirmación explícita del usuario, sin comprobar la web."""
-    if not isinstance(confirmation_phrase, str) or not hmac.compare_digest(
-        confirmation_phrase.encode(), CONFIRMATION_PHRASE.encode()
-    ):
-        raise GroupError(f"la confirmación debe ser exactamente: {CONFIRMATION_PHRASE}")
+    """Record explicit user statement without checking the web."""
+    if not isinstance(confirmation_phrase, str):
+        raise GroupError(f"confirmation must be exactly: {CONFIRMATION_PHRASE}")
+    supplied = confirmation_phrase.encode()
+    accepted = hmac.compare_digest(supplied, CONFIRMATION_PHRASE.encode())
+    accepted |= hmac.compare_digest(supplied, LEGACY_CONFIRMATION_PHRASE.encode())
+    if not accepted:
+        raise GroupError(f"confirmation must be exactly: {CONFIRMATION_PHRASE}")
     with store.apply_lock(change_id):
         change = _load_bound(brand, store, change_id)
         canonical_post = validate_post_url(post_url, change.destination.key) if post_url else None
@@ -1078,12 +1076,12 @@ def confirm_group(
                 and existing_evidence == evidence
             ):
                 return change
-            raise GroupError("el ChangeSet ya tiene una confirmación distinta; no se sobrescribe")
+            raise GroupError("ChangeSet already has a different confirmation; it will not be overwritten")
         supplied_evidence = _evidence(brand, evidence)
         if canonical_post is None and supplied_evidence is None:
-            raise GroupError("confirma con --post-url, --evidence o ambos")
+            raise GroupError("confirm with --post-url, --evidence or both")
         if change.status not in {"handoff_ready", "awaiting_manual_confirmation"}:
-            raise GroupError("el handoff debe aprobarse antes de confirmar la publicación manual")
+            raise GroupError("handoff must be approved before confirming manual publication")
         change.confirmation = GroupConfirmation(
             confirmed_at=now_utc(), post_url=canonical_post, evidence=supplied_evidence
         )
@@ -1095,7 +1093,7 @@ def confirm_group(
 
 
 def export_record(change: GroupChange) -> dict:
-    """Vista exportable sin rutas absolutas, claves internas ni credenciales."""
+    """Exportable view without absolute paths, internal keys or credentials."""
     return {
         "id": change.id,
         "brand": change.brand,
@@ -1110,7 +1108,7 @@ def export_record(change: GroupChange) -> dict:
         "created_at": change.created_at.isoformat(),
         "updated_at": change.updated_at.isoformat(),
         "confirmation": change.confirmation.model_dump(mode="json") if change.confirmation else None,
-        "reminder": "Publicación manual pendiente en navegador; socialctl no publica en Grupos por API.",
+        "reminder": "Manual publication pending in browser; socialcli does not publish to Groups via API.",
     }
 
 

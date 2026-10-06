@@ -29,7 +29,7 @@ class BatchFile(BaseModel):
     def unique_videos(self):
         ids = [edit.video_id for edit in self.operations]
         if len(ids) != len(set(ids)):
-            raise ChangeError("video_id duplicado: una operación por vídeo y propuesta")
+            raise ChangeError("duplicate video_id: one operation per video and proposal")
         return self
 
 
@@ -92,11 +92,11 @@ class BatchStore(ChangeStore):
         batch = super().load(change_id)
         ids = [op.video_id for op in batch.operations]
         if len(ids) != len(set(ids)) or not ids:
-            raise ChangeError("membresía vacía o duplicada")
+            raise ChangeError("empty or duplicate membership")
         for op in batch.operations:
             self._validate_id(op.id)
             if not hmac.compare_digest(op.fingerprint, operation_fingerprint(op)):
-                raise ChangeError("operación alterada")
+                raise ChangeError("operation was altered")
             _edit(op)
         return batch
 
@@ -105,14 +105,14 @@ def _file_digest(path: Path) -> str:
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
-        raise ChangeError("archivo vinculado ausente o ilegible; aprobación invalidada") from None
+        raise ChangeError("linked file missing or unreadable; approval invalidated") from None
 
 
 def _edit(op: Operation) -> MetadataEdit:
     try:
         return MetadataEdit(video_id=op.video_id, kind=op.kind, patch=op.patch, never_published=op.never_published)
     except ValidationError as exc:
-        raise ChangeError(f"operación inválida: {exc}") from None
+        raise ChangeError(f"invalid operation: {exc}") from None
 
 
 def _operation(client, edit, *, resets=None):
@@ -136,7 +136,7 @@ def _batch(client, operations, source_files, *, restored_from=None, unavailable=
 
 def _save_new(store, batch):
     if not batch.operations:
-        raise ChangeError("restauración no disponible: " + "; ".join(batch.unavailable))
+        raise ChangeError("restoration unavailable: " + "; ".join(batch.unavailable))
     batch.fingerprint = batch_fingerprint(batch)
     store.save(batch)
     return batch
@@ -149,10 +149,10 @@ def prepare_batch(client, store: BatchStore, file: Path) -> Batch:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
         edits = BatchFile.model_validate(raw)
     except (OSError, yaml.YAMLError, ValidationError) as exc:
-        raise ChangeError(f"archivo V2 inválido: {exc}") from None
+        raise ChangeError(f"invalid V2 file: {exc}") from None
     operations = [_operation(client, edit) for edit in edits.operations]
     if _file_digest(path) != fingerprint:
-        raise ChangeError("archivo modificado durante el preview")
+        raise ChangeError("file modified during preview")
     return _save_new(store, _batch(client, operations, {str(path): fingerprint}))
 
 
@@ -160,10 +160,10 @@ def _bound(client, batch):
     if (batch.brand, batch.brand_root, batch.account, batch.accounts_digest, batch.account_config) != (
         client.brand.nombre, str(client.brand.raiz.resolve()), client.configured_channel_id,
         _file_digest(client.brand.raiz / "accounts.yml"), client.brand.cuentas.get("youtube") or {}):
-        raise ChangeError("marca/cuenta/archivo accounts.yml cambió; aprobación invalidada")
+        raise ChangeError("brand/account/accounts.yml changed; approval invalidated")
     for path, expected in batch.source_files.items():
         if not hmac.compare_digest(_file_digest(Path(path)), expected):
-            raise ChangeError("archivo fuente cambió; aprobación invalidada")
+            raise ChangeError("source file changed; approval invalidated")
 
 
 def _event(op, event, **details):
@@ -205,7 +205,7 @@ def _apply_operation(client, store, batch, op):
     try:
         current = client.inspect(op.video_id)
     except (YouTubeManagementError, ChangeError):
-        _event(op, "read_failed", error="lectura/propiedad no verificable; no se escribió")
+        _event(op, "read_failed", error="read/ownership unverifiable; no write performed")
         store.save(batch)
         return
     if op.status in {"applying", "uncertain"}:
@@ -223,7 +223,7 @@ def _apply_operation(client, store, batch, op):
         _, after = propose_parts(current, _edit(op))
     except ChangeError:
         op.status = "failed"
-        _event(op, "proposal_no_longer_valid", error="condiciones de la operación ya no válidas; prepara otro preview")
+        _event(op, "proposal_no_longer_valid", error="operation conditions no longer valid; prepare another preview")
         store.save(batch)
         return
     if after != op.after:
@@ -258,7 +258,7 @@ def apply_batch(client, store: BatchStore, batch_id: str, approval_digest: str) 
     with store.apply_lock(batch_id):
         batch = store.load(batch_id)
         if not hmac.compare_digest(batch.fingerprint, approval_digest):
-            raise ApprovalMismatch("aprobación no coincide con la huella exacta del lote")
+            raise ApprovalMismatch("approval does not match exact batch fingerprint")
         _bound(client, batch)
         for op in batch.operations:
             _apply_operation(client, store, batch, op)
@@ -272,13 +272,13 @@ def prepare_restore(client, store: BatchStore, original_id: str) -> Batch:
         original = store.load(original_id)
         if (original.brand, original.brand_root, original.account) != (
             client.brand.nombre, str(client.brand.raiz.resolve()), client.configured_channel_id):
-            raise ChangeError("marca/cuenta original no coincide")
+            raise ChangeError("original brand/account mismatch")
         rows = [(op.video_id, op.kind, op.patch, op.before) for op in original.operations]
     else:
         legacy_store = ChangeStore(client.brand.raiz)
         original = legacy_store.load(original_id)
         if original.target_account != client.configured_channel_id:
-            raise ChangeError("cuenta original no coincide")
+            raise ChangeError("original account mismatch")
         source = legacy_store.path_for(original_id)
         rows = [(original.video_id, "snippet", original.patch, {"snippet": original.before})]
     source_hash = _file_digest(source)
@@ -290,14 +290,14 @@ def prepare_restore(client, store: BatchStore, original_id: str) -> Batch:
             old = before[part].get(field)
             if old is not None:
                 if field == "publishAt":
-                    unavailable.append(f"{video_id}.publishAt: historial/fecha requieren nueva declaración schedule")
+                    unavailable.append(f"{video_id}.publishAt: history/date require a new schedule declaration")
                 else:
                     recovered[field] = copy.deepcopy(old)
             elif part == "snippet" and field in {"tags", "description"}:
                 recovered[field] = [] if field == "tags" else ""
                 resets.append(f"{field}: {'empty list' if field == 'tags' else 'empty text'} (original absent/null)")
             else:
-                unavailable.append(f"{video_id}.{field}: valor original ausente/null; reset no verificado, se conserva el actual")
+                unavailable.append(f"{video_id}.{field}: original value missing/null; reset unverified, current value preserved")
         if recovered:
             restored_kind = "snippet" if kind == "chapters" else "privacy" if kind == "schedule" else kind
             edit = MetadataEdit(video_id=video_id, kind=restored_kind, patch=recovered)

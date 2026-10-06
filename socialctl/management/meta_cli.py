@@ -16,7 +16,7 @@ from socialctl.management.changes import ChangeError
 from socialctl.models import Platform
 from socialctl.management.meta_webhooks import WebhookStore, verify_challenge
 
-meta_app = typer.Typer(help="Gestiona cambios explícitos de Meta con estado durable y huella exacta.")
+meta_app = typer.Typer(help="Manage explicit Meta changes with durable state and exact fingerprint.")
 
 
 def make_http_client():
@@ -30,19 +30,19 @@ def _json(value):
 def render_preview(change):
     return (
         "PREVIEW COMPLETO (meta-management)\n" + _json(change.model_dump(mode="json")) +
-        "\nHuella exacta para aprobar: " + change.fingerprint
+        "\nExact fingerprint for approval: " + change.fingerprint
     )
 
 
 @meta_app.command("prepare")
 def prepare(
-    edit_file: Path = typer.Option(..., "--file", help="YAML con acción Meta y campos requeridos."),
+    edit_file: Path = typer.Option(..., "--file", help="YAML with Meta action and required fields."),
     platform: Platform = typer.Option(..., "--platform"),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Solo prepara y muestra la propuesta; no escribe en Meta."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Only prepare and display proposal; do not write to Meta."),
 ) -> None:
-    """Prepara un cambio sin mutación remota y guarda un ChangeSet durable."""
+    """Prepare a change without remote mutation and save durable ChangeSet."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -50,7 +50,7 @@ def prepare(
                                   load_edit(edit_file))
     except (ChangeError, MetaError, OSError) as exc:
         _fail(str(exc))
-    typer.echo("DRY-RUN remoto: propuesta local; ninguna escritura en Meta." if dry_run else "Propuesta preparada: la edición sigue sin enviar." )
+    typer.echo("Remote DRY-RUN: local proposal; no Meta writes." if dry_run else "Proposal prepared: edit has not been sent." )
     typer.echo(render_preview(change))
 
 
@@ -60,7 +60,7 @@ def status(
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
 ) -> None:
-    """Muestra propuesta y diario completo sin escribir."""
+    """Display proposal and complete journal without writes."""
     selected = _brand(root, brand)
     try:
         change = MetaStore(selected.raiz).load(change_id)
@@ -74,19 +74,19 @@ def apply(
     change_id: str = typer.Argument(...),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-    yes: bool = typer.Option(False, "--yes", help="No sustituye la aprobación exacta."),
+    yes: bool = typer.Option(False, "--yes", help="Does not replace exact approval."),
 ) -> None:
-    """Requiere huella exacta; un write incierto nunca se reprocesa a ciegas."""
+    """Require exact fingerprint; uncertain writes are never blindly reprocessed."""
     selected = _brand(root, brand)
     store = MetaStore(selected.raiz)
     try:
         change = store.load(change_id)
         typer.echo(render_preview(change))
         if yes:
-            typer.echo("AVISO: --yes no sustituye la aprobación exacta de este ChangeSet.")
-        digest = typer.prompt("Escribe la huella exacta para aprobar")
+            typer.echo("NOTICE: --yes does not replace exact approval of this ChangeSet.")
+        digest = typer.prompt("Enter the exact fingerprint to approve")
         if not digest == change.fingerprint:
-            _fail("aprobación no coincide con la huella exacta")
+            _fail("approval does not match exact fingerprint")
         with make_http_client() as http:
             result = apply_meta(MetaClient(selected, Platform(change.platform), http), store, change_id, digest)
     except (ChangeError, OSError, MetaError) as exc:
@@ -100,7 +100,7 @@ def reconcile(
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
 ) -> None:
-    """Solo lectura para reintento seguro tras cambios inciertos."""
+    """Read only for safe reconciliation after uncertain changes."""
     selected = _brand(root, brand)
     store = MetaStore(selected.raiz)
     try:
@@ -114,12 +114,12 @@ def reconcile(
 
 @meta_app.command("webhook-verify")
 def webhook_verify(
-    mode: str = typer.Option(..., "--mode", help="hub.mode recibido del servicio de verificación"),
+    mode: str = typer.Option(..., "--mode", help="hub.mode received from verification service"),
     challenge: str = typer.Option(..., "--challenge", help="hub.challenge recibido"),
-    expected_token: str = typer.Option(..., "--expected-token", help="token esperado configurado en Meta"),
-    provided_token: str = typer.Option(..., "--provided-token", help="token recibido en la verificación"),
+    expected_token: str = typer.Option(..., "--expected-token", help="expected token configured in Meta"),
+    provided_token: str = typer.Option(..., "--provided-token", help="token received during verification"),
 ) -> None:
-    """Verifica challenge y devuelve el mismo valor si es válido."""
+    """Verify challenge and return same value if valid."""
     try:
         result = verify_challenge(mode=mode, provided_token=provided_token, challenge=challenge,
                                  expected_token=expected_token)
@@ -130,14 +130,14 @@ def webhook_verify(
 
 @meta_app.command("webhook-ingest")
 def webhook_ingest(
-    body_path: Path = typer.Option(..., "--body", help="Ruta al payload JSON crudo recibido por webhook (bytes exactos)"),
+    body_path: Path = typer.Option(..., "--body", help="Path to raw JSON payload received by webhook (exact bytes)"),
     platform: Platform = typer.Option(..., "--platform"),
-    signature: str = typer.Option(..., "--signature", help="X-Hub-Signature-256: valor sin espacio"),
-    app_secret: str = typer.Option(..., "--app-secret", help="Secreto de la app Meta"),
+    signature: str = typer.Option(..., "--signature", help="X-Hub-Signature-256: value without whitespace"),
+    app_secret: str = typer.Option(..., "--app-secret", help="Meta app secret"),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
 ) -> None:
-    """Ingiere un payload webhook validado por HMAC; no escribe en Meta."""
+    """Ingest HMAC-validated webhook payload without writing to Meta."""
     selected = _brand(root, brand)
     try:
         raw = body_path.read_bytes()
@@ -155,7 +155,7 @@ def webhook_events(
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
     limit: int = typer.Option(100, "--limit"),
 ) -> None:
-    """Lista eventos webhook persistidos localmente."""
+    """List locally persisted webhook events."""
     selected = _brand(root, brand)
     try:
         store = WebhookStore(selected, platform.value)
@@ -167,12 +167,12 @@ def webhook_events(
 
 @meta_app.command("webhook-reconcile")
 def webhook_reconcile(
-    event_id: str = typer.Argument(..., help="ID del evento persistido (sha256 canónico)"),
+    event_id: str = typer.Argument(..., help="Persisted event ID (canonical sha256)"),
     platform: Platform = typer.Option(..., "--platform"),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
 ) -> None:
-    """Reconciliación de un evento por GET remoto; jamás realiza escrituras."""
+    """Reconcile an event using remote GET only; never write."""
     selected = _brand(root, brand)
     try:
         store = WebhookStore(selected, platform.value)
@@ -189,7 +189,7 @@ def identity(
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
 ) -> None:
-    """Muestra la identidad y cuenta vinculada tras validación de propiedad."""
+    """Display identity and linked account after ownership validation."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -204,9 +204,9 @@ def profile(
     platform: Platform = typer.Option(..., "--platform"),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-    fields: str = typer.Option(None, "--fields", help="Campos separados por coma"),
+    fields: str = typer.Option(None, "--fields", help="Comma-separated fields"),
 ) -> None:
-    """Lee el perfil del nodo activo. Sin escrituras."""
+    """Read active node profile without writes."""
     selected = _brand(root, brand)
     try:
         requested = None if fields is None else [part.strip() for part in fields.split(",") if part.strip()]
@@ -229,7 +229,7 @@ def content(
         help="facebook: post|video, instagram: media",
     ),
 ) -> None:
-    """Lee un contenido propio y verifica firma de propiedad remota."""
+    """Read owned content and verify remote ownership signature."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -241,13 +241,13 @@ def content(
 
 @meta_app.command("reactions")
 def reactions(
-    target_id: str = typer.Argument(..., help="ID remoto del contenido Facebook al que se leen reacciones."),
+    target_id: str = typer.Argument(..., help="Remote Facebook content ID for reaction reads."),
     platform: Platform = typer.Option(..., "--platform"),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
     max_pages: int = typer.Option(10, "--max-pages", min=1, max=50),
 ) -> None:
-    """Lee reacciones de una publicación propia (solo Meta/Facebook)."""
+    """Read reactions on owned publication (Meta/Facebook only)."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -265,7 +265,7 @@ def content_list(
     edge: str = typer.Option(None, "--edge", help="feed|photos|posts|videos|video_reels|stories|scheduled_posts|media"),
     max_pages: int = typer.Option(10, "--max-pages"),
 ) -> None:
-    """Lee un listado propio protegido por paginación acotada."""
+    """Read owned listing with bounded pagination."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:
@@ -278,24 +278,24 @@ def content_list(
 @meta_app.command("insights")
 def insights(
     target_id: str,
-    metric: list[str] = typer.Option(..., "--metric", help="Métrica de contenido; repetir para varias."),
+    metric: list[str] = typer.Option(..., "--metric", help="Content metric; repeat for multiple metrics."),
     platform: Platform = typer.Option(..., "--platform"),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
     period: str | None = typer.Option(None, "--period"),
-    since: str | None = typer.Option(None, "--since", help="Fecha UTC AAAA-MM-DD."),
-    until: str | None = typer.Option(None, "--until", help="Fecha UTC AAAA-MM-DD, exclusiva."),
+    since: str | None = typer.Option(None, "--since", help="UTC YYYY-MM-DD date."),
+    until: str | None = typer.Option(None, "--until", help="Exclusive UTC YYYY-MM-DD date."),
     breakdown: list[str] = typer.Option(None, "--breakdown"),
     max_pages: int = typer.Option(10, "--max-pages", min=1, max=50),
 ) -> None:
-    """Lee insights de contenido propio con métricas explícitas y paginación acotada."""
+    """Read owned content insights with explicit metrics and bounded pagination."""
     def timestamp(value, label):
         if value is None:
             return None
         try:
             return int(datetime.combine(date.fromisoformat(value), time.min, tzinfo=timezone.utc).timestamp())
         except ValueError:
-            _fail(f"--{label} debe ser una fecha AAAA-MM-DD válida")
+            _fail(f"--{label} must be a valid YYYY-MM-DD date")
 
     selected = _brand(root, brand)
     try:
@@ -318,7 +318,7 @@ def publishing_limit(
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
 ) -> None:
-    """Lee el límite de publicación documentado, sin escrituras."""
+    """Read documented publishing limit without writes."""
     selected = _brand(root, brand)
     try:
         with make_http_client() as http:

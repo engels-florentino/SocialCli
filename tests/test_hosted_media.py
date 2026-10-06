@@ -73,5 +73,5 @@ def test_total_deadline_detected_between_small_chunks(tmp_path, monkeypatch):
     clock = iter([0, 2])
     monkeypatch.setattr("socialctl.hosted_media.time.monotonic", lambda: next(clock))
     with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b"good", headers={"content-type": "video/mp4"}))) as client:
-        with pytest.raises(HostedMediaError, match="tiempo"):
+        with pytest.raises(HostedMediaError, match='time'):
             attest_public_media(path, f"https://media.test/{path.name}", client=client, timeout_s=1)

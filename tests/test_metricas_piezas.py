@@ -61,7 +61,7 @@ def test_una_pieza_nueva_entra_con_los_editoriales_vacios():
 def test_la_duracion_la_pone_la_red_cuando_la_da():
     """`duracion_seg` es técnico: si la API lo dio, no se le pregunta al usuario."""
     piezas = fusionar([], _snapshot(duracion=980))
-    assert piezas[0]["duracion_seg"] == 980
+    assert piezas[0]['duracion_seg'] == 980
 
 
 def test_la_duracion_escrita_a_mano_sobrevive_si_la_red_no_la_da():
@@ -75,7 +75,7 @@ def test_la_duracion_escrita_a_mano_sobrevive_si_la_red_no_la_da():
     }]
 
     piezas = fusionar(existentes, _snapshot(duracion=None))
-    assert piezas[0]["duracion_seg"] == 25
+    assert piezas[0]['duracion_seg'] == 25
 
 
 def test_no_pisa_los_campos_editoriales_ya_rellenados():
@@ -95,7 +95,7 @@ def test_no_pisa_los_campos_editoriales_ya_rellenados():
     assert entrada["notas"] == "el bueno"
     # `duracion_seg` es técnico, pero esta lectura no trae duración: se
     # conserva la que había.
-    assert entrada["duracion_seg"] == 980
+    assert entrada['duracion_seg'] == 980
     # Lo técnico sí se refresca desde la red.
     assert entrada["titulo"] == "titulo nuevo"
 
@@ -165,7 +165,7 @@ def test_guardar_y_cargar_ida_y_vuelta(tmp_path):
     ruta = guardar_piezas(brand, fusionar([], _snapshot()))
 
     assert ruta == ruta_piezas(brand)
-    assert ruta.name == "piezas.yml"
+    assert ruta.name == 'piezas.yml'
     assert cargar_piezas(brand)[0]["id"] == "vid1"
 
     crudo = yaml.safe_load(ruta.read_text(encoding="utf-8"))
@@ -187,7 +187,7 @@ def test_actualizar_dos_veces_no_duplica(tmp_path):
 
 def test_una_entrada_que_no_es_un_diccionario_se_ignora_con_aviso():
     """Un renglón suelto en piezas.yml no tumba stats: se descarta y se avisa."""
-    with pytest.warns(UserWarning, match="no es un diccionario"):
+    with pytest.warns(UserWarning, match='is not a dictionary'):
         piezas = fusionar(["esto no es un dict"], _snapshot())
 
     assert len(piezas) == 1
@@ -206,7 +206,7 @@ def test_una_entrada_que_no_es_un_diccionario_no_impide_leer_las_demas():
         },
     ]
 
-    with pytest.warns(UserWarning, match="no es un diccionario"):
+    with pytest.warns(UserWarning, match='is not a dictionary'):
         piezas = fusionar(existentes, _snapshot())
 
     ids = {(p["red"], p["id"]) for p in piezas}
@@ -224,7 +224,7 @@ def test_dos_entradas_sin_red_ni_id_no_se_pierden_en_silencio():
     ]
     snapshot_vacio = Snapshot(fecha=date(2026, 9, 11), marca="Histopast", redes={})
 
-    with pytest.warns(UserWarning, match="comparten la misma identidad"):
+    with pytest.warns(UserWarning, match="share the same identity"):
         piezas = fusionar(existentes, snapshot_vacio)
 
     # Sin una clave que las distinga no hay forma de conservar las dos, pero
@@ -242,7 +242,7 @@ def test_dos_entradas_con_la_misma_red_e_id_tambien_avisan():
     ]
     snapshot_vacio = Snapshot(fecha=date(2026, 9, 11), marca="Histopast", redes={})
 
-    with pytest.warns(UserWarning, match="comparten la misma identidad"):
+    with pytest.warns(UserWarning, match="share the same identity"):
         piezas = fusionar(existentes, snapshot_vacio)
 
     assert len(piezas) == 1
@@ -259,7 +259,7 @@ def test_un_piezas_yml_ilegible_no_se_sobrescribe_y_lo_dice(tmp_path):
     roto = "- red: youtube\n  id: vid1\n  notas: 'sin cerrar\n"
     ruta.write_text(roto, encoding="utf-8")
 
-    with pytest.raises(PiezasIlegibles, match="piezas.yml"):
+    with pytest.raises(PiezasIlegibles, match='piezas.yml'):
         cargar_piezas(brand)
 
     # Y lo importante: `actualizar_piezas` tampoco lo toca.
@@ -274,7 +274,7 @@ def test_un_piezas_yml_que_no_es_una_lista_tampoco_se_sobrescribe(tmp_path):
     ruta.parent.mkdir(parents=True, exist_ok=True)
     ruta.write_text("red: youtube\nid: vid1\n", encoding="utf-8")
 
-    with pytest.raises(PiezasIlegibles, match="lista"):
+    with pytest.raises(PiezasIlegibles, match="list"):
         cargar_piezas(brand)
 
 
@@ -313,6 +313,6 @@ def test_guardar_piezas_escribe_por_temporal_y_replace(tmp_path, monkeypatch):
     assert ruta.read_text(encoding="utf-8") == original, (
         "el fichero bueno debe sobrevivir intacto a una interrupción"
     )
-    assert not list(ruta.parent.glob(".piezas.yml.*")), (
+    assert not list(ruta.parent.glob('.piezas.yml.*')), (
         "el temporal no puede quedarse tirado en la carpeta del usuario"
     )

@@ -1,4 +1,4 @@
-"""CLI seguro y auditable para preparar, aplicar y verificar Stories."""
+"""Safe, auditable CLI for preparing, applying and verifying Stories."""
 from __future__ import annotations
 
 import json
@@ -25,7 +25,7 @@ from socialctl.rutas import validar_ruta_relativa
 
 
 story_app = typer.Typer(
-    help="Stories durables de Instagram y handoff explícito para Facebook Page Stories."
+    help="Durable Instagram Stories and explicit handoff for Facebook Page Stories."
 )
 
 
@@ -41,17 +41,17 @@ def _json(value) -> str:
 
 def render_story_preview(change) -> str:
     delivery = (
-        "Instagram: se enviará media_type=STORIES; el texto es referencia editorial y no se envía. "
-        "La API pública está documentada, pero el grant de escritura de esta cuenta no está verificado."
+        "Instagram: media_type=STORIES will be sent; text is editorial reference and is not sent. "
+        "Public API is documented, but this account's write grant is unverified."
         if change.story.platform is Platform.INSTAGRAM
-        else "Facebook: Page Stories tiene API pública, pero socialctl aún no implementa su flujo distinto; apply devolverá handoff_required sin POST."
+        else "Facebook: Page Stories has a public API, but socialcli does not implement its separate flow yet; apply returns handoff_required without POST."
     )
     return (
         "PREVIEW COMPLETO — Story independiente\n"
         + _json(change)
         + f"\n{delivery}"
-        + "\nLa media local no se modifica, genera ni reencodea."
-        + f"\nHuella exacta para aprobar: {change.fingerprint}"
+        + "\nLocal media is not modified, generated or reencoded."
+        + f"\nExact fingerprint for approval: {change.fingerprint}"
     )
 
 
@@ -61,29 +61,29 @@ def _expiry(value: str | None) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (TypeError, ValueError):
-        raise StoryError("--expires-at debe ser una fecha ISO 8601 con zona horaria") from None
+        raise StoryError("--expires-at must be an ISO 8601 timestamp with timezone") from None
     if parsed.utcoffset() is None:
-        raise StoryError("--expires-at debe incluir zona horaria")
+        raise StoryError("--expires-at must include a timezone")
     return parsed
 
 
 @story_app.command("prepare")
 def prepare(
-    platform: Platform = typer.Option(..., "--platform", help="instagram o facebook."),
-    media: str = typer.Option(..., "--media", help="Ruta relativa dentro de <Marca>/media/."),
-    media_url: str | None = typer.Option(None, "--media-url", help="URL pública HTTPS exacta; obligatoria para Instagram."),
-    text: str | None = typer.Option(None, "--text", help="Texto editorial opcional; Instagram no lo recibe en F2."),
-    expires_at: str | None = typer.Option(None, "--expires-at", help="Caducidad ISO 8601; por defecto, 24 horas."),
-    source_video_id: str | None = typer.Option(None, "--source-video-id", "--youtube-video-id", help="ID opcional del largo de YouTube relacionado."),
-    brand: str = typer.Option(..., "--brand", help="Marca propietaria; nunca se infiere."),
-    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Raíz del proyecto Social."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Prepara y muestra el ChangeSet local; nunca escribe en Meta."),
+    platform: Platform = typer.Option(..., "--platform", help="instagram or facebook."),
+    media: str = typer.Option(..., "--media", help="Relative path inside <Brand>/media/."),
+    media_url: str | None = typer.Option(None, "--media-url", help="Exact public HTTPS URL; required for Instagram."),
+    text: str | None = typer.Option(None, "--text", help="Optional editorial text; Instagram does not receive it in F2."),
+    expires_at: str | None = typer.Option(None, "--expires-at", help="ISO 8601 expiry; default 24 hours."),
+    source_video_id: str | None = typer.Option(None, "--source-video-id", "--youtube-video-id", help="Optional related long-form YouTube video ID."),
+    brand: str = typer.Option(..., "--brand", help="Owning brand; never inferred."),
+    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Prepare and display local ChangeSet; never write to Meta."),
 ) -> None:
-    """Valida y persiste una propuesta local; no hace ninguna petición remota."""
+    """Validate and persist local proposal without any remote request."""
     selected = _brand(root, brand)
     try:
         path = validar_ruta_relativa(
-            selected.raiz / "media", media, StoryError, "media de Story"
+            selected.raiz / "media", media, StoryError, "Story media"
         )
         asset = leer_media(path, ruta_relativa=media)
         story = StoryPost(
@@ -97,17 +97,17 @@ def prepare(
         change = prepare_story(selected, StoryStore(selected.raiz), story)
     except (ChangeError, MediaNoEncontrada, MediaInvalida, ValidationError) as exc:
         _fail(str(exc))
-    typer.echo("DRY-RUN remoto: propuesta local persistida; ninguna escritura en Meta.")
+    typer.echo("Remote DRY-RUN: local proposal persisted; no Meta writes.")
     typer.echo(render_story_preview(change))
 
 
 @story_app.command("status")
 def status(
     change_id: str,
-    brand: str = typer.Option(..., "--brand", help="Marca propietaria; nunca se infiere."),
-    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Raíz del proyecto Social."),
+    brand: str = typer.Option(..., "--brand", help="Owning brand; never inferred."),
+    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
 ) -> None:
-    """Muestra el ChangeSet y su diario sin credenciales ni llamadas remotas."""
+    """Display ChangeSet and journal without credentials or remote calls."""
     selected = _brand(root, brand)
     try:
         change = StoryStore(selected.raiz).load(change_id)
@@ -119,19 +119,19 @@ def status(
 @story_app.command("apply")
 def apply(
     change_id: str,
-    approval_digest: str | None = typer.Option(None, "--approval-digest", help="Huella exacta mostrada por prepare."),
-    brand: str = typer.Option(..., "--brand", help="Marca propietaria; nunca se infiere."),
-    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Raíz del proyecto Social."),
+    approval_digest: str | None = typer.Option(None, "--approval-digest", help="Exact fingerprint displayed by prepare."),
+    brand: str = typer.Option(..., "--brand", help="Owning brand; never inferred."),
+    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
 ) -> None:
-    """Exige la huella exacta y aplica sin repetir ningún POST incierto."""
+    """Require exact fingerprint and apply without repeating uncertain POSTs."""
     selected = _brand(root, brand)
     store = StoryStore(selected.raiz)
     try:
         prepared = store.load(change_id)
         typer.echo(render_story_preview(prepared))
-        digest = approval_digest or typer.prompt("Escribe la huella exacta para aprobar")
+        digest = approval_digest or typer.prompt("Enter the exact fingerprint to approve")
         if digest != prepared.fingerprint:
-            raise StoryError("la aprobación no coincide con la huella exacta de la Story")
+            raise StoryError("approval does not match exact Story fingerprint")
         if prepared.story.platform is Platform.FACEBOOK:
             result = apply_story(None, store, change_id, digest, brand=selected)
         else:
@@ -148,10 +148,10 @@ def apply(
 @story_app.command("verify")
 def verify(
     change_id: str,
-    brand: str = typer.Option(..., "--brand", help="Marca propietaria; nunca se infiere."),
-    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Raíz del proyecto Social."),
+    brand: str = typer.Option(..., "--brand", help="Owning brand; never inferred."),
+    root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
 ) -> None:
-    """Hace solo GET para verificar un ID remoto ya persistido; nunca publica."""
+    """Use GET only to verify an already persisted remote ID; never publish."""
     selected = _brand(root, brand)
     store = StoryStore(selected.raiz)
     try:

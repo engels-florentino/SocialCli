@@ -63,5 +63,5 @@ def test_preview_shows_declared_origin_and_source():
     post = Post(slug='clip', brand='Histopast', campaign=CampaignType.CLIP_VERTICAL,
                 platforms={pp.platform: pp})
     preview = render_preview(post, {})
-    assert 'Origen: youtube_long' in preview
-    assert 'ID del largo de origen: R4cUGeaKrfU' in preview
+    assert 'Source: youtube_long' in preview
+    assert 'Source long-form video ID: R4cUGeaKrfU' in preview

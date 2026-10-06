@@ -1,99 +1,64 @@
-# Estrategia de la marca
+# Brand strategy
 
-Este fichero es la memoria de la marca entre sesiones: a qué juega, cada cuánto
-publica, qué toca ahora y qué se ha aprendido por el camino. El código de
-`socialctl` no lo lee ni lo valida — igual que `brand.md`, es texto libre que
-solo sirve si el agente lo lee y lo respeta.
+This file preserves the brand's goals, cadence, upcoming work and lessons between sessions. SocialCli does not parse or validate it; like `brand.md`, it is free text that agents must read and respect.
 
-> **Cómo rellenarlo.** Mientras una sección siga marcada como pendiente, el
-> agente preguntará antes de asumir nada. No hace falta rellenarlo entero de
-> golpe: el objetivo y la cadencia son lo primero que se necesita.
+> **How to fill this in.** While a section is marked as pending, the agent must ask before assuming anything. Start with the goal and publishing cadence; other sections can follow later.
 
----
+## Goal
 
-## Objetivo
+Define what the brand is trying to achieve. Subscriber growth, long-form retention and TikTok reach require different decisions.
 
-A qué juega esta marca ahora mismo. Sin esto no se puede optimizar nada: subir
-suscriptores, que se vean los vídeos largos enteros y ganar alcance en TikTok
-son tres objetivos que piden decisiones distintas y a veces opuestas.
+*Example:* “This quarter, improve YouTube long-form retention. Short clips exist to direct viewers to the full video.”
 
-*Ejemplo:* «Este trimestre, retención en los largos de YouTube. El corto solo
-existe para llevar gente al largo, no para crecer por su cuenta.»
+**Pending.**
 
-**Pendiente de definir.**
+## Cadence by platform
 
----
+How many pieces of each format to publish weekly on each platform.
 
-## Cadencia por red
+*Example:*
 
-Cuántas piezas y de qué tipo salen por semana en cada red. Es el marco dentro
-del que se planifica todo lo demás.
-
-*Ejemplo:*
-
-| Red | Cadencia | Formato |
+| Platform | Cadence | Format |
 |---|---|---|
-| YouTube | 1 largo cada 2 semanas | 15–20 min |
-| Instagram | 3 por semana | Reel 9:16 |
-| TikTok | 3 por semana | 9:16 |
-| Facebook | 1 por semana | enlace al largo |
+| YouTube | 1 long video every 2 weeks | 15–20 min |
+| Instagram | 3 per week | 9:16 Reel |
+| TikTok | 3 per week | 9:16 |
+| Facebook | 1 per week | Link to full video |
 
-**Pendiente de definir.**
+**Pending.**
 
----
+## Content pillars
 
-## Pilares de contenido
+The categories and formats behind the brand's posts. `brand.md` defines topics; this section defines their publishing formats.
 
-Las familias de las que sale todo lo que publica la marca, ya concretadas en
-formatos. `brand.md` dice de qué habla la marca; esta sección dice en qué se
-convierte eso al publicarlo.
+*Example:* “Pillar A → one long video monthly + 3 vertical clips. Pillar B → clips only. Pillar C → image carousel.”
 
-*Ejemplo:* «Pilar A → un largo al mes + 3 cortes verticales. Pilar B → solo
-cortes. Pilar C → carrusel de imágenes.»
+**Pending.**
 
-**Pendiente de definir.**
+## Upcoming plan
 
----
+Track upcoming pieces and their status. Use this sequence: `idea` → `script` → `production` → `published`. These are planning labels in this free-text file, not CLI publication states.
 
-## Plan próximo
+*Example:*
 
-Lo que viene, con su estado. Los estados son exactamente estos cuatro, en este
-orden: `idea` → `guion` → `producción` → `publicado`.
-
-*Ejemplo:*
-
-| Pieza | Estado | Notas |
+| Piece | Status | Notes |
 |---|---|---|
-| Título de la próxima pieza | idea | por confirmar la fecha |
+| Next piece title | idea | Date to confirm |
 
-**Pendiente de definir.**
+**Pending.**
 
----
+## Lessons
 
-## Aprendizajes
+Record what worked and what did not, **with a date and data source** so it can be checked again. Use user-provided evidence or authorized metrics outputs.
 
-Qué ha funcionado y qué no, **con fecha y con la procedencia del dato**. Un
-aprendizaje sin fecha envejece sin que nadie lo note, y uno sin procedencia no
-se puede volver a comprobar.
+*Example:* “2026-01-15 — Clips opening with a concrete consequence retain more viewers than clips opening with a question. Source: average retention of the last 6 Shorts, YouTube Studio.”
 
-Hoy estos datos los aporta el usuario a mano (por ejemplo, pegando cifras de
-YouTube Studio). Cuando exista un comando de métricas en `socialctl`, se
-escribirán aquí igual: el formato no cambia.
+**Pending.**
 
-*Ejemplo:* «2026-01-15 — Los cortes que abren con una consecuencia concreta
-retienen mejor que los que abren con una pregunta. Fuente: retención media de
-los 6 últimos Shorts, YouTube Studio.»
+## Settled decisions
 
-**Pendiente de definir.**
+Record decisions that should not be reopened every session.
 
----
+*Example:* “Keep the title format. Review everything before public publication.”
 
-## Decisiones cerradas
-
-Lo que ya se decidió y no se vuelve a discutir en cada sesión. Existe para que
-el agente no reabra debates que el usuario ya cerró.
-
-*Ejemplo:* «El formato de los títulos no se toca. No se publica nada en abierto
-sin revisarlo antes.»
-
-**Pendiente de definir.**
+**Pending.**

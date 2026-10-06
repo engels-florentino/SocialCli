@@ -53,9 +53,9 @@ class PublicationStore(CommentStore):
         try:
             data = Publication.model_validate_json(self.path_for(identifier).read_text()).model_dump()
         except (OSError, ValidationError):
-            raise CommentError("intento sin diario durable: requiere reconciliación manual; no repetir comentario") from None
+            raise CommentError("attempt has no durable journal: manual reconciliation required; do not repeat the comment") from None
         if data["id"] != identifier or data["version"] != 1 or not hmac.compare_digest(data["fingerprint"], _fingerprint(data)):
-            raise CommentError("el diario de publicación fue alterado")
+            raise CommentError("publication journal was modified")
         return data
 
 
@@ -71,9 +71,9 @@ def _bound(brand, data):
     platform = Platform(data["platform"])
     if (data["brand"], data["brand_root"], data["account"]) != (
             brand.nombre, str(brand.raiz.resolve()), _account(brand, platform)):
-        raise CommentError("marca o cuenta distinta del intento aprobado")
+        raise CommentError("brand or account differs from the approved attempt")
     if not data["provenance"]:
-        raise CommentError("falta procedencia de la aprobación; requiere revisión manual")
+        raise CommentError("approval provenance is missing; manual review required")
 
 
 def _stored_media(data):
@@ -83,9 +83,9 @@ def _stored_media(data):
     try:
         result = PostResult.model_validate(data["media"])
     except ValidationError:
-        raise CommentError("resultado del medio inválido en el diario; requiere revisión manual") from None
+        raise CommentError("invalid media result in the journal; manual review required") from None
     if result.platform.value != data["platform"] or result.publication_id != data["id"]:
-        raise CommentError("el resultado del medio no está vinculado a su diario")
+        raise CommentError("media result is not linked to its journal")
     return result
 
 
@@ -107,17 +107,17 @@ def retry_media_blockers(brand, slug, platforms):
     except FileNotFoundError:
         if not store.root.is_symlink():
             return blockers
-        raise CommentError("directorio de diarios inaccesible; retry bloqueado") from None
+        raise CommentError("journal directory is inaccessible; retry blocked") from None
     except OSError:
-        raise CommentError("directorio de diarios ilegible; retry bloqueado") from None
+        raise CommentError("journal directory is unreadable; retry blocked") from None
     for identifier in identifiers:
         try:
             data = store.load(identifier)
             if (data["brand"], data["brand_root"]) != (brand.nombre, str(brand.raiz.resolve())):
-                raise CommentError("diario fuera de su marca")
+                raise CommentError("journal is outside its brand directory")
             platform = Platform(data["platform"])
         except (CommentError, ValueError):
-            raise CommentError("diario de publicación ilegible o sin vinculación fiable; retry bloqueado") from None
+            raise CommentError("publication journal is unreadable or lacks a reliable link; retry blocked") from None
         if data["slug"] != slug or platform not in selected:
             continue
         try:
@@ -130,13 +130,13 @@ def retry_media_blockers(brand, slug, platforms):
             definite_failure = False
             result = None
         if not definite_failure:
-            detail = f"medio publicado {result.platform_id}" if result and result.status is PostStatus.PUBLICADO else "medio incierto o sin vinculación verificable"
-            blockers.setdefault(platform, []).append(f"diario {identifier}: {detail}; no subir de nuevo")
+            detail = f"media published {result.platform_id}" if result and result.status is PostStatus.PUBLICADO else "media is uncertain or lacks a verifiable link"
+            blockers.setdefault(platform, []).append(f"journal {identifier}: {detail}; do not upload again")
     return blockers
 
 
 def _comment_issue(result, data):
-    result.warnings.append("Medio publicado; primer comentario pendiente de revisión. Usa comments retry-first con el ID del intento.")
+    result.warnings.append("Media published; first comment needs review. Use comments retry-first with the attempt ID.")
     result.first_comment_status = "manual_review"
     result.first_comment_change_id = data["comment_change_id"]
     return result
@@ -147,7 +147,7 @@ def _resume_publication(brand, http, store, data, *, on_media_result=None):
     if result is None:
         return PostResult(platform=Platform(data["platform"]), status=PostStatus.ERROR,
             publication_id=data["id"], riesgo_duplicado=True,
-            error="diario sin resultado del medio: resultado incierto; requiere reconciliación manual")
+            error="journal has no media result: uncertain outcome; manual reconciliation required")
     try:
         _bound(brand, data)
         if on_media_result is not None:
@@ -159,17 +159,17 @@ def _resume_publication(brand, http, store, data, *, on_media_result=None):
         if result.status is PostStatus.PUBLICADO and result.platform_id:
             return _comment_issue(result, data)
         # No next step attempted; the stored upload outcome remains authoritative.
-        result.warnings.append("No se pudo reanudar el diario; revisión manual antes de otro paso.")
+        result.warnings.append("Could not resume the journal; review manually before taking another step.")
         return result
 
 
 def _first_comment(brand, http, store, data, *, retry_rejected=False):
     _bound(brand, data)
     if not data["media"]:
-        raise CommentError("el medio no tiene un resultado durable; reconciliación manual, no subir de nuevo")
+        raise CommentError("media has no durable result; reconcile manually, do not upload again")
     result = PostResult.model_validate(data["media"])
     if result.status is not PostStatus.PUBLICADO or not result.platform_id:
-        raise CommentError("el medio no está confirmado; el comentario requiere revisión manual")
+        raise CommentError("media is unconfirmed; comment requires manual review")
     if not data["text"]:
         return result
     if result.platform is Platform.YOUTUBE:
@@ -191,17 +191,17 @@ def _first_comment(brand, http, store, data, *, retry_rejected=False):
         store.write_json(data["id"], data)  # Reference persisted before comment intent/POST.
     if (change.text, change.media_id, change.action, change.brand, change.brand_root) != (
             data["text"], result.platform_id, "add", data["brand"], data["brand_root"]):
-        raise CommentError("el comentario difiere del primer comentario aprobado")
+        raise CommentError("comment differs from the approved first comment")
     # Approval is inherited only from this immutable, approved publication;
     # callers cannot pass unrelated ChangeSets or silently adopt legacy comments.
     change = apply_comment(client, comments, change.id, change.fingerprint)
     result.warnings = [warning for warning in result.warnings
-                       if not warning.startswith("Medio publicado; primer comentario ")]
+                       if not warning.startswith("Media published; first comment ")]
     result.first_comment_change_id = change.id
     result.first_comment_id = change.remote_id
     result.first_comment_status = change.status
     if change.status != "verified":
-        result.warnings.append(f"Medio publicado; primer comentario {change.status}. Revisa comments status {change.id}.")
+        result.warnings.append(f"Media published; first comment {change.status}. Check comments status {change.id}.")
     data["media"] = result.model_dump(mode="json")
     store.write_json(data["id"], data)
     return result
@@ -223,7 +223,7 @@ def _youtube_first_comment(brand, http, store, data, result, *, retry_rejected):
         change = prepare_community(client, comments, edit)
     if (change.target_brand, change.brand_root, change.target_account, change.edit) != (
         data["brand"], data["brand_root"], data["account"]["account_id"], {"version": 1, **edit}):
-        raise CommentError("el comentario YouTube difiere del texto/vídeo/actor originalmente aprobado")
+        raise CommentError("YouTube comment differs from the originally approved text/video/actor")
     if data["comment_change_id"] != change.id:
         if previous:
             change.journal.append({"event": "explicit_retry_after_definitive_rejection", "previous_change": previous})
@@ -231,12 +231,12 @@ def _youtube_first_comment(brand, http, store, data, result, *, retry_rejected):
         data["comment_change_id"] = change.id
         store.write_json(data["id"], data)  # Durable reference before comment POST.
     change = apply_community(client, comments, change.id, change.fingerprint)
-    result.warnings = [w for w in result.warnings if not w.startswith("Medio publicado; primer comentario ")]
+    result.warnings = [w for w in result.warnings if not w.startswith("Media published; first comment ")]
     result.first_comment_change_id = change.id
     result.first_comment_id = change.result_id
     result.first_comment_status = change.status
     if change.status != "verified":
-        result.warnings.append(f"Medio publicado; primer comentario {change.status}. Revisa content youtube-community status {change.id}.")
+        result.warnings.append(f"Media published; first comment {change.status}. Check content youtube-community status {change.id}.")
     data["media"] = result.model_dump(mode="json")
     store.write_json(data["id"], data)
     return result
@@ -267,14 +267,14 @@ def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result
     store = PublicationStore(brand.raiz)
     identifier = occurrence_id or str(uuid.uuid4())
     if post.brand != brand.nombre:
-        raise CommentError("la marca del post no coincide con la marca aprobada")
+        raise CommentError("post brand does not match the approved brand")
     with store.apply_lock(identifier):
         if store.path_for(identifier).exists():
             # Stable scheduler occurrence: never upload again after an interruption.
             existing = store.load(identifier)
             if (existing["slug"], existing["platform"], existing["brand"], existing["brand_root"]) != (
                     post.slug, platform.value, brand.nombre, str(brand.raiz.resolve())):
-                raise CommentError("el UUID del diario pertenece a otro post, plataforma o marca")
+                raise CommentError("journal UUID belongs to another post, platform or brand")
             return _resume_publication(brand, http, store, existing, on_media_result=on_media_result)
         data = Publication(id=identifier, brand=brand.nombre, brand_root=str(brand.raiz.resolve()),
             platform=platform.value, slug=post.slug, account=_account(brand, platform),
@@ -284,12 +284,12 @@ def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result
             store.write_json(identifier, data)
         except CommentError:
             return PostResult(platform=platform, status=PostStatus.ERROR,
-                              error="no se pudo guardar la intención; no se intentó publicar")
+                              error="could not save the intent; publication was not attempted")
         try:
             result = adapter.publish(post.platforms[platform], brand, http)
         except Exception:
             result = PostResult(platform=platform, status=PostStatus.ERROR,
-                                error="publicación interrumpida; resultado remoto incierto", riesgo_duplicado=True)
+                                error="publication interrupted; remote outcome is uncertain", riesgo_duplicado=True)
         result.publication_id = identifier
         if data["text"]:
             result.first_comment_status = "pending"
@@ -300,7 +300,7 @@ def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result
             if on_media_result is not None:
                 on_media_result(result)  # Critical: a failure blocks the next remote step.
         except Exception:
-            result.warnings.append("No se completó la persistencia del medio; comentario bloqueado. Revisión manual del diario.")
+            result.warnings.append("Media persistence did not complete; comment blocked. Review the journal manually.")
             return result
         if result.status is not PostStatus.PUBLICADO or not result.platform_id:
             return result

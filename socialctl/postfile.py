@@ -1,38 +1,4 @@
-"""Lectura y escritura de post.yml.
-
-El skill escribe post.yml a partir de lo que el usuario pide en
-conversación; el CLI lo lee para publicar. Este módulo es la frontera
-entre las dos mitades del sistema, así que un post.yml mal formado debe
-dar un error comprensible en español (qué está mal y en qué fichero), no
-una excepción opaca (`KeyError`, `AttributeError` o un `ValidationError`
-de pydantic en crudo).
-
-Tanto el slug de un post (para construir su carpeta dentro de
-`<Marca>/posts/`) como cada nombre de fichero de `media` (para construir
-su ruta dentro de `<Marca>/media/`) se usan para construir rutas en
-disco, así que a ambos se les aplica el mismo criterio de seguridad que
-`_validar_nombre_de_marca` aplica en `socialctl/brands.py` al nombre de
-una marca (y que `_validar_slug` repite en `socialctl/publisher.py`):
-ninguno puede escapar de la carpeta que le corresponde, ni por forma
-(separadores de ruta, '.', '..', ruta absoluta) ni -tras resolver
-enlaces simbólicos- por destino. Este proyecto guarda credenciales en
-`<Marca>/.secrets/`, así que una fuga de ruta aquí permitiría leer esos
-secretos a través de un post.yml manipulado.
-
-El slug sigue admitiendo un ÚNICO componente (nunca subcarpetas: un post
-vive siempre directamente en `<Marca>/posts/<slug>/`), así que usa
-``socialctl.rutas.validar_componente_de_ruta``, compartido con
-``brands.py`` (nombre de marca) y ``publisher.py`` (slug, de nuevo, al
-persistir el resultado). El nombre de un fichero de `media`, en cambio, sí
-puede tener subcarpetas legítimas -el usuario organiza su media en
-`<Marca>/media/short/`, `<Marca>/media/video/`, etc.-, así que usa
-``socialctl.rutas.validar_ruta_relativa``: mismo criterio de fondo (forma
-del valor + resolución de enlaces simbólicos contra `dir_media`), pero
-permitiendo `'/'` como separador entre subcarpetas. Cada módulo sigue
-lanzando su propia clase de excepción -aquí, subclases de ``ValueError``
-para que el CLI las capture junto al resto de errores de post.yml-, pero
-el criterio y el mensaje de cada una están en un único sitio.
-"""
+"""Read and write post.yml files."""
 
 from __future__ import annotations
 
@@ -49,69 +15,30 @@ from socialctl.rutas import validar_componente_de_ruta, validar_ruta_relativa
 
 
 class PostNoEncontrado(Exception):
-    """No hay un post.yml con ese slug."""
+    """No post.yml exists for the requested slug."""
 
 
 class SlugInvalido(ValueError):
-    """El slug de un post no es un único componente de ruta seguro.
-
-    Se lanza cuando el slug está vacío o solo tiene espacios, es una ruta
-    absoluta, contiene separadores de ruta ('/' u ``os.sep``), es '.' o
-    '..', o cuando -tras resolver enlaces simbólicos- la carpeta
-    resultante queda fuera de la carpeta de posts de la marca
-    (``brand.dir_posts``). Aplica tanto a ``cargar_post`` (el slug llega
-    como argumento) como a ``guardar_post`` (llega en ``post.slug``, que
-    podría proceder de un post.yml editado a mano).
-    """
+    """The post slug is not a safe single path component."""
 
 
 class NombreDeMediaInvalido(ValueError):
-    """Un nombre de fichero de ``media`` en post.yml no es seguro.
-
-    Se lanza cuando el nombre no es una cadena de texto, está vacío o solo
-    tiene espacios, contiene un byte nulo, es una ruta absoluta, contiene
-    un '\\' (el separador de subcarpetas es siempre '/', nunca '\\'), tiene
-    algún segmento igual a '.' o '..' -en cualquier posición: tanto
-    ``"../.secrets/tiktok.json"`` como ``"short/../../.secrets/tiktok.json"``
-    se rechazan-, o cuando -tras resolver enlaces simbólicos, en cualquier
-    nivel de subcarpeta- el fichero resultante queda fuera de
-    ``<Marca>/media/``. Sin esta comprobación, un post.yml con
-    ``media: ["../../.secrets/tiktok.json"]`` podría hacer que se lea un
-    fichero de credenciales de la marca.
-
-    A diferencia del slug de un post (un único componente, sin
-    subcarpetas: ver ``SlugInvalido``), el nombre de un fichero de media SÍ
-    puede tener subcarpetas -p. ej. ``"short/S2.mp4"``, para el vídeo
-    vertical que el usuario guarda en ``<Marca>/media/short/``-, así que
-    la validación (``socialctl.rutas.validar_ruta_relativa``) admite '/'
-    como separador entre ellas, mientras sigue bloqueando cualquier
-    intento de escapar de ``<Marca>/media/``.
-    """
+    """A supplied media filename or relative path is unsafe."""
 
 
 class PostInvalido(ValueError):
-    """post.yml existe pero su contenido no se puede interpretar como un Post.
-
-    Cubre: YAML mal formado; una raíz que no es un mapping (clave: valor);
-    'platforms' que falta, no es un mapping o está vacío; el bloque de una
-    red que no es un mapping; una red con un valor desconocido; 'hashtags'
-    o 'media' que no son listas; un 'body' que falta o no es texto; y una
-    'campaign' que falta o tiene un valor desconocido. Subclase de
-    ``ValueError`` para que quien ya captura ``ValueError`` (el CLI, o el
-    propio test de "red desconocida") siga funcionando sin conocer este
-    nombre.
-    """
+    """post.yml cannot be interpreted as a Post."""
 
 
 def _validar_slug(dir_posts: Path, slug: str) -> Path:
-    """Valida ``slug`` y devuelve la carpeta de ese post dentro de ``dir_posts``."""
+    """Validate a slug and return its directory within the posts root."""
     return validar_componente_de_ruta(dir_posts, slug, SlugInvalido, "slug")
 
 
 def _validar_nombre_de_media(dir_media: Path, nombre_fichero: object) -> Path:
-    """Valida una ruta de ``media`` (subcarpetas incluidas) y la resuelve en ``dir_media``."""
+    """Validate and resolve a supplied media path, including safe subdirectories."""
     return validar_ruta_relativa(
-        dir_media, nombre_fichero, NombreDeMediaInvalido, "nombre de media"
+        dir_media, nombre_fichero, NombreDeMediaInvalido, "media name"
     )
 
 
@@ -121,24 +48,24 @@ def _ruta(brand: Brand, slug: str) -> Path:
 
 
 def _cargar_datos(fichero: Path) -> dict:
-    """Lee y decodifica el YAML de ``fichero``, devolviendo siempre un mapping."""
+    """Read and decode YAML, requiring a mapping at the root."""
     try:
         contenido = fichero.read_text(encoding="utf-8")
     except OSError as exc:
-        raise PostInvalido(f"no se puede leer {fichero}: {exc}") from exc
+        raise PostInvalido(f"cannot read {fichero}: {exc}") from exc
 
     try:
         datos = yaml.safe_load(contenido)
     except yaml.YAMLError as exc:
-        raise PostInvalido(f"'{fichero}' no es un YAML válido: {exc}") from exc
+        raise PostInvalido(f"'{fichero}' is not valid YAML: {exc}") from exc
 
     if datos is None:
         return {}
 
     if not isinstance(datos, dict):
         raise PostInvalido(
-            f"'{fichero}' debe contener un mapping (clave: valor) en la raíz; "
-            f"contiene un {type(datos).__name__}"
+            f"'{fichero}' must contain a mapping (key: value) at the root; "
+            f"received {type(datos).__name__}"
         )
 
     return datos
@@ -149,29 +76,28 @@ def _construir_platform_post(
 ) -> PlatformPost:
     if not isinstance(bloque, dict):
         raise PostInvalido(
-            f"el bloque de '{platform.value}' en {fichero} debe ser un mapping "
-            f"(clave: valor); contiene un {type(bloque).__name__}"
+            f"the block for '{platform.value}' in {fichero} must be a mapping (key: value); received {type(bloque).__name__}"
         )
 
     body = bloque.get("body")
     if not isinstance(body, str):
         raise PostInvalido(
-            f"'{platform.value}' en {fichero} no tiene un 'body' de texto "
-            "(el campo falta o no es una cadena)"
+            f"'{platform.value}' in {fichero} has no string 'body' "
+            "(the field is missing or is not a string)"
         )
 
     hashtags = bloque.get("hashtags", [])
     if not isinstance(hashtags, list):
         raise PostInvalido(
-            f"'hashtags' de '{platform.value}' en {fichero} debe ser una lista; "
-            f"contiene un {type(hashtags).__name__}"
+            f"'hashtags' for '{platform.value}' in {fichero} must be a list; "
+            f"received {type(hashtags).__name__}"
         )
 
     media_nombres = bloque.get("media", [])
     if not isinstance(media_nombres, list):
         raise PostInvalido(
-            f"'media' de '{platform.value}' en {fichero} debe ser una lista; "
-            f"contiene un {type(media_nombres).__name__}"
+            f"'media' for '{platform.value}' in {fichero} must be a list; "
+            f"received {type(media_nombres).__name__}"
         )
 
     media = []
@@ -204,54 +130,40 @@ def _construir_platform_post(
         )
     except PydanticValidationError as exc:
         raise PostInvalido(
-            f"el bloque de '{platform.value}' en {fichero} no es válido: {exc}"
+            f"the block for '{platform.value}' in {fichero} is invalid: {exc}"
         ) from exc
 
 
 def cargar_post(brand: Brand, slug: str) -> Post:
-    """Carga un post.yml y resuelve su media a rutas absolutas con metadatos.
-
-    El slug pasado como argumento (nunca el campo 'slug' que pueda traer
-    el propio YAML) es la única fuente de verdad para la carpeta del post
-    y para ``Post.slug``: un post.yml con un 'slug' manipulado no puede
-    hacer que un ``guardar_post`` posterior escriba en otro sitio. Si el
-    'slug' del fichero no coincide con el nombre real de la carpeta, se
-    avisa con un ``UserWarning`` (no se falla: el valor del fichero se
-    ignora igualmente) porque lo más probable es que alguien lo haya
-    editado a mano esperando que tuviera efecto.
-    """
+    """Load post.yml and resolve supplied media to absolute paths with metadata."""
     fichero = _ruta(brand, slug)
     if not fichero.exists():
-        raise PostNoEncontrado(f"no existe un post con slug '{slug}' en {fichero}")
+        raise PostNoEncontrado(f"no post exists with slug '{slug}' in {fichero}")
 
     datos = _cargar_datos(fichero)
 
     slug_declarado = datos.get("slug")
     if isinstance(slug_declarado, str) and slug_declarado != slug:
         warnings.warn(
-            f"'slug' en {fichero} es {slug_declarado!r}, pero no coincide con "
-            f"el nombre real de la carpeta ({slug!r}); se ignora, ya que el "
-            "nombre de la carpeta es siempre la fuente de verdad",
+            f"'slug' in {fichero} is {slug_declarado!r}, but does not match the actual directory name ({slug!r}); ignored because the directory name is always the source of truth",
             stacklevel=2,
         )
 
     if "platforms" not in datos:
         raise PostInvalido(
-            f"falta 'platforms' en {fichero}: un post necesita al menos una "
-            "red en la que publicar"
+            f"'platforms' is missing in {fichero}: a post needs at least one platform to publish on"
         )
 
     platforms_datos = datos["platforms"]
     if not isinstance(platforms_datos, dict):
         raise PostInvalido(
-            f"'platforms' en {fichero} debe ser un mapping (clave: valor); "
-            f"contiene un {type(platforms_datos).__name__}"
+            f"'platforms' in {fichero} must be a mapping (key: value); "
+            f"received {type(platforms_datos).__name__}"
         )
 
     if not platforms_datos:
         raise PostInvalido(
-            f"'platforms' en {fichero} está vacío: un post necesita al menos "
-            "una red en la que publicar"
+            f"'platforms' in {fichero} is empty: a post needs at least one platform to publish on"
         )
 
     dir_media = brand.raiz / "media"
@@ -262,7 +174,7 @@ def cargar_post(brand: Brand, slug: str) -> Post:
         except ValueError:
             validas = ", ".join(p.value for p in Platform)
             raise PostInvalido(
-                f"red desconocida '{nombre}' en {fichero}. Redes válidas: {validas}"
+                f"unknown platform '{nombre}' in {fichero}. Valid platforms: {validas}"
             ) from None
 
         platforms[platform] = _construir_platform_post(platform, bloque, dir_media, fichero)
@@ -270,7 +182,7 @@ def cargar_post(brand: Brand, slug: str) -> Post:
     if "campaign" not in datos:
         validas = ", ".join(c.value for c in CampaignType)
         raise PostInvalido(
-            f"falta 'campaign' en {fichero}. Campañas válidas: {validas}"
+            f"'campaign' is missing in {fichero}. Valid campaigns: {validas}"
         )
 
     campaign_valor = datos["campaign"]
@@ -279,8 +191,7 @@ def cargar_post(brand: Brand, slug: str) -> Post:
     except ValueError:
         validas = ", ".join(c.value for c in CampaignType)
         raise PostInvalido(
-            f"campaña desconocida {campaign_valor!r} en {fichero}. "
-            f"Campañas válidas: {validas}"
+            f'unknown campaign {campaign_valor!r} in {fichero}. Valid campaigns: {validas}'
         ) from None
 
     try:
@@ -291,18 +202,11 @@ def cargar_post(brand: Brand, slug: str) -> Post:
             platforms=platforms,
         )
     except PydanticValidationError as exc:
-        raise PostInvalido(f"{fichero} no es un post válido: {exc}") from exc
+        raise PostInvalido(f"{fichero} is not a valid post: {exc}") from exc
 
 
 def guardar_post(brand: Brand, post: Post) -> Path:
-    """Escribe un post.yml a partir de un Post en memoria.
-
-    El 'slug' que queda escrito en el fichero es puramente informativo:
-    ``cargar_post`` nunca lo usa para decidir la carpeta ni ``Post.slug``
-    (ver su docstring). Para que quien edite este fichero a mano -o el
-    skill que lo escribe- no espere que cambiarlo tenga efecto, se
-    antepone un comentario en el propio YAML que lo deja explícito.
-    """
+    """Write post.yml from an in-memory Post."""
     fichero = _ruta(brand, post.slug)
     fichero.parent.mkdir(parents=True, exist_ok=True)
 
@@ -328,9 +232,8 @@ def guardar_post(brand: Brand, post: Post) -> Path:
     }
 
     comentario = (
-        "# 'slug' es solo informativo: se ignora al cargar el post.\n"
-        "# La carpeta que contiene este fichero es la que manda; cambiar\n"
-        "# este valor a mano no tiene ningún efecto.\n"
+        "# 'slug' is informational and ignored when loading.\n"
+        "# The containing directory determines the slug; editing this value has no effect.\n"
     )
     contenido = yaml.safe_dump(datos, allow_unicode=True, sort_keys=False)
     fichero.write_text(comentario + contenido, encoding="utf-8")

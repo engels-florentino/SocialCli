@@ -145,7 +145,7 @@ def test_post_edit_exact_digest_intent_and_omission(tmp_path):
     mod, brand, graph, client, store = service(tmp_path)
     change = mod.prepare_meta(client, store, {"action": "post-update", "target_id": "123_789", "patch": {"message": "After"}})
     assert not graph.writes
-    with pytest.raises(ValueError, match="aprobación"):
+    with pytest.raises(ValueError, match='approval'):
         mod.apply_meta(client, store, change.id, "wrong")
     def durable():
         assert store.load(change.id).status == "applying"
@@ -186,7 +186,7 @@ def test_uncertain_write_never_retries_including_new_uuid(tmp_path, failure):
     assert result.status == "uncertain"
     mod.apply_meta(client, store, change.id, change.fingerprint)
     another = mod.prepare_meta(client, store, edit)
-    with pytest.raises(ValueError, match="incierto"):
+    with pytest.raises(ValueError, match='uncertain'):
         mod.apply_meta(client, store, another.id, another.fingerprint)
     assert len(graph.writes) == 1
     assert "SECRET" not in store.path_for(change.id).read_text()
@@ -195,12 +195,12 @@ def test_uncertain_write_never_retries_including_new_uuid(tmp_path, failure):
 def test_ownership_and_brand_are_not_id_prefix_inference(tmp_path):
     mod, _, graph, client, store = service(tmp_path)
     graph.state["from"]["id"] = "999"
-    with pytest.raises(ValueError, match="propietario"):
+    with pytest.raises(ValueError, match='owner'):
         mod.prepare_meta(client, store, {"action": "post-delete", "target_id": "123_789"})
     graph.state["from"]["id"] = "123"
     change = mod.prepare_meta(client, store, {"action": "post-delete", "target_id": "123_789"})
     _, _, _, other, _ = service(tmp_path, name="Other")
-    with pytest.raises(ValueError, match="marca"):
+    with pytest.raises(ValueError, match='brand'):
         mod.apply_meta(other, store, change.id, change.fingerprint)
     assert not graph.writes
 
@@ -252,7 +252,7 @@ def test_content_insights_require_explicit_allowlisted_metrics_and_preserve_valu
     assert result["metrics"] == ["post_video_views"]
     assert result["complete"] is True
     assert result["data"][0]["values"][0]["value"] == 7
-    with pytest.raises(ValueError, match="métrica"):
+    with pytest.raises(ValueError, match='metric'):
         client.insights("123_789", ["page_impressions"])
 
 
@@ -303,7 +303,7 @@ def test_reads_enforce_resource_specific_ids_and_bounded_list_ownership(tmp_path
     with pytest.raises(ValueError):
         client.profile(["access_token"])
     graph.state["owner"]["id"] = "111"
-    with pytest.raises(ValueError, match="propietario"):
+    with pytest.raises(ValueError, match='owner'):
         client.content_list()
 
 
@@ -337,6 +337,6 @@ def test_native_schedule_changed_or_published_prevents_mutation(tmp_path):
     graph.state.update(is_published=False, scheduled_publish_time=int(time.time()) + 3600)
     change = mod.prepare_meta(client, store, {"action": "schedule-cancel", "target_id": "123_789"})
     graph.state["scheduled_publish_time"] += 100
-    with pytest.raises(ValueError, match="cambió"):
+    with pytest.raises(ValueError, match="changed"):
         mod.apply_meta(client, store, change.id, change.fingerprint)
     assert not graph.writes

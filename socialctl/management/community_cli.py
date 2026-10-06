@@ -20,14 +20,14 @@ def _json(value):
 
 
 def render_preview(change):
-    return ("DRY-RUN — PREVIEW COMPLETO de comunidad YouTube\n" + _json(change.model_dump(mode="json"))
-        + "\nAprobación exacta de actor, destino, texto, motivo y cada efecto mostrado. No hay --yes."
-        + f"\nHuella exacta para aprobar: {change.fingerprint}")
+    return ("DRY-RUN — FULL PREVIEW of YouTube community\n" + _json(change.model_dump(mode="json"))
+        + "\nExact approval of actor, target, text, reason and each displayed effect. No --yes option."
+        + f"\nExact fingerprint for approval: {change.fingerprint}")
 
 
 def register(content_app, default_root):
     from socialctl.management.cli import _brand, _fail
-    community = typer.Typer(help="Comunidad YouTube: lecturas acotadas e interacciones explícitas aprobadas.")
+    community = typer.Typer(help="YouTube community: bounded reads and approved explicit interactions.")
     content_app.add_typer(community, name="youtube-community")
 
     def read(root, brand, callback):
@@ -110,9 +110,9 @@ def register(content_app, default_root):
         try:
             change = store.load(change_id)
             typer.echo(render_preview(change))
-            approval = typer.prompt("Escribe la huella exacta para aprobar")
+            approval = typer.prompt("Enter the exact fingerprint to approve")
             if approval != change.fingerprint:
-                _fail("aprobación no coincide con la huella exacta")
+                _fail("approval does not match exact fingerprint")
             with make_http_client() as http:
                 result = apply_community(YouTubeCommunityClient(selected, http), store, change_id, approval)
         except (ChangeError, OSError) as exc:

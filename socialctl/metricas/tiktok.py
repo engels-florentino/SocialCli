@@ -1,29 +1,4 @@
-"""Lectura de métricas de TikTok (Display API).
-
-Ojo con la confusión más fácil de esta API: la **Research API**
-(`/v2/research/user/info/`) exige el scope `research.data.basic` y
-aprobación como investigador; no es la que usa este proyecto. La nuestra es
-la Display API, con `user.info.stats` y `video.list`.
-
-Segundo aviso: mientras la app siga sin auditar (`auditada: false` en
-`accounts.yml`), la API puede devolver menos campos de los documentados.
-Un campo que no venga queda `None`, nunca cero.
-
-TikTok devuelve sus errores con HTTP 200 y un objeto `error` en el cuerpo,
-así que no basta con mirar el código de estado. Y al revés: cuando falta un
-scope suele responder 401 o 403 **con ese mismo objeto `error`** dentro, de
-modo que el cuerpo se interpreta siempre ANTES de `raise_for_status()` (ver
-`_respuesta`). Al revés, el caso más habitual de todos -falta un permiso-
-saldría como un `HTTPStatusError` genérico: el 403 opaco que el spec prohíbe.
-
-Sobre el token: aquí viaja en la cabecera `Authorization`, **no** en la URL,
-así que el mensaje de `HTTPStatusError` -que solo lleva método y URL- no
-puede arrastrarlo, al contrario de lo que pasa en Facebook e Instagram. Lo
-que sí podría arrastrarlo es el mensaje que este lector construye a partir
-del CUERPO de la respuesta, si un intermediario reflejara en él la petición
-fallida; por eso ese texto se saca con `mensaje_de_error`
-(`socialctl/adapters/errores.py`), que lo redacta.
-"""
+"""Read TikTok Display API metrics using user.info.stats/video.list. Preserve absent fields as None and inspect error bodies before HTTP status; sanitize any reflected token values."""
 
 from __future__ import annotations
 
@@ -121,9 +96,9 @@ class TikTokLector(Lector):
                 # `Authorization`, nunca en la URL que lleva un
                 # `HTTPStatusError`.
                 motivo = (
-                    f"lectura parcial: la página {numero_de_pagina} de "
-                    f"video/list falló ({exc}); se conservan las "
-                    f"{len(piezas)} piezas ya leídas y faltan las anteriores"
+                    f"partial read: page {numero_de_pagina} of "
+                    f"video/list failed ({exc}); preserving the "
+                    f"{len(piezas)} items already read; older items are missing"
                 )
                 for pieza_leida in piezas:
                     pieza_leida.especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO] = motivo
@@ -170,27 +145,12 @@ class TikTokLector(Lector):
             # por si un intermediario reflejó la petición en el cuerpo. Un
             # `error` de este lector acaba en el snapshot, que se versiona.
             raise RuntimeError(
-                f"TikTok respondió '{codigo}': {mensaje_de_error(r, token)}"
+                f"TikTok returned '{codigo}': {mensaje_de_error(r, token)}"
             )
         return datos
 
     def _respuesta(self, r: httpx.Response, scope: str, token: str) -> dict:
-        """Interpreta el cuerpo ANTES de mirar el código HTTP.
-
-        El orden importa y es el arreglo de un fallo real: TikTok devuelve
-        `scope_not_authorized` tanto con HTTP 200 como con 401/403, y lo
-        habitual cuando falta un scope es justamente el 403. Con
-        `raise_for_status()` por delante, ese caso -el más común de todos-
-        saldría como un `HTTPStatusError` genérico y el usuario vería el 403
-        opaco que el spec prohíbe, en vez del scope que falta y el comando
-        `auth` que lo arregla.
-
-        El cuerpo puede no ser JSON (un proxy intermedio, una página de
-        error): entonces no hay nada que comprobar y se deja que el error
-        HTTP normal siga su curso. Ese `raise_for_status()` no filtra nada:
-        su mensaje lleva la URL, y el token de TikTok viaja en la cabecera
-        `Authorization`, nunca en la URL.
-        """
+        """Inspect TikTok JSON error body before HTTP status so missing scopes become actionable permission errors even on 401/403; non-JSON bodies fall back to normal HTTP handling."""
         try:
             datos = r.json()
         except ValueError:
@@ -203,12 +163,12 @@ class TikTokLector(Lector):
 
         if not isinstance(datos, dict):
             raise RuntimeError(
-                f"TikTok respondió {r.status_code} con un cuerpo que no es JSON"
+                f"TikTok returned {r.status_code} with a non-JSON body"
             )
         return datos
 
     def _token(self, cabeceras: dict) -> str:
-        """El token que se usó en esta petición, para poder redactarlo del error."""
+        """Token used in this request, for redaction from errors."""
         return str(cabeceras.get("Authorization", "")).removeprefix("Bearer ")
 
     def _get(

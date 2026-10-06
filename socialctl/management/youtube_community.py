@@ -11,7 +11,7 @@ FILTERS = ("published", "heldForReview", "likelySpam")
 
 def complete(report):
     if not report["complete"]:
-        raise ResourceError("lista incompleta: " + str(report.get("error")))
+        raise ResourceError("incomplete list: " + str(report.get("error")))
     return report["items"]
 
 
@@ -26,17 +26,17 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
 
     def identity(self):
         if self._authenticated_channel(self._token()) != self.configured_channel_id:
-            raise ResourceError("canal autenticado distinto de la marca configurada")
+            raise ResourceError("authenticated channel differs from configured brand")
         return self.configured_channel_id
 
     def _pages(self, resource, params, validate, *, max_pages=100, paginated=True):
         from socialctl.management.changes import now_utc
         if type(max_pages) is not int or not 1 <= max_pages <= 100:
-            raise ResourceError("max-pages debe estar entre 1 y 100")
+            raise ResourceError("max-pages must be between 1 and 100")
         self.identity()
         result = {"items": [], "complete": False, "pages": 0, "absence_proven": False, "error": None,
             "observed_at": now_utc().isoformat(), "source": f"{API}/{resource}",
-            "scope": {"resource": resource, **params}, "limitation": "Completo solo para este filtro; no demuestra ausencia global, permisos de escritura ni replies completos dentro de threads."}
+            "scope": {"resource": resource, **params}, "limitation": "Complete only for this filter; does not prove global absence, write permissions or complete replies within threads."}
         token, tokens, ids = None, set(), set()
         expected_total = None
         for _ in range(max_pages):
@@ -48,37 +48,37 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                     query["pageToken"] = token
                 payload = self._json(self._request("GET", f"{API}/{resource}", params=query))
                 if "items" not in payload and not (isinstance(payload.get("kind"), str) and isinstance(payload.get("etag"), str) and payload["etag"]):
-                    raise ResourceError("envoltura vacía no verificable")
+                    raise ResourceError("empty unverifiable envelope")
                 rows = payload.get("items", [])
                 if not isinstance(rows, list) or len(rows) > (50 if paginated else 5000):
-                    raise ResourceError("items inválidos o límite excedido")
+                    raise ResourceError("invalid items or limit exceeded")
                 next_token = payload.get("nextPageToken")
                 if "nextPageToken" in payload and (not isinstance(next_token, str) or not 0 < len(next_token) <= 2048 or next_token in tokens):
-                    raise ResourceError("paginación inválida o repetida")
+                    raise ResourceError("invalid or repeated pagination")
                 if not paginated and any(k in payload for k in ("nextPageToken", "prevPageToken")):
-                    raise ResourceError("paginación no documentada en catálogo")
+                    raise ResourceError("undocumented catalog pagination")
                 if paginated:
                     page = payload.get("pageInfo")
                     if not isinstance(page, dict) or type(page.get("totalResults")) is not int or page["totalResults"] < 0 or type(page.get("resultsPerPage")) is not int or not len(rows) <= page["resultsPerPage"] <= 50:
-                        raise ResourceError("paginación sin metadatos verificables")
+                        raise ResourceError("pagination lacks verifiable metadata")
                     if not rows and (next_token or page["totalResults"] != 0):
-                        raise ResourceError("página vacía contradictoria")
+                        raise ResourceError("contradictory empty page")
                     if resource != "search":  # Search documents approximate totals.
                         if expected_total is not None and page["totalResults"] != expected_total:
-                            raise ResourceError("total cambió durante la paginación")
+                            raise ResourceError("total changed during pagination")
                         expected_total = page["totalResults"]
                 accepted = []
                 for row in rows:
                     key = validate(row)
                     if key in ids:
-                        raise ResourceError("ID duplicado durante paginación")
+                        raise ResourceError("duplicate ID during pagination")
                     ids.add(key)
                     accepted.append(row)
                 result["items"].extend(accepted)
                 result["pages"] += 1
                 if next_token is None:
                     if expected_total is not None and expected_total != len(result["items"]):
-                        raise ResourceError("total no coincide con la lista recibida; lectura parcial")
+                        raise ResourceError("total does not match received list; partial read")
                     result["complete"] = True
                     break
                 tokens.add(next_token)
@@ -87,41 +87,41 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                 result["error"] = str(exc)
                 break
         if not result["complete"] and result["error"] is None:
-            result["error"] = "límite de páginas alcanzado"
+            result["error"] = "page limit reached"
         return result
 
     @staticmethod
     def _row(row, kind=None):
         if not isinstance(row, dict) or not isinstance(row.get("snippet"), dict):
-            raise ResourceError("recurso sin snippet")
+            raise ResourceError("resource lacks snippet")
         if kind and row.get("kind", kind) != kind:
-            raise ResourceError("tipo de recurso inesperado")
+            raise ResourceError("unexpected resource type")
         return opaque_id(row.get("id"))
 
     def _comment(self, row, *, parent=None):
         cid = self._row(row, "youtube#comment")
         snip = row["snippet"]
         if not isinstance(row.get("etag"), str) or not row["etag"]:
-            raise ResourceError("comentario sin ETag")
+            raise ResourceError("comment lacks ETag")
         if snip.get("parentId") != parent or ("channelId" in snip and snip["channelId"] != self.configured_channel_id):
-            raise ResourceError("comentario pertenece a otro padre/canal")
+            raise ResourceError("comment belongs to another parent/channel")
         author = snip.get("authorChannelId")
         if author is not None and (not isinstance(author, dict) or not isinstance(author.get("value"), str)):
-            raise ResourceError("autor de comentario inválido")
+            raise ResourceError("invalid comment author")
         return cid
 
     def _thread(self, row, video_id):
         tid = self._row(row, "youtube#commentThread")
         snip = row["snippet"]
         if snip.get("videoId") != video_id or snip.get("channelId") != self.configured_channel_id:
-            raise ResourceError("hilo pertenece a otro vídeo/canal")
+            raise ResourceError("thread belongs to another video/channel")
         self._comment(snip.get("topLevelComment"))
         return tid
 
     def list_threads(self, video_id, *, moderation_status="published", max_pages=100):
         self.inspect(resource_id(video_id))
         if moderation_status not in FILTERS:
-            raise ResourceError("filtro de moderación no documentado")
+            raise ResourceError("undocumented moderation filter")
         return self._pages("commentThreads", {"part": "snippet", "videoId": video_id,
             "moderationStatus": moderation_status, "textFormat": "plainText"},
             lambda row: self._thread(row, video_id), max_pages=max_pages)
@@ -131,16 +131,16 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
         payload = self._json(self._request("GET", f"{API}/commentThreads", params={"part": "snippet", "id": opaque_id(thread_id), "textFormat": "plainText"}))
         rows = payload.get("items")
         if not isinstance(rows, list) or len(rows) != 1 or any(k in payload for k in ("nextPageToken", "prevPageToken")):
-            raise ResourceError("hilo no verificable por ID; ausencia/permisos no concluyentes")
+            raise ResourceError("thread unverifiable by ID; absence/permissions inconclusive")
         self._exact_total(payload)
         if self._thread(rows[0], video_id) != thread_id:
-            raise ResourceError("ID del hilo no coincide")
+            raise ResourceError("thread ID mismatch")
         return rows[0]
 
     def list_replies(self, video_id, thread_id, parent_id, *, max_pages=100):
         thread = self.thread(video_id, thread_id)
         if thread["snippet"]["topLevelComment"]["id"] != opaque_id(parent_id):
-            raise ResourceError("parent_id no es el comentario principal del hilo")
+            raise ResourceError("parent_id is not thread's top-level comment")
         return self._pages("comments", {"part": "snippet", "parentId": parent_id, "textFormat": "plainText"},
             lambda row: self._comment(row, parent=parent_id), max_pages=max_pages)
 
@@ -168,26 +168,26 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
             rows = [self.thread(video_id, thread_id)["snippet"]["topLevelComment"]]
         found = [r for r in rows if r["id"] == comment_id]
         if len(found) != 1:
-            raise ResourceError("comentario no verificable en hilo/padre; ausencia/permisos no concluyentes")
+            raise ResourceError("comment unverifiable in thread/parent; absence/permissions inconclusive")
         return found[0]
 
     @staticmethod
     def _exact_total(payload):
         page = payload.get("pageInfo")
         if page is not None and (not isinstance(page, dict) or type(page.get("totalResults")) is not int or page["totalResults"] != 1):
-            raise ResourceError("respuesta por ID tiene total ambiguo")
+            raise ResourceError("ID response has ambiguous total")
 
     def external(self, resource, rid):
         if resource not in {"videos", "channels"}:
-            raise ResourceError("destino externo no admitido")
+            raise ResourceError("unsupported external target")
         self.identity()
         payload = self._json(self._request("GET", f"{API}/{resource}", params={"part": "snippet", "id": resource_id(rid)}))
         rows = payload.get("items")
         if not isinstance(rows, list) or len(rows) != 1 or any(k in payload for k in ("nextPageToken", "prevPageToken")):
-            raise ResourceError("destino externo no verificable")
+            raise ResourceError("external target unverifiable")
         self._exact_total(payload)
         if self._row(rows[0]) != rid:
-            raise ResourceError("ID del destino externo no coincide")
+            raise ResourceError("external target ID mismatch")
         return rows[0]
 
     def _subscription(self, row):
@@ -195,7 +195,7 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
         snip = row["snippet"]
         target = snip.get("resourceId")
         if snip.get("channelId") != self.configured_channel_id or not isinstance(target, dict) or target.get("kind") != "youtube#channel":
-            raise ResourceError("suscripción de otro actor o destino inválido")
+            raise ResourceError("subscription belongs to another actor or invalid target")
         resource_id(target.get("channelId"))
         return rid
 
@@ -209,35 +209,35 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
         if (not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict)
             or rows[0].get("videoId") != video_id or rows[0].get("rating") not in {"like", "dislike", "none", "unspecified"}
             or any(k in payload for k in ("nextPageToken", "prevPageToken"))):
-            raise ResourceError("rating no verificable para el ID exacto")
+            raise ResourceError("rating unverifiable for exact ID")
         return rows[0]
 
     def catalog(self, name, *, language="en", region=None):
         if name not in CATALOGS or not isinstance(language, str) or not re.fullmatch(r"[A-Za-z_0-9-]{1,35}", language):
-            raise ResourceError("catálogo/idioma no admitido")
+            raise ResourceError("unsupported catalog/language")
         params = {"part": "snippet", "hl": language}
         if name == "categories":
             if not isinstance(region, str) or not re.fullmatch(r"[A-Z]{2}", region):
-                raise ResourceError("categories exige region ISO explícita")
+                raise ResourceError("categories requires explicit ISO region")
             params["regionCode"] = region
         elif region is not None:
-            raise ResourceError("region solo se admite para categories")
+            raise ResourceError("region accepted only for categories")
         return self._pages(CATALOGS[name], params, self._row, paginated=False)
 
     def search(self, query, *, kind="video", order="relevance", channel_id=None, max_pages=100):
         if not isinstance(query, str) or not 0 < len(query.strip()) <= 1000 or kind not in {"video", "channel", "playlist"} or order not in {"date", "rating", "relevance", "title", "videoCount", "viewCount"}:
-            raise ResourceError("consulta/tipo/orden de search inválido")
+            raise ResourceError("invalid search query/type/order")
         params = {"part": "snippet", "q": query, "type": kind, "order": order}
         if channel_id is not None:
             params["channelId"] = resource_id(channel_id)
         def validate(row):
             if not isinstance(row, dict) or not isinstance(row.get("id"), dict) or not isinstance(row.get("snippet"), dict):
-                raise ResourceError("resultado search inválido")
+                raise ResourceError("invalid search result")
             rid = row["id"]
             if rid.get("kind") != "youtube#" + kind:
-                raise ResourceError("tipo de resultado search distinto")
+                raise ResourceError("unexpected search result type")
             if channel_id is not None and row["snippet"].get("channelId") != channel_id:
-                raise ResourceError("search devolvió otro canal")
+                raise ResourceError("search returned another channel")
             return resource_id(rid.get(kind + "Id"))
         return self._pages("search", params, validate, max_pages=max_pages)
 
@@ -251,12 +251,12 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                     if stamp.tzinfo is None:
                         raise ValueError()
                 except (ValueError, AttributeError):
-                    raise ResourceError("fecha de activities exige RFC3339 con zona") from None
+                    raise ResourceError("activities timestamp requires RFC3339 with timezone") from None
                 params[key] = value
         def validate(row):
             rid = self._row(row, "youtube#activity")
             if row["snippet"].get("channelId") != self.configured_channel_id:
-                raise ResourceError("actividad de otro canal")
+                raise ResourceError("activity from another channel")
             return rid
         return self._pages("activities", params, validate, max_pages=max_pages)
 
@@ -282,7 +282,7 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
         elif action == "report-abuse":
             response = self._request("POST", f"{API}/videos/reportAbuse", json=body)
         else:
-            raise ResourceError("acción de comunidad no admitida")
+            raise ResourceError("unsupported community action")
         if response.status_code != 204:
-            raise ResourceUncertain("método sin cuerpo no devolvió204; resultado incierto")
+            raise ResourceUncertain("bodyless method did not return 204; uncertain outcome")
         return {"http_status": 204}

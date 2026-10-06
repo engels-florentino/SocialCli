@@ -122,7 +122,7 @@ def test_youtube_cuerpo_con_acentos_supera_bytes_aunque_no_caracteres():
     assert "bytes" in errores_body[0].motivo
     # El mensaje no debe mezclar dos unidades (bytes y caracteres a la vez):
     # confundiría más de lo que aclara.
-    assert "caracteres" not in errores_body[0].motivo
+    assert 'characters' not in errores_body[0].motivo
 
 
 def test_youtube_cuerpo_ascii_dentro_de_limite_no_falla_por_bytes():
@@ -170,7 +170,7 @@ def test_youtube_rechaza_tags_cuyo_agregado_supera_500_caracteres():
     )
     errores_hashtags = [e for e in errores if e.campo == "hashtags"]
     assert len(errores_hashtags) == 1
-    assert "agregados" in errores_hashtags[0].motivo
+    assert 'combined' in errores_hashtags[0].motivo
     assert "560" in errores_hashtags[0].motivo
 
 
@@ -304,7 +304,7 @@ def test_validar_privacidad_rechaza_valor_no_soportado_por_la_api():
     # "privacy" y el nombre de la red): se comprueba la lista de valores
     # válidos, que solo aparece en este mensaje.
     assert "public, unlisted, private" in errores[0].motivo
-    assert "no es un valor de privacidad válido" in errores[0].motivo
+    assert 'is not a valid privacy value' in errores[0].motivo
 
 
 def test_validar_privacidad_rechaza_el_campo_en_una_red_que_no_lo_soporta():
@@ -314,7 +314,7 @@ def test_validar_privacidad_rechaza_el_campo_en_una_red_que_no_lo_soporta():
     assert errores[0].campo == "privacy"
     # Frase propia de la rama "red sin soporte", distinta de la de "valor no
     # admitido" (esa otra rama nunca menciona "no admite el campo").
-    assert "tiktok no admite el campo 'privacy'" in errores[0].motivo
+    assert "tiktok does not support the 'privacy' field" in errores[0].motivo
 
 
 def test_validar_privacidad_rechaza_el_campo_en_facebook_e_instagram_tambien():

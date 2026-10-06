@@ -1,11 +1,11 @@
-# Seguridad
+# Security
 
-No publiques `.env`, `.secrets/`, tokens OAuth, client secrets, credenciales SSH ni datos privados de tus cuentas. `.gitignore` protege esos nombres en este repositorio; no borra secretos que ya estuvieran en otro historial Git.
+Never publish `.env`, `.secrets/`, OAuth tokens, client secrets, SSH credentials or private account data. `.gitignore` protects these names in this repository; it does not remove secrets from an existing Git history.
 
-Cada marca guarda credenciales localmente con permisos restringidos (directorio 0700, archivos 0600). Son archivos de texto, no una bóveda cifrada: protege el usuario del sistema, el disco y las copias de seguridad. Las llamadas a APIs transmiten los datos necesarios a sus proveedores.
+Each brand stores credentials locally with restricted permissions (0700 directories, 0600 files). These are plain text files, not an encrypted vault: protect your system account, disk and backups. API requests send necessary data to their providers.
 
-El código público no contiene credenciales de una aplicación compartida. Cada operador configura su propia aplicación. Una futura autorización común de SocialCli necesitará un diseño que mantenga el secreto en un servicio controlado, fuera del CLI distribuido.
+The public code contains no shared application credentials. Each operator configures their own application. A future shared SocialCli authorization flow would require a design that keeps the secret in a controlled service outside the distributed CLI.
 
-Para informar de una vulnerabilidad, usa **Security → Report a vulnerability** en el repositorio. Si ese canal no aparece habilitado, contacta al mantenedor mediante [su perfil](https://github.com/engels-florentino) antes de publicar detalles explotables. No abras un issue público con secretos o pruebas que expongan cuentas.
+To report a vulnerability, use **Security → Report a vulnerability** in the repository. If this channel is unavailable, contact the maintainer through [their profile](https://github.com/engels-florentino) before publishing exploitable details. Do not open a public issue containing secrets or evidence that exposes accounts.
 
-Si sospechas una filtración, revoca y rota la credencial en su proveedor; borrar el archivo o el commit no la invalida.
+If you suspect a leak, revoke and rotate the credential with its provider; deleting a file or commit does not invalidate it.

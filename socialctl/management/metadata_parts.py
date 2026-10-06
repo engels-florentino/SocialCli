@@ -28,38 +28,38 @@ KINDS = {
 
 def validate_localizations(value: Any) -> None:
     if not isinstance(value, dict):
-        raise ChangeError("localizations debe ser un mapping")
+        raise ChangeError("localizations must be a mapping")
     for language, fields in value.items():
         if not isinstance(language, str) or not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", language):
-            raise ChangeError("localizations requiere códigos de idioma explícitos")
+            raise ChangeError("localizations requires explicit language codes")
         if (not isinstance(fields, dict) or set(fields) != {"title", "description"}
                 or any(not isinstance(text, str) for text in fields.values())):
-            raise ChangeError("localizations admite solo title y description de texto")
+            raise ChangeError("localizations accepts only text title and description")
         _validate_snippet({**fields, "categoryId": "27"})
 
 
 def validate_status(value: dict[str, Any], *, outgoing: bool = False) -> None:
     for key, item in value.items():
         if key not in STATUS_FIELDS:
-            raise ChangeError(f"campo de status desconocido: {key}")
+            raise ChangeError(f"unknown status field: {key}")
         if key in {"embeddable", "publicStatsViewable", "selfDeclaredMadeForKids", "containsSyntheticMedia"}:
             if type(item) is not bool:
-                raise ChangeError(f"{key} debe ser booleano explícito")
+                raise ChangeError(f"{key} must be explicit boolean")
         elif key == "privacyStatus" and (not isinstance(item, str) or item not in {"private", "public", "unlisted"}):
-            raise ChangeError("privacyStatus inválido")
+            raise ChangeError("invalid privacyStatus")
         elif key == "license" and (not isinstance(item, str) or item not in {"youtube", "creativeCommon"}):
-            raise ChangeError("license inválida")
+            raise ChangeError("invalid license")
         elif key == "publishAt":
             if not isinstance(item, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", item):
-                raise ChangeError("publishAt requiere RFC3339 con zona horaria")
+                raise ChangeError("publishAt requires RFC3339 with timezone")
             try:
                 date = datetime.fromisoformat(item.replace("Z", "+00:00"))
             except ValueError:
-                raise ChangeError("publishAt requiere RFC3339") from None
+                raise ChangeError("publishAt requires RFC3339") from None
             if date.tzinfo is None:
-                raise ChangeError("publishAt requiere zona horaria")
+                raise ChangeError("publishAt requires timezone")
             if outgoing and date <= datetime.now(timezone.utc):
-                raise ChangeError("publishAt debe ser futuro; el pasado puede publicar inmediatamente")
+                raise ChangeError("publishAt must be in the future; past timestamps may publish immediately")
 
 
 class MetadataEdit(BaseModel):
@@ -72,12 +72,12 @@ class MetadataEdit(BaseModel):
     @model_validator(mode="after")
     def validate_operation(self):
         if not self.patch:
-            raise ChangeError("patch vacío")
+            raise ChangeError("empty patch")
         part, fields = KINDS[self.kind]
         if "defaultAudioLanguage" in self.patch:
-            raise ChangeError("defaultAudioLanguage: edición no verificada por documentación del método; solo se preserva")
+            raise ChangeError("defaultAudioLanguage: editing unverified by method documentation; preserved only")
         if fields is not None and set(self.patch) - fields:
-            raise ChangeError(f"campo desconocido para operación {self.kind}")
+            raise ChangeError(f"unknown field for operation {self.kind}")
         if part == "snippet":
             _validate_patch_mapping(self.patch)
         elif part == "localizations":
@@ -86,9 +86,9 @@ class MetadataEdit(BaseModel):
             validate_status(self.patch)
         if self.kind == "schedule":
             if not self.never_published:
-                raise ChangeError("schedule requiere never_published: true declarado por el usuario; privado no prueba historial")
+                raise ChangeError("schedule requires user-declared never_published: true; private status does not prove history")
             if set(self.patch) != {"publishAt", "privacyStatus"} or self.patch["privacyStatus"] != "private":
-                raise ChangeError("schedule requiere publishAt y privacyStatus: private explícitos")
+                raise ChangeError("schedule requires explicit publishAt and privacyStatus: private")
         elif self.never_published:
             raise ChangeError("never_published solo corresponde a schedule")
         return self
@@ -106,7 +106,7 @@ def editable_parts(resource: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def validate_chapters(description: str, duration: str) -> None:
     match = re.fullmatch(r"P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?", duration)
     if not match or not any(match.groups()):
-        raise ChangeError("capítulos: duración API ausente o no interpretable")
+        raise ChangeError("chapters: API duration missing or uninterpretable")
     days, hours, minutes, seconds = [float(value or 0) for value in match.groups()]
     total = days * 86400 + hours * 3600 + minutes * 60 + seconds
     starts = []
@@ -115,12 +115,12 @@ def validate_chapters(description: str, duration: str) -> None:
         if stamp:
             first, second, third = stamp.groups()
             if int(second) >= 60 or (third is not None and int(third) >= 60):
-                raise ChangeError("capítulo: timestamp inválido")
+                raise ChangeError("chapter: invalid timestamp")
             starts.append(int(first) * (3600 if third is not None else 60) + int(second) * (60 if third is not None else 1) + int(third or 0))
     if len(starts) < 3 or starts[0] != 0:
-        raise ChangeError("capítulos: primer inicio 0:00 y mínimo tres capítulos")
+        raise ChangeError("chapters: first start must be 0:00 and at least three chapters required")
     if any(end - start < 10 for start, end in zip(starts, [*starts[1:], total])):
-        raise ChangeError("capítulos: cada capítulo requiere 10 segundos, incluido el último frente a duración API")
+        raise ChangeError("chapters: each chapter requires 10 seconds, including final chapter against API duration")
 
 
 def propose_parts(observed, edit: MetadataEdit):
@@ -133,12 +133,12 @@ def propose_parts(observed, edit: MetadataEdit):
         _validate_snippet(after[part])
     elif part == "localizations":
         if not all_parts["snippet"].get("defaultLanguage"):
-            raise ChangeError("localizations requiere snippet.defaultLanguage existente")
+            raise ChangeError("localizations requires existing snippet.defaultLanguage")
         validate_localizations(after[part])
     else:
         validate_status(after[part], outgoing=True)
     if edit.kind == "privacy" and "publishAt" in after[part] and after[part]["privacyStatus"] != "private":
-        raise ChangeError("existe publishAt: no se cambia privacidad conservando un horario incompatible")
+        raise ChangeError("publishAt exists: privacy cannot change while preserving incompatible schedule")
     if edit.kind == "chapters":
         validate_chapters(edit.patch["description"], observed.resource.get("contentDetails", {}).get("duration", ""))
     return before, after

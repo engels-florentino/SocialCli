@@ -27,7 +27,7 @@ def test_cli_full_preview_brand_exact_approval_no_yes(tmp_path, monkeypatch):
     assert not api.writes
     accepted = runner.invoke(app, [*base, "apply", change.id, *target], input=change.fingerprint+"\n")
     assert accepted.exit_code == 0, accepted.output
-    assert accepted.output.index("Exact approved title") < accepted.output.index("Escribe la huella")
+    assert accepted.output.index("Exact approved title") < accepted.output.index('Enter the exact fingerprint')
     assert len(api.writes) == 1
 
 

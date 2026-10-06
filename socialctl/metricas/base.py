@@ -1,10 +1,4 @@
-"""Interfaz común de los lectores de métricas.
-
-Espejo de `socialctl/adapters/base.py`, pero de solo lectura. Se mantiene
-aparte de los adaptadores de publicación a propósito: usan scopes distintos,
-fallan de formas distintas y cambian a ritmos distintos, y el contrato de
-`Adapter` gira alrededor de `publish`.
-"""
+"""Common read-only metrics reader interface, separate from publishing adapters and their scopes."""
 
 from __future__ import annotations
 
@@ -82,57 +76,28 @@ _PATRON_PARAMETRO_URL = re.compile(
 
 
 def _redactar_url_por_patron(texto: str) -> str:
-    """Sustituye, en `texto`, el valor de cualquier parámetro de URL sensible.
-
-    Espejo deliberado de `_redactar_secretos` en
-    `socialctl/adapters/errores.py`, pero redactando por PATRÓN (el nombre
-    del parámetro) en vez de por VALOR (una lista de secretos conocidos).
-    Esa función no sirve aquí: la usan los adaptadores, que en el momento de
-    construir el mensaje saben exactamente qué token pasaron en su propia
-    petición. `leer_red`, en cambio, captura una `Exception` genérica de un
-    lector que no ha escrito todavía (ver docstring de `leer_red`): no sabe
-    de qué red viene ni cuál era su secreto, así que no hay ningún valor
-    concreto que buscar y sustituir. Lo único que sí se puede saber de
-    antemano, sin conocer la red ni la petición, es CÓMO se llaman los
-    parámetros por los que las cuatro redes de este proyecto hacen viajar un
-    secreto en una URL -ver `_NOMBRES_PARAMETRO_SENSIBLE`-, y sustituir
-    cualquier valor que cuelgue de uno de ellos.
-
-    Solo toca el valor, no el nombre del parámetro: `access_token=EAAG...`
-    queda como `access_token=[TOKEN REDACTADO]`, para que el mensaje
-    conserve la pista de qué tipo de dato faltaba sin conservar el dato.
-    """
+    """Redact sensitive URL parameter values by parameter-name pattern when the reader's exact token is unknown; preserve names as diagnostic evidence."""
     return _PATRON_PARAMETRO_URL.sub(lambda m: f"{m.group(1)}={_MARCA_REDACCION}", texto)
 
 LECTORES: dict[Platform, type[Lector]] = {}
-"""Registro de clases de lector por plataforma.
-
-Guarda **clases**, no instancias: se consume con `LECTORES[platform]()`, sin
-argumentos, así que todo lector debe poder construirse sin ellos.
-"""
+"""Registry of platform reader classes; every reader must support construction without arguments."""
 
 
 class SinPermiso(Exception):
-    """El token existe pero no tiene el scope necesario para leer.
-
-    Se distingue de `AuthError` (no hay token) porque el remedio es distinto:
-    aquí hay que añadir un permiso y volver a autenticar, no autenticar por
-    primera vez. El mensaje lo dice con el comando exacto para que el usuario
-    -o el gestor de redes- no tenga que deducirlo de un 403.
-    """
+    """Existing token lacks required read scope; add permission and reauthorize rather than first-time authentication."""
 
     def __init__(self, platform: Platform, scope: str) -> None:
         self.platform = platform
         self.scope = scope
         super().__init__(
-            f"el token de {platform.value} no tiene el permiso '{scope}'; "
-            f"añádelo y vuelve a ejecutar: socialctl auth {platform.value} "
-            f"--brand <Marca> (ver SETUP.md)"
+            f"token for {platform.value} lacks permission '{scope}'; "
+            f"add it and rerun: socialcli auth {platform.value} "
+            f"--brand <Brand> (see SETUP.md)"
         )
 
 
 class Lector(ABC):
-    """Lee las métricas de una red. Nunca publica, borra ni modifica nada."""
+    """Read platform metrics; never publish, delete or modify content."""
 
     platform: Platform
 
@@ -153,42 +118,13 @@ class Lector(ABC):
     def leer(
         self, brand: Brand, client: httpx.Client, desde: date | None
     ) -> LecturaRed:
-        """Devuelve la lectura de esta red para esta marca.
-
-        `desde` acota las piezas por fecha de publicación; `None` significa
-        todas. Puede lanzar `AuthError` o `SinPermiso`: `leer_red` los traduce
-        a estados, así que un lector no necesita capturarlos.
-        """
+        """Return platform metrics for brand, optionally filtered by publication date; caller converts AuthError/SinPermiso into read states."""
 
 
 def leer_red(
     platform: Platform, brand: Brand, client: httpx.Client, desde: date | None
 ) -> LecturaRed:
-    """Ejecuta el lector de una red y traduce cualquier fallo a un estado.
-
-    Es lo que usa el CLI, no `Lector.leer` directamente: así el fallo de una
-    red nunca aborta la lectura de las demás, igual que en `publicar()`.
-
-    Por qué las tres ramas pasan su mensaje por `_redactar_url_por_patron`:
-    `LecturaRed.error` no se queda en pantalla, acaba escrito en el JSON del
-    snapshot (`<Marca>/metricas/AAAA-MM-DD.json`) y en `resumen.md`, y los
-    dos se versionan en git -un secreto que caiga aquí no es un error de
-    consola que se pierde al cerrar la terminal, es un commit-. La primera
-    línea de defensa es que cada lector envuelva sus propios errores con
-    `mensaje_de_error` (`socialctl/adapters/errores.py`), que sí conoce el
-    token en juego y lo redacta por VALOR antes de que la excepción llegue
-    hasta aquí. Esta función es la red de seguridad de SEGUNDO nivel para lo
-    que a un lector se le escape sin envolver -típicamente, una
-    `httpx.HTTPStatusError` sin capturar, cuyo mensaje por defecto incluye
-    la URL completa de la petición que falló, con el token todavía en su
-    parámetro de consulta si esa red lo manda así-. Como aquí no se sabe de
-    qué red viene la excepción ni cuál era su secreto, no se puede redactar
-    por valor como hace `mensaje_de_error`; solo por PATRÓN, sobre los
-    nombres de parámetro que de verdad usan las cuatro redes (ver
-    `_redactar_url_por_patron`). Se aplica a las tres ramas, no solo a la
-    genérica, porque un `AuthError` o un `SinPermiso` que un lector futuro
-    construya interpolando algo suyo también podría arrastrar una URL.
-    """
+    """Run platform reader and convert failures to states without aborting other reads. Redact sensitive URL parameters in every error branch before storing snapshots or Markdown."""
     try:
         return LECTORES[platform]().leer(brand, client, desde)
     except AuthError as e:

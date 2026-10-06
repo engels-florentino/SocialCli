@@ -22,7 +22,7 @@ def test_valor_valido_devuelve_la_ruta_dentro_de_la_raiz(tmp_path):
 
 
 def test_rechaza_valor_no_textual(tmp_path):
-    with pytest.raises(_MiError, match="cadena de texto"):
+    with pytest.raises(_MiError, match='string'):
         validar_componente_de_ruta(tmp_path, 123, _MiError, "nombre")
 
 
@@ -37,7 +37,7 @@ def test_rechaza_solo_espacios(tmp_path):
 
 
 def test_rechaza_ruta_absoluta(tmp_path):
-    with pytest.raises(_MiError, match="ruta absoluta"):
+    with pytest.raises(_MiError, match='absolute path'):
         validar_componente_de_ruta(tmp_path, "/etc/passwd", _MiError, "nombre")
 
 
@@ -60,12 +60,12 @@ def test_rechaza_enlace_simbolico_que_escapa(tmp_path, tmp_path_factory):
     externo = tmp_path_factory.mktemp("fuera")
     (tmp_path / "enlace").symlink_to(externo, target_is_directory=True)
 
-    with pytest.raises(_MiError, match="enlace simbólico"):
+    with pytest.raises(_MiError, match='symbolic link'):
         validar_componente_de_ruta(tmp_path, "enlace", _MiError, "nombre")
 
 
 def test_el_mensaje_incluye_el_sustantivo_y_el_valor_rechazado(tmp_path):
-    with pytest.raises(_MiError, match=r"slug inválido: '/etc'"):
+    with pytest.raises(_MiError, match="slug invalid: '/etc'"):
         validar_componente_de_ruta(tmp_path, "/etc", _MiError, "slug")
 
 
@@ -92,7 +92,7 @@ def test_ruta_relativa_con_varias_subcarpetas_anidadas(tmp_path):
 
 
 def test_ruta_relativa_rechaza_valor_no_textual(tmp_path):
-    with pytest.raises(_MiError, match="cadena de texto"):
+    with pytest.raises(_MiError, match='string'):
         validar_ruta_relativa(tmp_path, 123, _MiError, "nombre de media")
 
 
@@ -117,12 +117,12 @@ def test_ruta_relativa_rechaza_segmento_vacio_por_doble_barra(tmp_path):
 
 
 def test_ruta_relativa_rechaza_ruta_absoluta(tmp_path):
-    with pytest.raises(_MiError, match="ruta absoluta"):
+    with pytest.raises(_MiError, match='absolute path'):
         validar_ruta_relativa(tmp_path, "/etc/passwd", _MiError, "nombre de media")
 
 
 def test_ruta_relativa_rechaza_ruta_absoluta_con_subcarpeta(tmp_path):
-    with pytest.raises(_MiError, match="ruta absoluta"):
+    with pytest.raises(_MiError, match='absolute path'):
         validar_ruta_relativa(tmp_path, "/short/S2.mp4", _MiError, "nombre de media")
 
 
@@ -154,26 +154,26 @@ def test_ruta_relativa_rechaza_punto_punto_suelto(tmp_path):
     # borrara el chequeo de forma de '..', porque la resolución de
     # symlinks atraparía el caso igualmente (con OTRO mensaje) y nadie se
     # enteraría de que la defensa en profundidad desapareció.
-    with pytest.raises(_MiError, match="ningún segmento"):
+    with pytest.raises(_MiError, match='no segment'):
         validar_ruta_relativa(tmp_path, "..", _MiError, "nombre de media")
 
 
 def test_ruta_relativa_rechaza_punto_punto_al_principio(tmp_path):
-    with pytest.raises(_MiError, match="ningún segmento"):
+    with pytest.raises(_MiError, match='no segment'):
         validar_ruta_relativa(
             tmp_path, "../.secrets/youtube.json", _MiError, "nombre de media"
         )
 
 
 def test_ruta_relativa_rechaza_punto_punto_en_medio(tmp_path):
-    with pytest.raises(_MiError, match="ningún segmento"):
+    with pytest.raises(_MiError, match='no segment'):
         validar_ruta_relativa(
             tmp_path, "short/../../.secrets/x", _MiError, "nombre de media"
         )
 
 
 def test_ruta_relativa_rechaza_punto_punto_repetido(tmp_path):
-    with pytest.raises(_MiError, match="ningún segmento"):
+    with pytest.raises(_MiError, match='no segment'):
         validar_ruta_relativa(tmp_path, "a/../../b", _MiError, "nombre de media")
 
 
@@ -190,7 +190,7 @@ def test_ruta_relativa_rechaza_punto_punto_aunque_no_escape_de_la_raiz(tmp_path)
     forma no es redundante en absoluto: es la ÚNICA defensa que rechaza un
     '..' que no llega a escapar. Si se borrara, esta llamada no lanzaría
     ninguna excepción."""
-    with pytest.raises(_MiError, match="ningún segmento"):
+    with pytest.raises(_MiError, match='no segment'):
         validar_ruta_relativa(tmp_path, "a/../b", _MiError, "nombre de media")
 
 
@@ -198,7 +198,7 @@ def test_ruta_relativa_rechaza_enlace_simbolico_que_escapa(tmp_path, tmp_path_fa
     externo = tmp_path_factory.mktemp("fuera")
     (tmp_path / "enlace").symlink_to(externo, target_is_directory=True)
 
-    with pytest.raises(_MiError, match="enlace simbólico"):
+    with pytest.raises(_MiError, match='symbolic link'):
         validar_ruta_relativa(tmp_path, "enlace/S2.mp4", _MiError, "nombre de media")
 
 
@@ -214,7 +214,7 @@ def test_ruta_relativa_rechaza_enlace_simbolico_en_subcarpeta_que_escapa(
     (tmp_path / "short").mkdir()
     (tmp_path / "short" / "enlace").symlink_to(externo, target_is_directory=True)
 
-    with pytest.raises(_MiError, match="enlace simbólico"):
+    with pytest.raises(_MiError, match='symbolic link'):
         validar_ruta_relativa(
             tmp_path, "short/enlace/S2.mp4", _MiError, "nombre de media"
         )

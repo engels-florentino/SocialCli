@@ -197,7 +197,7 @@ def test_uncertain_create_blocks_fresh_uuid_without_guessing_titles(env, action,
     api.on_write = lambda r: httpx.Response(503)
     assert apply(env, change).status == "uncertain"
     another = prepare(env, action, **kw)
-    with pytest.raises(ChangeError, match="incierto"):
+    with pytest.raises(ChangeError, match="uncertain"):
         apply(env, another)
     assert len(api.writes) == 1
 
@@ -214,7 +214,7 @@ def test_items_distinguish_membership_video_and_preserve_note_times(env):
 
 
 def test_membership_dedup_uses_video_id_and_rejects_partial_list(env):
-    with pytest.raises(ChangeError, match="existe"):
+    with pytest.raises(ChangeError, match="exists"):
         prepare(env, "item-insert", playlist_id="playlist-1", video_id="video-1", position=0)
     env[0].pages = lambda r: httpx.Response(200, json={"items": [item()], "nextPageToken": "repeat", "pageInfo": {"totalResults": 3, "resultsPerPage": 1}})
     report = env[1].list_items("playlist-1")
@@ -252,7 +252,7 @@ def test_recording_date_and_video_delete_are_separate_irreversible_proposals(env
     assert apply(env, change).status == "verified"
     assert env[0].writes[-1].url.params["part"] == "recordingDetails"
     change = prepare(env, "video-delete", video_id="video-1")
-    assert "irreversible" in " ".join(change.effects)
+    assert "Irreversible" in " ".join(change.effects)
     assert apply(env, change).status == "verified"
     assert env[0].writes[-1].method == "DELETE" and not env[0].rows["videos"]
 
@@ -281,7 +281,7 @@ def test_exact_approval_and_tamper_detection(env):
     raw = json.loads(path.read_text())
     raw["edit"]["playlist_id"] = "other"
     path.write_text(json.dumps(raw))
-    with pytest.raises(ChangeError, match="huella"):
+    with pytest.raises(ChangeError, match="fingerprint"):
         apply(env, change)
     assert not env[0].writes
 
@@ -420,7 +420,7 @@ def test_update_uncertainty_is_durable_and_never_replays(env, mode):
     assert "must-not-leak-token" not in str(result.model_dump())
     apply(env, change)
     another = prepare(env, "playlist-update", playlist_id="playlist-1", patch={"snippet": {"title": "Different"}})
-    with pytest.raises(ChangeError, match="incierto"):
+    with pytest.raises(ChangeError, match="uncertain"):
         apply(env, another)
     assert len(env[0].writes) == 1 and all(r.url.host == "www.googleapis.com" for r in env[0].requests)
 
@@ -501,7 +501,7 @@ def test_bad_playlist_enum_types_are_safe_validation_errors(env, patch):
 
 def test_unknown_existing_mutable_nested_field_is_not_discarded(env):
     env[0].rows["channels"][0]["brandingSettings"]["channel"]["futureMutable"] = "retain"
-    with pytest.raises(ChangeError, match="desconocid"):
+    with pytest.raises(ChangeError, match="unknown"):
         prepare(env, "channel-update", channel_id="channel-a", patch={"brandingSettings": {"channel": {"description": "New"}}})
     assert not env[0].writes
 
@@ -534,13 +534,13 @@ def test_delete_timeout_and_missing_resource_is_still_uncertain(env):
 
 @pytest.mark.parametrize("field", ["startAt", "endAt"])
 def test_deprecated_item_time_mutation_is_rejected_but_preservation_remains(env, field):
-    with pytest.raises(ChangeError, match="no editable|no editables|desconocid"):
+    with pytest.raises(ChangeError, match="noneditable|unknown"):
         prepare(env, "item-update", playlist_id="playlist-1", item_id="item-1", patch={"contentDetails": {field: "30"}})
     assert not env[0].writes
 
 
 def test_podcast_enable_requires_complete_image_eligibility(env):
-    with pytest.raises(ChangeError, match="imagen"):
+    with pytest.raises(ChangeError, match="image"):
         prepare(env, "playlist-update", playlist_id="playlist-1", patch={"status": {"podcastStatus": "enabled"}})
     env[0].rows["playlistImages"] = [{"id": "playlist-1:hero", "snippet": {"playlistId": "playlist-1", "type": "hero", "width": 20, "height": 20}}]
     change = prepare(env, "playlist-update", playlist_id="playlist-1", patch={"status": {"podcastStatus": "enabled"}})
@@ -613,7 +613,7 @@ def test_corrupt_outgoing_body_cannot_bypass_resource_schema_with_new_digest(env
     change.after["brandingSettings"]["channel"]["title"] = "Forbidden title mutation"
     change.fingerprint = fingerprint(change)
     env[2].save(change)
-    with pytest.raises(ChangeError, match="esquema|cuerpo|propuesta"):
+    with pytest.raises(ChangeError, match="schema|body|proposal"):
         apply(env, change)
     assert not env[0].writes
 
@@ -648,7 +648,7 @@ def test_image_update_discovery_size_bound_is_distinct_from_insert(env):
     file.write_bytes(PNG[:-8] + b"x" * (2 * 1024 * 1024) + PNG[-8:])
     asset, data = inspect_owned_asset(file, "image-update")
     assert asset["local_max_bytes"] == 52428800 and len(data) > 2 * 1024 * 1024
-    with pytest.raises(ChangeError, match="límite"):
+    with pytest.raises(ChangeError, match="limit"):
         inspect_owned_asset(file, "image-insert")
     with file.open("wb") as supplied:
         supplied.truncate(52428801)
@@ -673,7 +673,7 @@ def test_watermark_timeout_never_infers_success_from_missing_public_state(env):
 
 def test_default_channel_inspection_never_requests_unsupported_part(env):
     assert env[1].inspect_channel("channel-a")["id"] == "channel-a"
-    with pytest.raises(ChangeError, match="partes"):
+    with pytest.raises(ChangeError, match="parts"):
         env[1].inspect_channel("channel-a", parts=["invideoBranding"])
     for request in env[0].requests:
         assert "invideoBranding" not in request.url.params.get("part", "").split(",")
@@ -881,7 +881,7 @@ def test_unknown_section_type_still_allows_exact_id_only_deletion(env):
     env[0].rows["channelSections"][0]["snippet"]["type"] = "channelsectiontypeundefined"
     change = prepare(env, "section-delete", section_id=SECTION_ID)
     assert change.before["resource"]["snippet"]["type"] == "channelsectiontypeundefined"
-    assert "irreversible" in " ".join(change.effects)
+    assert "Irreversible" in " ".join(change.effects)
     assert apply(env, change).status == "verified"
     assert env[0].writes[-1].url.params["id"] == SECTION_ID
     assert not env[0].writes[-1].content
@@ -929,7 +929,7 @@ def test_watermark_replacement_does_not_inherit_undocumented_channel_state(env):
     change = prepare(env, "watermark-set", channel_id="channel-a", target_channel_id="channel-a", file=str(file), timing={"type": "offsetFromEnd", "offsetMs": "5000", "durationMs": "omit"})
     assert change.before["watermark_state"]["known"] is False
     assert change.after == {"timing": {"type": "offsetFromEnd", "offsetMs": "5000"}, "targetChannelId": "channel-a"}
-    assert "DESCONOCIDO" in " ".join(change.effects)
+    assert "UNKNOWN" in " ".join(change.effects)
 
 
 @pytest.mark.parametrize("failure", ["account", "etag"])

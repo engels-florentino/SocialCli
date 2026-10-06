@@ -20,27 +20,26 @@ def _aware_datetime(value: str | None) -> datetime | None:
 def describe_result(result: PostResult) -> str:
     """Describe what is known, keeping requested and observed state separate."""
     if result.status is not PostStatus.PUBLICADO:
-        return result.status.value
+        return {PostStatus.PENDIENTE_CONFIRMACION: "pending_confirmation", PostStatus.OMITIDO: "skipped", PostStatus.ERROR: "error"}.get(result.status, "published")
     if result.platform is not Platform.YOUTUBE:
-        return "publicación confirmada"
+        return "publication confirmed"
     observed = _aware_datetime(result.visibility_observed_at)
     if observed is None or not result.observed_privacy:
-        return "subida confirmada; visibilidad no verificada"
+        return "upload confirmed; visibility unverified"
     if result.observed_privacy == "private":
         planned = _aware_datetime(result.observed_publish_at)
         if planned is not None and planned > observed:
-            return "subida confirmada; programado, aún privado"
-        return "subida confirmada; privado"
+            return "upload confirmed; scheduled, still private"
+        return "upload confirmed; private"
     if result.observed_privacy == "unlisted":
-        return "subida confirmada; oculto"
+        return "upload confirmed; unlisted"
     if result.observed_privacy == "public":
         if result.observed_processing_status == "succeeded":
-            return "subida confirmada; público"
+            return "upload confirmed; public"
         return (
-            "subida confirmada; privacidad pública observada, "
-            "procesamiento no verificado"
+            'upload confirmed; public privacy observed, processing unverified'
         )
-    return "subida confirmada; visibilidad no verificada"
+    return "upload confirmed; visibility unverified"
 
 
 def describe_result_with_observation(result: PostResult) -> str:
@@ -58,7 +57,7 @@ def describe_result_with_observation(result: PostResult) -> str:
         and has_observation
         and _aware_datetime(result.visibility_observed_at) is not None
     ):
-        return f"{description} (observado {result.visibility_observed_at})"
+        return f"{description} (observed {result.visibility_observed_at})"
     return description
 
 

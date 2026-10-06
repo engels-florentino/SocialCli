@@ -167,7 +167,7 @@ def test_facebook_un_403_de_scope_dice_cual_falta(brand):
 
     mensaje = str(excinfo.value)
     assert "read_insights" in mensaje
-    assert "socialctl auth facebook" in mensaje
+    assert 'socialcli auth facebook' in mensaje
 
 
 @respx.mock
@@ -346,7 +346,7 @@ def test_un_400_que_no_es_de_metrica_invalida_sigue_tumbando_la_lectura(brand):
         lectura = leer_red(Platform.FACEBOOK, brand, client, None)
 
     assert lectura.estado is EstadoLectura.ERROR
-    assert "Invalid parameter" in (lectura.error or "")
+    assert 'Invalid parameter' in (lectura.error or "")
 
 
 @respx.mock
@@ -425,7 +425,7 @@ def test_falta_de_permiso_dice_cual(brand):
 
     mensaje = str(excinfo.value)
     assert "instagram_manage_insights" in mensaje
-    assert "socialctl auth instagram" in mensaje
+    assert 'socialcli auth instagram' in mensaje
 
 
 @respx.mock

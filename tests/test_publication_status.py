@@ -12,7 +12,7 @@ def test_subida_privada_no_se_presenta_como_publica():
         requested_privacy="private",
     )
 
-    assert describe_result(result) == "subida confirmada; visibilidad no verificada"
+    assert describe_result(result) == 'upload confirmed; visibility unverified'
 
 
 def test_estado_privado_observado():
@@ -23,7 +23,7 @@ def test_estado_privado_observado():
         visibility_observed_at="2026-09-13T20:00:00Z",
     )
 
-    assert describe_result(result) == "subida confirmada; privado"
+    assert describe_result(result) == 'upload confirmed; private'
 
 
 @pytest.mark.parametrize(
@@ -38,11 +38,11 @@ def test_estado_privado_observado():
                 platform=Platform.YOUTUBE,
                 status=PostStatus.PENDIENTE_CONFIRMACION,
             ),
-            "pendiente_confirmacion",
+            "pending_confirmation",
         ),
         (
             PostResult(platform=Platform.FACEBOOK, status=PostStatus.PUBLICADO),
-            "publicación confirmada",
+            "publication confirmed",
         ),
         (
             PostResult(
@@ -51,7 +51,7 @@ def test_estado_privado_observado():
                 observed_privacy="unlisted",
                 visibility_observed_at="2026-09-13T20:00:00+00:00",
             ),
-            "subida confirmada; oculto",
+            "upload confirmed; unlisted",
         ),
         (
             PostResult(
@@ -61,7 +61,7 @@ def test_estado_privado_observado():
                 observed_processing_status="succeeded",
                 visibility_observed_at="2026-09-13T20:00:00Z",
             ),
-            "subida confirmada; público",
+            "upload confirmed; public",
         ),
         (
             PostResult(
@@ -70,7 +70,7 @@ def test_estado_privado_observado():
                 observed_privacy="public",
                 visibility_observed_at="2026-09-13T20:00:00Z",
             ),
-            "subida confirmada; privacidad pública observada, procesamiento no verificado",
+            "upload confirmed; public privacy observed, processing unverified",
         ),
         (
             PostResult(
@@ -80,7 +80,7 @@ def test_estado_privado_observado():
                 observed_publish_at="2026-09-14T20:00:00Z",
                 visibility_observed_at="2026-09-13T20:00:00-04:00",
             ),
-            "subida confirmada; programado, aún privado",
+            "upload confirmed; scheduled, still private",
         ),
         (
             PostResult(
@@ -90,7 +90,7 @@ def test_estado_privado_observado():
                 observed_publish_at="2026-09-12T20:00:00Z",
                 visibility_observed_at="2026-09-13T20:00:00Z",
             ),
-            "subida confirmada; privado",
+            "upload confirmed; private",
         ),
     ],
 )
@@ -106,7 +106,7 @@ def test_observacion_sin_timestamp_no_cuenta_como_verificada():
         observed_processing_status="succeeded",
     )
 
-    assert describe_result(result) == "subida confirmada; visibilidad no verificada"
+    assert describe_result(result) == 'upload confirmed; visibility unverified'
 
 
 def test_timestamp_sin_zona_no_cuenta_como_observacion():
@@ -117,8 +117,8 @@ def test_timestamp_sin_zona_no_cuenta_como_observacion():
         visibility_observed_at="2026-09-13T20:00:00",
     )
 
-    assert describe_result(result) == "subida confirmada; visibilidad no verificada"
-    assert "(observado" not in describe_result_with_observation(result)
+    assert describe_result(result) == 'upload confirmed; visibility unverified'
+    assert '(observed' not in describe_result_with_observation(result)
 
 
 def test_informe_identifica_el_momento_historico_de_la_observacion():
@@ -130,7 +130,7 @@ def test_informe_identifica_el_momento_historico_de_la_observacion():
     )
 
     assert describe_result_with_observation(result) == (
-        "subida confirmada; privado (observado 2026-09-13T20:00:00Z)"
+        'upload confirmed; private (observed 2026-09-13T20:00:00Z)'
     )
 
 
@@ -146,4 +146,4 @@ def test_resultado_antiguo_carga_sin_inventar_observacion():
     assert result.requested_privacy is None
     assert result.observed_privacy is None
     assert result.visibility_observed_at is None
-    assert describe_result(result) == "subida confirmada; visibilidad no verificada"
+    assert describe_result(result) == 'upload confirmed; visibility unverified'

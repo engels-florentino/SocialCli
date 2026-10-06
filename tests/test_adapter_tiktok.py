@@ -104,7 +104,7 @@ def test_modo_inbox_deja_el_post_pendiente_de_confirmacion(tmp_path, post):
 
     assert resultado.status is PostStatus.PENDIENTE_CONFIRMACION
     assert resultado.platform_id == "pid"
-    assert "app de TikTok" in resultado.error
+    assert "open TikTok" in resultado.error
 
 
 @respx.mock
@@ -195,7 +195,7 @@ def test_modo_direct_sin_privacy_level_admitido_no_publica(tmp_path, post):
     # aborta sin publicar-.
     assert not init.called
     assert resultado.status is PostStatus.ERROR
-    assert "no admite" in resultado.error
+    assert 'does not support' in resultado.error
     assert "PUBLIC_TO_EVERYONE" in resultado.error
     assert "MUTUAL_FOLLOW_FRIENDS" in resultado.error
 
@@ -289,7 +289,7 @@ def test_varios_archivos_fallan_antes_de_auth_o_http(tmp_path, post):
         resultado = TikTokAdapter().publish(post_con_dos, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "1 archivo" in resultado.error
+    assert '1 file' in resultado.error
     assert requests == []
 
 
@@ -312,7 +312,7 @@ def test_modo_direct_sin_auditoria_aborta_sin_llamar_a_la_api(tmp_path, post):
     assert not init.called
     assert resultado.status is PostStatus.ERROR
     assert "auditada" in resultado.error
-    assert "privado" in resultado.error
+    assert "private" in resultado.error
 
 
 def test_la_salvaguarda_de_auditoria_es_una_excepcion_propia():
@@ -409,7 +409,7 @@ def test_auditada_con_valor_no_reconocido_da_un_mensaje_distinto_de_no_auditada(
         resultado_no_reconocido = TikTokAdapter().publish(post, brand_no_reconocido, client)
     assert not init.called
     assert resultado_no_reconocido.status is PostStatus.ERROR
-    assert "no se reconoce" in resultado_no_reconocido.error
+    assert "is not recognized" in resultado_no_reconocido.error
 
 
 @respx.mock
@@ -422,8 +422,8 @@ def test_auditada_false_canonico_da_el_mensaje_estandar_de_no_auditada(tmp_path,
         resultado_reconocido = TikTokAdapter().publish(post, brand_reconocido, client)
     assert not init.called
     assert resultado_reconocido.status is PostStatus.ERROR
-    assert "no se reconoce" not in resultado_reconocido.error
-    assert "no está auditada" in resultado_reconocido.error
+    assert "is not recognized" not in resultado_reconocido.error
+    assert "is not audited" in resultado_reconocido.error
 
 
 @respx.mock
@@ -741,8 +741,8 @@ def test_timeout_en_el_ultimo_chunk_advierte_de_riesgo_de_duplicado(tmp_path, po
         resultado = TikTokAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "reintentes" in resultado.error
-    assert "cuenta" in resultado.error
+    assert "retry" in resultado.error
+    assert "account" in resultado.error
     # El campo estructurado que `retry` consulta para negarse a reintentar
     # esta red en automático (hallazgo de revisión: antes `retry` solo
     # miraba si la palabra "duplicar" aparecía en `error`).
@@ -794,7 +794,7 @@ def test_validate_detecta_falta_de_auditoria_en_modo_direct(tmp_path, post):
     errores = TikTokAdapter().validate(post, brand)
 
     motivos = [e.motivo for e in errores]
-    assert any("no está auditada" in m for m in motivos)
+    assert any("is not audited" in m for m in motivos)
     # Con este `post` (vídeo 1080x1920, 45s: válido para TikTok) y una
     # cuenta por lo demás bien configurada, este es el ÚNICO problema: antes
     # del arreglo, `validate()` no veía ninguno (el preview diría "Problemas
@@ -836,7 +836,7 @@ def test_validate_detecta_modo_desconocido(tmp_path, post):
 
     errores = TikTokAdapter().validate(post, brand)
 
-    assert any("modo de TikTok desconocido" in e.motivo for e in errores)
+    assert any("unknown TikTok mode" in e.motivo for e in errores)
     # Un modo desconocido no es "direct": la salvaguarda de auditoría no
     # aplica (ver _comprobar_auditoria) y no debe añadir un segundo error
     # redundante por el mismo motivo.
@@ -858,7 +858,7 @@ def test_publish_sigue_rechazando_la_falta_de_auditoria_aunque_nadie_llame_a_val
         resultado = TikTokAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "no está auditada" in resultado.error
+    assert "is not audited" in resultado.error
 
 
 @respx.mock

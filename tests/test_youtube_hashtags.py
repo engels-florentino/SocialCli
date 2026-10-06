@@ -32,7 +32,7 @@ def test_explicit_visible_hashtags_and_internal_tags_drive_preview_and_payload(t
     assert texto_publicado(pp) == "Body\n\n#Visible"
     preview = render_preview(whole(pp), {})
     assert "#Visible" in preview and "internal key" in preview
-    assert "Hashtags visibles" in preview
+    assert "Visible hashtags" in preview
     sent = []
     def transport(request):
         if request.method == "POST":

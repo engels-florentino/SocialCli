@@ -41,7 +41,7 @@ def publication_gate(brand, slug: str):
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise MediaRegistryError("post con ejecución concurrente; reintenta tras finalizar") from exc
+            raise MediaRegistryError("post is running concurrently; retry after it finishes") from exc
         yield
     finally:
         os.close(fd)
@@ -49,7 +49,7 @@ def publication_gate(brand, slug: str):
 
 def record_publication_start(brand, post, platforms) -> None:
     if post.brand != brand.nombre:
-        raise MediaRegistryError("post de otra marca")
+        raise MediaRegistryError("post belongs to another brand")
     path = relative(brand.raiz, f".socialctl/media-publication-started/{component(post.slug)}.json")
     # Evidence only for ingress draft eligibility, never a publication/retry gate.
     write_json(path, dict(version=1, brand=brand.nombre, root=str(brand.raiz.resolve()),
@@ -69,33 +69,33 @@ def parse_json(raw: bytes, *, limit=MAX_HEADER):
         result = {}
         for key, value in pairs:
             if key in result:
-                raise MediaRegistryError("claves JSON duplicadas")
+                raise MediaRegistryError("duplicate JSON keys")
             result[key] = value
         return result
     if len(raw) > limit:
-        raise MediaRegistryError("JSON excede límite")
+        raise MediaRegistryError("JSON exceeds the limit")
     return json.loads(raw, object_pairs_hook=unique)
 
 
 def safe(path: Path) -> Path:
     """Reject links even when they point within the allowed root."""
     if any(part.is_symlink() for part in [path, *path.parents]):
-        raise MediaRegistryError("ruta con enlace simbólico no admitida")
+        raise MediaRegistryError("paths containing symbolic links are not supported")
     if path.exists() and not (path.is_file() or path.is_dir()):
-        raise MediaRegistryError("tipo de archivo no admitido")
+        raise MediaRegistryError("unsupported file type")
     return path
 
 
 def relative(root: Path, value: str) -> Path:
     try:
-        return safe(validar_ruta_relativa(root, value, MediaRegistryError, "ruta de media"))
+        return safe(validar_ruta_relativa(root, value, MediaRegistryError, "media path"))
     except ValueError as exc:
-        raise MediaRegistryError("ruta de media inválida o con enlace simbólico") from exc
+        raise MediaRegistryError("invalid media path or symbolic link") from exc
 
 
 def component(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[\w][\w .-]{0,127}", value) or value in {".", ".."}:
-        raise MediaRegistryError("identificador inválido")
+        raise MediaRegistryError("invalid identifier")
     return value
 
 
@@ -110,7 +110,7 @@ def check_mime(path: Path, suffix: str) -> str:
         or suffix == ".webp" and head[:4] == b"RIFF" and head[8:12] == b"WEBP"
     )
     if not mime or not recognized:
-        raise MediaRegistryError("MIME suministrado no admitido o firma incompatible")
+        raise MediaRegistryError("unsupported supplied MIME type or incompatible signature")
     return mime
 
 
@@ -119,7 +119,7 @@ def check_file(path: Path, item: dict) -> None:
     if (not path.is_file() or path.stat().st_size != item["size"]
             or file_digest(path) != item["sha256"]
             or check_mime(path, Path(item["relative_path"]).suffix) != item["mime"]):
-        raise MediaRegistryError("bytes existentes no coinciden con SHA-256, tamaño o MIME")
+        raise MediaRegistryError("existing bytes do not match SHA-256, size or MIME type")
 
 
 def space(path: Path, size: int) -> None:
@@ -127,7 +127,7 @@ def space(path: Path, size: int) -> None:
     while not path.exists():
         path = path.parent
     if shutil.disk_usage(path).free < size + 1024 * 1024:
-        raise MediaRegistryError("espacio de destino insuficiente")
+        raise MediaRegistryError("insufficient destination space")
 
 
 def copy_exact(incoming, out, size: int) -> None:
@@ -135,11 +135,11 @@ def copy_exact(incoming, out, size: int) -> None:
     while remaining:
         chunk = incoming.read(min(remaining, 1024 * 1024))
         if not chunk or len(chunk) > remaining:
-            raise MediaRegistryError("tamaño suministrado cambió durante copia")
+            raise MediaRegistryError("supplied size changed during copying")
         out.write(chunk)
         remaining -= len(chunk)
     if incoming.read(1):
-        raise MediaRegistryError("tamaño suministrado cambió durante copia")
+        raise MediaRegistryError("supplied size changed during copying")
 
 
 def promote(source: Path, target: Path, item: dict, *, public: bool = False) -> None:
@@ -148,7 +148,7 @@ def promote(source: Path, target: Path, item: dict, *, public: bool = False) -> 
     if target.exists():
         check_file(target, item)
         if public and target.stat().st_mode & 0o444 != 0o444:
-            raise MediaRegistryError("copia pública existente no es legible")
+            raise MediaRegistryError("existing public copy is unreadable")
         return
     space(target.parent, item["size"])
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -215,13 +215,13 @@ def validate_manifest(brand, manifest: dict) -> dict:
         if sum(item["size"] for item in assets) > MAX_TOTAL:
             raise ValueError()
     except (KeyError, TypeError, ValueError) as exc:
-        raise MediaRegistryError("manifest inválido, alterado o de otra marca") from exc
+        raise MediaRegistryError("invalid or modified manifest, or manifest belongs to another brand") from exc
     return manifest
 
 
 def bundle_path(brand, ident: str, suffix=".json") -> Path:
     if not re.fullmatch(r"[a-f0-9]{64}", ident):
-        raise MediaRegistryError("identificador de bundle inválido")
+        raise MediaRegistryError("invalid bundle identifier")
     return relative(brand.raiz, f".socialctl/media-bundles/{ident}{suffix}")
 
 
@@ -229,7 +229,7 @@ def load_bundle(brand, ident: str) -> tuple[dict, bytes]:
     manifest = validate_manifest(brand, parse_json(bundle_path(brand, ident).read_bytes()))
     post = bundle_path(brand, ident, ".yml").read_bytes()
     if manifest["digest"] != ident or len(post) != manifest["post_size"] or digest(post) != manifest["post_sha256"]:
-        raise MediaRegistryError("bundle alterado")
+        raise MediaRegistryError("bundle was modified")
     return manifest, post
 
 
@@ -253,7 +253,7 @@ def post_media(raw: bytes) -> dict[str, list[str]]:
         rewrite_media(raw, {p: {v: v for v in values} for p, values in result.items() if values})
         return result
     except (KeyError, TypeError, ValueError, yaml.YAMLError) as exc:
-        raise MediaRegistryError("post suministrado inválido") from exc
+        raise MediaRegistryError("invalid supplied post") from exc
 
 
 def stage(brand, slug: str) -> dict:
@@ -261,7 +261,7 @@ def stage(brand, slug: str) -> dict:
     safe(brand.raiz)
     path = relative(brand.raiz, f"posts/{slug}/post.yml")
     if path.stat().st_size > MAX_POST:
-        raise MediaRegistryError("post suministrado excede límite")
+        raise MediaRegistryError("supplied post exceeds the limit")
     raw = path.read_bytes()
     uses = post_media(raw)
     assets, replacements = {}, {}
@@ -270,10 +270,10 @@ def stage(brand, slug: str) -> dict:
         for name in values:
             source = relative(brand.raiz / "media", name)
             if not source.is_file():
-                raise MediaRegistryError("archivo suministrado ausente")
+                raise MediaRegistryError("supplied file is missing")
             size = source.stat().st_size
             if not 0 < size <= MAX_BYTES:
-                raise MediaRegistryError("tamaño suministrado excede límite")
+                raise MediaRegistryError("supplied size exceeds the limit")
             suffix = source.suffix.lower()
             mime = check_mime(source, suffix)
             sha = file_digest(source)

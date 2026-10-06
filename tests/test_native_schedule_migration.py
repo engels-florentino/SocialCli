@@ -223,7 +223,7 @@ def test_legacy_rollback_refuses_transferred_authority(tmp_path,monkeypatch):
     directory=tmp_path/'old-migration';directory.mkdir();(directory/'intent.json').write_text('{}')
     monkeypatch.setattr(queue_migration,'load_proposal',lambda *a:{})
     monkeypatch.setattr(queue_migration,'_directory',lambda *a:directory)
-    with pytest.raises(ScheduleError,match='transferencia nativa'):
+    with pytest.raises(ScheduleError,match='native transfer'):
         queue_migration.rollback(cargar_brand(tmp_path,'Histopast'),'ignored')
     assert old.due(NOW+timedelta(days=10))==[]
 
@@ -249,7 +249,7 @@ def test_legacy_relocation_cannot_remove_historical_guard(tmp_path,monkeypatch):
     root,old,entries,manifest=setup(tmp_path,monkeypatch)
     p=m.prepare_migration('Histopast',root=tmp_path)
     m.apply_migration(p['digest'],brand='Histopast',root=tmp_path)
-    with pytest.raises(ScheduleError,match='transferencia nativa'):
+    with pytest.raises(ScheduleError,match='native transfer'):
         queue_migration.prepare(cargar_brand(tmp_path,'Histopast'),dry_run=True)
     assert (old.root/'migration-active.json').exists()
 

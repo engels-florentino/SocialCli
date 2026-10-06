@@ -50,16 +50,16 @@ class MetaClient:
             self.actor_id = secret.get("actor_id")
             expired = credential_metadata(secret)["expiry"]["expired"]
         except Exception:
-            raise MetaError("credenciales Meta no disponibles") from None
+            raise MetaError("Meta credentials unavailable") from None
         if not isinstance(self._token, str) or not self._token or expired:
-            raise MetaError("credenciales Meta ausentes/caducadas; no se renuevan automáticamente")
+            raise MetaError("Meta credentials missing/expired; not refreshed automatically")
         if self.token_mode not in {"facebook_page", "facebook_user"}:
-            raise MetaError("modo de token no admitido; se requiere Facebook Login")
+            raise MetaError("unsupported token mode; Facebook Login required")
 
     def request(self, method, path, *, params=None, data=None, files=None):
         # Paths are built only by resource methods. No redirect/remote next URL.
         if method not in {"GET", "POST", "DELETE"} or not re.fullmatch(r"(?:me|[0-9]+(?:_[0-9]+)?)(?:/[a-z_]+)?", path):
-            raise MetaError("endpoint/método no permitido")
+            raise MetaError("endpoint/method not allowed")
         writing = method != "GET"
         try:
             with self.client.stream(method, f"{GRAPH}/{path}", params=params, data=data, files=files,
@@ -67,7 +67,7 @@ class MetaClient:
                 if not response.is_success:
                     error = (MetaUncertain if response.status_code >= 500 or response.is_redirect or response.status_code in {408, 429}
                              else MetaRejected) if writing else MetaError
-                    raise error(f"Meta HTTP {response.status_code}; comprueba permisos/elegibilidad")
+                    raise error(f"Meta HTTP {response.status_code}; check permissions/eligibility")
                 raw = bytearray()
                 for chunk in response.iter_bytes():
                     raw.extend(chunk)
@@ -80,14 +80,14 @@ class MetaClient:
         except MetaError:
             raise
         except Exception:
-            raise (MetaUncertain if writing else MetaError)("Meta: respuesta/transporte no verificable") from None
+            raise (MetaUncertain if writing else MetaError)("Meta: response/transport unverifiable") from None
 
     def listing(self, target, edge, *, fields, max_pages=10, params=None):
         meta_id(target, composite=True)
         if edge not in {"accounts", "permissions", "feed", "photos", "posts", "videos", "video_reels", "media", "stories", "comments", "reactions", "likes", "insights", "subscribed_apps", "scheduled_posts", "captions"}:
-            raise MetaError("edge de lectura no admitido")
+            raise MetaError("unsupported read edge")
         if type(max_pages) is not int or not 1 <= max_pages <= 50:
-            raise MetaError("máximo de páginas debe estar entre 1 y 50")
+            raise MetaError("maximum pages must be between 1 and 50")
         return self._pages(f"{target}/{edge}", {"fields": fields, "limit": "100", **(params or {})}, max_pages)
 
     def _pages(self, path, params, maximum=10):
@@ -96,16 +96,16 @@ class MetaClient:
             result = self.request("GET", path, params=params)
             data = result.get("data")
             if not isinstance(data, list) or len(data) > 100 or any(not isinstance(row, dict) for row in data):
-                raise MetaError("lista Meta inválida/excesiva")
+                raise MetaError("invalid/excessive Meta list")
             for row in data:
                 if row.get("id") in ids:
-                    raise MetaError("IDs repetidos en la lectura paginada")
+                    raise MetaError("repeated IDs in paginated read")
                 if "id" in row:
                     ids.add(meta_id(row["id"], composite=True))
             rows.extend(data)
             paging = result.get("paging", {})
             if not isinstance(paging, dict):
-                raise MetaError("paginación inválida")
+                raise MetaError("invalid pagination")
             if not paging.get("next"):
                 return {"data": rows, "complete": True, "absence_proven": False}
             cursor = (paging.get("cursors") or {}).get("after")
@@ -117,28 +117,28 @@ class MetaClient:
 
     def identity(self, *, user_required=False):
         if user_required and self.token_mode != "facebook_user":
-            raise MetaError("Instagram DELETE exige Facebook USER token e instagram_basic + instagram_manage_contents; no se sustituye el token de Página")
+            raise MetaError("Instagram DELETE requires Facebook USER token and instagram_basic + instagram_manage_contents; Page token is not substituted")
         me = self.request("GET", "me", params={"fields": "id,instagram_business_account"} if self.token_mode == "facebook_page" else {"fields": "id"})
         actor = meta_id(me.get("id"))
         if self.token_mode == "facebook_page":
             if actor != self.page_id:
-                raise MetaError("la Página autenticada no coincide con la marca")
+                raise MetaError("authenticated Page does not match brand")
             selected = me
         else:
             if actor != meta_id(self.actor_id):
-                raise MetaError("el actor USER autenticado no coincide con el actor configurado")
+                raise MetaError("authenticated USER actor does not match configured actor")
             pages = self._pages("me/accounts", {"fields": "id,tasks,instagram_business_account", "limit": "100"})
             matches = [p for p in pages["data"] if p.get("id") == self.page_id]
             if not pages["complete"] or len(matches) != 1 or not matches[0].get("tasks"):
-                raise MetaError("no se verificó la Página administrada por el actor USER")
+                raise MetaError("Page managed by USER actor was not verified")
             selected = matches[0]
             if user_required:
                 permissions = self._pages("me/permissions", {"limit": "100"})
                 granted = {p.get("permission") for p in permissions["data"] if p.get("status") == "granted"}
                 if not permissions["complete"] or not {"instagram_basic", "instagram_manage_contents"} <= granted:
-                    raise MetaError("faltan permisos concedidos instagram_basic + instagram_manage_contents para DELETE")
+                    raise MetaError("granted instagram_basic + instagram_manage_contents permissions missing for DELETE")
         if self.platform is Platform.INSTAGRAM and (selected.get("instagram_business_account") or {}).get("id") != self.account_id:
-            raise MetaError("la cuenta Instagram vinculada no coincide con la marca")
+            raise MetaError("linked Instagram account does not match brand")
         return {"actor_id": actor, "token_mode": self.token_mode, "page_id": self.page_id, "account_id": self.account_id}
 
     def profile(self, fields=None):
@@ -146,22 +146,22 @@ class MetaClient:
         allowed = PROFILE_FIELDS[self.platform.value]
         fields = sorted(allowed) if fields is None else fields
         if not fields or set(fields) - allowed:
-            raise MetaError("campos de perfil fuera de la lista documentada")
+            raise MetaError("profile fields outside documented list")
         result = self.request("GET", self.account_id, params={"fields": ",".join(sorted(set(fields) | {"id"}))})
         if result.get("id") != self.account_id:
-            raise MetaError("ID de perfil no coincide")
+            raise MetaError("profile ID mismatch")
         return {k: result[k] for k in set(fields) | {"id"} if k in result}
 
     def content(self, target_id, kind=None):
         self.identity()
         kind = kind or ("media" if self.platform is Platform.INSTAGRAM else "post")
         if kind not in CONTENT_FIELDS or (kind == "media") != (self.platform is Platform.INSTAGRAM):
-            raise MetaError("tipo de contenido/plataforma incompatible")
+            raise MetaError("incompatible content type/platform")
         meta_id(target_id, composite=kind == "post")
         result = self.request("GET", target_id, params={"fields": CONTENT_FIELDS[kind]})
         owner = "owner" if kind == "media" else "from"
         if result.get("id") != target_id or (result.get(owner) or {}).get("id") != self.account_id:
-            raise MetaError("no se verificó el propietario exacto del contenido")
+            raise MetaError("exact content owner was not verified")
         return {k: result[k] for k in CONTENT_FIELDS[kind].split(",") if k in result}
 
     def content_list(self, edge=None, max_pages=10):
@@ -169,14 +169,14 @@ class MetaClient:
         edge = edge or ("media" if self.platform is Platform.INSTAGRAM else "posts")
         valid = {"media", "stories"} if self.platform is Platform.INSTAGRAM else {"feed", "photos", "posts", "videos", "video_reels", "stories", "scheduled_posts"}
         if edge not in valid:
-            raise MetaError("listado no admitido para la plataforma")
+            raise MetaError("listing unsupported for platform")
         kind = "media" if self.platform is Platform.INSTAGRAM else ("video" if edge in {"videos", "video_reels"} else "post")
         result = self.listing(self.account_id, edge, fields=CONTENT_FIELDS[kind], max_pages=max_pages)
         owner = "owner" if kind == "media" else "from"
         for row in result["data"]:
             meta_id(row.get("id"), composite=kind == "post")
             if (row.get(owner) or {}).get("id") != self.account_id:
-                raise MetaError("propietario no verificado en el listado")
+                raise MetaError("owner not verified in listing")
         return result
 
     def insights(self, target_id, metrics, *, period=None, since=None, until=None,
@@ -192,25 +192,25 @@ class MetaClient:
         target_id = meta_id(target_id, composite=self.platform is Platform.FACEBOOK)
         self.content(target_id)
         if not isinstance(metrics, (list, tuple)) or not metrics:
-            raise MetaError("selecciona al menos una métrica de contenido")
+            raise MetaError("select at least one content metric")
         names = list(metrics)
         if len(names) > 20 or len(set(names)) != len(names) or any(
             not isinstance(name, str) or name not in INSIGHT_METRICS[self.platform.value]
             for name in names
         ):
-            raise MetaError("métrica Meta no permitida o repetida para esta plataforma")
+            raise MetaError("Meta metric not allowed or repeated for this platform")
         if period is not None and period not in INSIGHT_PERIODS:
-            raise MetaError("periodo Meta no documentado")
+            raise MetaError("undocumented Meta period")
         for value, label in ((since, "since"), (until, "until")):
             if value is not None and (type(value) is not int or value < 0):
-                raise MetaError(f"{label} debe ser un timestamp Unix entero")
+                raise MetaError(f"{label} must be an integer Unix timestamp")
         if since is not None and until is not None and since >= until:
-            raise MetaError("since debe ser anterior a until")
+            raise MetaError("since must precede until")
         if breakdown is not None:
             if not isinstance(breakdown, (list, tuple)) or not breakdown or len(breakdown) > 3:
-                raise MetaError("breakdown debe contener entre 1 y 3 valores")
+                raise MetaError("breakdown must contain between 1 and 3 values")
             if any(not isinstance(value, str) or not re.fullmatch(r"[a-z_]{1,64}", value) for value in breakdown):
-                raise MetaError("breakdown contiene un valor inválido")
+                raise MetaError("breakdown contains an invalid value")
         params = {"metric": ",".join(names), "limit": "100"}
         if period is not None:
             params["period"] = period
@@ -223,19 +223,19 @@ class MetaClient:
         result = self._pages(f"{target_id}/insights", params, max_pages)
         for row in result["data"]:
             if not isinstance(row.get("name"), str) or row["name"] not in names:
-                raise MetaError("respuesta de insights contiene una métrica no solicitada")
+                raise MetaError("insights response contains an unrequested metric")
             if not isinstance(row.get("values"), list) or any(not isinstance(value, dict) for value in row["values"]):
-                raise MetaError("respuesta de insights sin valores verificables")
+                raise MetaError("insights response lacks verifiable values")
         return {"target_id": target_id, "metrics": names, **result}
 
     def content_publishing_limit(self):
-        """Lee el límite de publicación del negocio (Instagram), sin escrituras."""
+        """Read business publishing limit (Instagram) without writes."""
         if self.platform is not Platform.INSTAGRAM:
             raise MetaError("publishing_limit.get solo aplica a Instagram")
         self.identity()
         payload = self.request("GET", f"{self.account_id}/content_publishing_limit")
         if not isinstance(payload, dict):
-            raise MetaError("respuesta de límite de publicación sin estructura válida")
+            raise MetaError("publishing limit response lacks valid structure")
         return payload
 
     def comments(self, target_id, max_pages=10):
@@ -245,29 +245,29 @@ class MetaClient:
 
     def reactions(self, target_id, max_pages=10):
         if self.platform is not Platform.FACEBOOK:
-            raise MetaError("reactions solo documentado para Facebook")
+            raise MetaError("reactions documented only for Facebook")
         self.content(target_id)
         return self.listing(target_id, "reactions", fields="id,name,type", max_pages=max_pages)
 
     def subscriptions(self):
         self.identity()
         if self.platform is not Platform.FACEBOOK or self.token_mode != "facebook_page":
-            raise MetaError("subscribed_apps implementado para Página con Page token; no activa Instagram Login ni mensajería")
+            raise MetaError("subscribed_apps is implemented for Page with Page token; does not enable Instagram Login or messaging")
         app_id = meta_id((self.brand.cuentas.get("facebook") or {}).get("app_id"))
         rows = self.listing(self.page_id, "subscribed_apps", fields="id,subscribed_fields")
         if not rows["complete"]:
             raise MetaError("suscripciones incompletas")
         matches = [r for r in rows["data"] if r.get("id") == app_id]
         if len(matches) > 1:
-            raise MetaError("suscripción ambigua")
+            raise MetaError("ambiguous subscription")
         fields = matches[0].get("subscribed_fields") if matches else []
         if not isinstance(fields, list) or any(not isinstance(f, str) for f in fields):
-            raise MetaError("campos de suscripción no verificables")
+            raise MetaError("subscription fields unverifiable")
         return {"id": self.page_id, "app_id": app_id, "subscribed_fields": sorted(fields)}
 
     def mentioned_comment(self, comment_id, media_id):
         if self.platform is not Platform.INSTAGRAM or self.token_mode != "facebook_user":
-            raise MetaError("mentions requiere Instagram Facebook Login con USER token y permisos de comentarios")
+            raise MetaError("mentions requires Instagram Facebook Login with USER token and comment permissions")
         self.identity()
         meta_id(comment_id)
         meta_id(media_id)
@@ -275,22 +275,22 @@ class MetaClient:
         mention = result.get("mentioned_comment")
         if (result.get("id") != self.account_id or not isinstance(mention, dict) or mention.get("id") != comment_id
                 or (mention.get("media") or {}).get("id") != media_id or not isinstance(mention.get("text"), str)):
-            raise MetaError("no se verificó la mención exacta a la cuenta seleccionada")
+            raise MetaError("exact mention of selected account was not verified")
         return {"id": comment_id, "media_id": media_id, "text": mention["text"]}
 
     def validate_action(self, edit):
         edit = validate_edit(edit)
         ig = self.platform is Platform.INSTAGRAM
         if edit.action in {"media-update", "media-delete", "mention-reply"} and not ig:
-            raise MetaError("acción exclusiva de Instagram")
+            raise MetaError("Instagram-only action")
         if ig and edit.action in {"profile-update", "post-update", "video-update", "post-delete", "video-delete", "like", "unlike", "schedule-reprogram", "schedule-cancel"}:
-            raise MetaError("acción no documentada para Instagram; no se elimina/recrea para editar")
+            raise MetaError("action undocumented for Instagram; content is not deleted/recreated for editing")
         self.identity(user_required=edit.action == "media-delete")
         if edit.action.startswith("subscription-"):
             if ig or self.token_mode != "facebook_page" or edit.target_id != self.page_id:
-                raise MetaError("suscripción exige la Página seleccionada y su Page token")
+                raise MetaError("subscription requires selected Page and its Page token")
             if edit.subscribed_fields is not None and set(edit.subscribed_fields) - {"feed"}:
-                raise MetaError("solo feed está habilitado; mensajes/leadgen/otros productos no se activan")
+                raise MetaError("only feed is enabled; messaging/leadgen/other products are not activated")
         return edit
 
     def snapshot(self, edit):
@@ -299,25 +299,25 @@ class MetaClient:
             return self.subscriptions()
         if edit.action == "mention-reply":
             if edit.target_id != self.account_id:
-                raise MetaError("la mención debe dirigirse a la cuenta Instagram seleccionada")
+                raise MetaError("mention must target selected Instagram account")
             return self.mentioned_comment(edit.comment_id, edit.media_id)
         if edit.action == "schedule-reprogram":
             content = self.content(edit.target_id, "post")
             if content.get("is_published"):
-                raise MetaError("no se puede reprogramar contenido publicado")
+                raise MetaError("published content cannot be rescheduled")
             if not isinstance(content.get("scheduled_publish_time"), int):
-                raise MetaError("la programación de publicación no se puede verificar")
+                raise MetaError("publication schedule cannot be verified")
             return content
         if edit.action == "schedule-cancel":
             content = self.content(edit.target_id, "post")
             if content.get("is_published"):
-                raise MetaError("no se puede cancelar publicación publicada")
+                raise MetaError("published content cannot be cancelled")
             if not isinstance(content.get("scheduled_publish_time"), int):
-                raise MetaError("la programación de publicación no se puede verificar")
+                raise MetaError("publication schedule cannot be verified")
             return content
         if edit.action == "profile-update":
             if edit.target_id != self.account_id:
-                raise MetaError("perfil de otra cuenta")
+                raise MetaError("profile belongs to another account")
             return self.profile(list(edit.patch))
         kind = "video" if edit.action.startswith("video-") else None
         content = self.content(edit.target_id, kind)
@@ -326,16 +326,16 @@ class MetaClient:
             rows = [r for r in result["data"] if r.get("id") == edit.comment_id]
             hidden = "is_hidden" if self.platform is Platform.FACEBOOK else "hidden"
             if len(rows) != 1 or type(rows[0].get(hidden)) is not bool:
-                raise MetaError("comentario/estado de moderación no verificado en el medio propio")
+                raise MetaError("comment/moderation status not verified on owned media")
             return {"id": edit.comment_id, "hidden": rows[0][hidden]}
         if edit.action in {"like", "unlike"}:
             result = self.listing(edit.target_id, "likes", fields="id")
             if not result["complete"]:
-                raise MetaError("likes incompletos; no se infiere ausencia")
+                raise MetaError("incomplete likes; absence not inferred")
             return {"id": edit.target_id, "liked_by_page": any(r.get("id") == self.page_id for r in result["data"])}
         if edit.patch:
             if set(edit.patch) - set(content):
-                raise MetaError("el recurso no devolvió todos los campos que se editarán")
+                raise MetaError("resource did not return all fields to be edited")
             return {"id": edit.target_id, **{k: content[k] for k in edit.patch}}
         return content
 
@@ -374,9 +374,9 @@ class MetaClient:
             try:
                 return {"id": meta_id(result.get("id")), "accepted": True}
             except MetaError:
-                raise MetaUncertain("réplica de mención sin ID; no repetir") from None
+                raise MetaUncertain("mention reply lacks ID; do not repeat") from None
         else:
-            raise MetaError("handler aún no implementado")
+            raise MetaError("handler not yet implemented")
         if result.get("success") is not True:
-            raise MetaUncertain("Meta no confirmó success=true; no se repetirá la escritura")
+            raise MetaUncertain("Meta did not confirm success=true; write will not be repeated")
         return {"success": True, "target_id": edit.target_id}

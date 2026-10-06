@@ -1,10 +1,4 @@
-"""Forma común de las métricas de las cuatro redes.
-
-Regla de oro: un campo que la red no da vale `None`, nunca cero. Un cero es
-un dato ("no tuvo ninguna visualización"); `None` es la ausencia de dato
-("esta red no lo mide, o no nos lo ha dado"). Confundirlos haría que el
-gestor de redes concluyera cosas falsas a partir de huecos.
-"""
+"""Common metrics across four platforms. Missing provider fields are None, never zero; zero is an observed value."""
 
 from __future__ import annotations
 
@@ -18,7 +12,7 @@ from socialctl.models import Platform
 
 
 class EstadoLectura(str, Enum):
-    """Cómo acabó la lectura de una red."""
+    """Outcome of a platform metrics read."""
 
     OK = "ok"
     ERROR = "error"
@@ -47,7 +41,7 @@ class Cuenta(BaseModel):
 
 
 class Audiencia(BaseModel):
-    """Reparto de la audiencia del canal. Hoy solo lo da YouTube."""
+    """Channel audience breakdown; currently supplied only by YouTube."""
 
     paises: dict[str, float] = Field(default_factory=dict)
     edades: dict[str, float] = Field(default_factory=dict)
@@ -61,14 +55,7 @@ class Pieza(BaseModel):
     tipo: TipoPieza
     slug: str | None = None
     duracion_seg: int | None = None
-    """Duración real de la pieza en segundos, cuando la red la da.
-
-    Es un dato **técnico**, no editorial: YouTube lo devuelve en
-    `contentDetails.duration` y no tiene ningún sentido que el gestor de
-    redes se lo pregunte al usuario cuando la API ya lo ha dado. Las redes
-    que no lo dan lo dejan en `None`, y solo entonces puede rellenarlo el
-    gestor a mano en `piezas.yml` (ver `socialctl/metricas/piezas.py`).
-    """
+    """Actual technical media duration in seconds when provider supplies it; editorial fallback may be entered only when absent."""
     acumulado: Metricas = Field(default_factory=Metricas)
     # `ultimos_28_dias` vivía aquí y se ha quitado: ningún lector lo
     # rellenaba, nadie lo leía (ni `resumen.md`, ni `piezas.yml`, ni el

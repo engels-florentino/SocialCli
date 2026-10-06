@@ -187,7 +187,7 @@ def test_update_rejects_a_stale_historical_occurrence_of_reused_id(tmp_path):
     stale = historical.model_copy(deep=True)
     stale.status = "approved"
 
-    with pytest.raises(ScheduleError, match="obsoleta"):
+    with pytest.raises(ScheduleError, match='obsolete'):
         store.update(stale)
 
     assert store.get(current.id).content_hash == "v2:current"
@@ -203,7 +203,7 @@ def test_executor_lock_rejects_a_second_process_for_the_same_brand(tmp_path):
     process.start()
     try:
         assert ready.get(timeout=5) == "locked"
-        with pytest.raises(ScheduleError, match="ya hay otro ejecutor"):
+        with pytest.raises(ScheduleError, match='another executor'):
             with ScheduleStore(brand_root).executor_lock():
                 pass
     finally:
@@ -290,7 +290,7 @@ def test_save_retry_resyncs_parent_after_new_directory_sync_failure(
     monkeypatch.setattr(store, "_sync_directory", fail_first_parent_sync)
     entries = [_entry("clip/facebook", "2026-09-15T14:00:00-04:00")]
 
-    with pytest.raises(ScheduleError, match="guardar"):
+    with pytest.raises(ScheduleError, match='save'):
         store.save(entries)
     assert store.root.is_dir()
     assert brand_root not in successful
@@ -323,9 +323,9 @@ def test_cancel_and_reschedule_cannot_overwrite_executor_state(
         )
         assert transitioned is not None
 
-    with pytest.raises(ScheduleError, match=f"estado actual {executor_status}"):
+    with pytest.raises(ScheduleError, match=f'current state {executor_status}'):
         store.cancel(entry.id, datetime.now(timezone.utc))
-    with pytest.raises(ScheduleError, match=f"estado actual {executor_status}"):
+    with pytest.raises(ScheduleError, match=f'current state {executor_status}'):
         store.reschedule(
             entry.id,
             parse_scheduled_at("2030-09-15T14:00:00-04:00"),
@@ -347,7 +347,7 @@ def test_recover_stale_holds_uncertain_running_entry_for_manual_review(tmp_path)
 
     recovered = store.get(entry.id)
     assert recovered.status == "manual_review"
-    assert "resultado remoto" in (recovered.last_error or "")
+    assert 'remote result' in (recovered.last_error or "")
     assert store.due() == []
 
 
@@ -401,9 +401,9 @@ def test_legacy_matched_hash_is_held_because_it_did_not_cover_bytes_or_account(t
     reason = approval_review_reason(stored, post, brand, Platform.FACEBOOK)
 
     assert reason is not None
-    assert "antigua" in reason
+    assert 'legacy' in reason
     assert "bytes" in reason
-    assert "cuenta" in reason
+    assert 'account' in reason
 
 
 def test_legacy_mismatch_and_missing_hash_are_never_silently_approved(tmp_path):
@@ -417,8 +417,8 @@ def test_legacy_mismatch_and_missing_hash_are_never_silently_approved(tmp_path):
     mismatch = approval_review_reason(old_hash, post, brand, Platform.FACEBOOK)
     missing = approval_review_reason(None, post, brand, Platform.FACEBOOK)
 
-    assert mismatch is not None and "no coincide" in mismatch
-    assert missing is not None and "sin huella" in missing
+    assert mismatch is not None and 'does not match' in mismatch
+    assert missing is not None and 'no approval fingerprint' in missing
 
 
 def test_matching_v2_hash_is_the_only_approval_that_can_run(tmp_path):

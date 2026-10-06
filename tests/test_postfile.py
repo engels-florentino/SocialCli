@@ -335,7 +335,7 @@ def test_yaml_invalido_da_error_con_mensaje_claro(brand):
 def test_raiz_que_no_es_mapping_da_error_claro(brand):
     slug = _escribir_texto(brand, "- solo\n- una\n- lista\n")
 
-    with pytest.raises(PostInvalido, match="en la raíz"):
+    with pytest.raises(PostInvalido, match='at the root'):
         cargar_post(brand, slug)
 
 
@@ -354,7 +354,7 @@ def test_platforms_ausente_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "falta 'platforms'" in str(exc.value)
+    assert "'platforms' is missing" in str(exc.value)
 
 
 def test_platforms_vacio_falla_con_mensaje_claro(brand):
@@ -362,8 +362,8 @@ def test_platforms_vacio_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "'platforms' en" in str(exc.value)
-    assert "vacío" in str(exc.value)
+    assert "'platforms' in" in str(exc.value)
+    assert 'empty' in str(exc.value)
 
 
 def test_bloque_de_red_que_no_es_mapping_falla_con_mensaje_claro(brand):
@@ -374,7 +374,7 @@ def test_bloque_de_red_que_no_es_mapping_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "el bloque de 'tiktok'" in str(exc.value)
+    assert "the block for 'tiktok'" in str(exc.value)
 
 
 def test_campaign_desconocida_falla_con_mensaje_claro(brand):
@@ -385,7 +385,7 @@ def test_campaign_desconocida_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "campaña desconocida" in str(exc.value)
+    assert 'unknown campaign' in str(exc.value)
 
 
 def test_campaign_ausente_falla_con_mensaje_claro(brand):
@@ -395,7 +395,7 @@ def test_campaign_ausente_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "falta 'campaign'" in str(exc.value)
+    assert "'campaign' is missing" in str(exc.value)
     assert "clip-vertical" in str(exc.value)
 
 
@@ -409,8 +409,8 @@ def test_hashtags_como_cadena_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "'hashtags' de 'tiktok'" in str(exc.value)
-    assert "lista" in str(exc.value)
+    assert "'hashtags' for 'tiktok'" in str(exc.value)
+    assert 'list' in str(exc.value)
 
 
 def test_media_como_cadena_falla_con_mensaje_claro(brand):
@@ -421,8 +421,8 @@ def test_media_como_cadena_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "'media' de 'tiktok'" in str(exc.value)
-    assert "lista" in str(exc.value)
+    assert "'media' for 'tiktok'" in str(exc.value)
+    assert 'list' in str(exc.value)
 
 
 def test_body_ausente_falla_con_mensaje_claro(brand):
@@ -433,7 +433,7 @@ def test_body_ausente_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "'body' de texto" in str(exc.value)
+    assert "string 'body'" in str(exc.value)
 
 
 def test_body_no_textual_falla_con_mensaje_claro(brand):
@@ -444,7 +444,7 @@ def test_body_no_textual_falla_con_mensaje_claro(brand):
 
     with pytest.raises(PostInvalido) as exc:
         cargar_post(brand, slug)
-    assert "'body' de texto" in str(exc.value)
+    assert "string 'body'" in str(exc.value)
 
 
 # --- Ida y vuelta: campos opcionales y listas vacías ---
@@ -631,7 +631,7 @@ def test_cargar_post_ignora_el_slug_declarado_dentro_del_yaml(brand):
         "platforms": {"tiktok": {"body": "hola", "media": ["clip.mp4"]}},
     })
 
-    with pytest.warns(UserWarning, match=r"no coincide con el nombre real") as warnings:
+    with pytest.warns(UserWarning, match='does not match the actual directory name') as warnings:
         post = cargar_post(brand, slug)
 
     assert post.slug == slug
@@ -648,7 +648,7 @@ def test_cargar_post_avisa_si_el_slug_del_fichero_no_coincide_con_la_carpeta(bra
         "platforms": {"tiktok": {"body": "hola", "media": ["clip.mp4"]}},
     })
 
-    with pytest.warns(UserWarning, match="no coincide"):
+    with pytest.warns(UserWarning, match='does not match'):
         post = cargar_post(brand, slug)
 
     assert post.slug == slug
@@ -676,7 +676,7 @@ def test_guardar_post_deja_un_comentario_explicando_que_el_slug_es_informativo(b
     fichero = guardar_post(brand, post)
 
     contenido = fichero.read_text(encoding="utf-8")
-    assert "informativo" in contenido
+    assert 'informational' in contenido
     # El comentario no debe romper la carga posterior del fichero.
     recargado = cargar_post(brand, slug)
     assert recargado.slug == slug

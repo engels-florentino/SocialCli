@@ -196,7 +196,7 @@ def test_facebook_own_comment_mutations_bind_before_state(tmp_path, action):
 
 def test_instagram_edit_explicitly_unavailable_and_foreign_delete_denied(tmp_path):
     mod, _, graph, client, store = service(tmp_path, "instagram")
-    with pytest.raises(mod.CommentError, match="Instagram.*editar"):
+    with pytest.raises(mod.CommentError, match='Instagram.*editing'):
         mod.prepare_comment(client, store, media_id="789", action="edit", comment_id="800", text="new")
     graph.comments["800"] = graph.row("800", "old", author="999")
     with pytest.raises(mod.CommentError):
@@ -258,7 +258,7 @@ def test_apply_revalidates_unavailable_instagram_edit_even_for_handwritten_chang
     change.before["comment"] = client.find_comment("789", "800", own=True)
     change.fingerprint = mod.fingerprint(change)
     store.save(change)
-    with pytest.raises(mod.CommentError, match="Instagram.*editar"):
+    with pytest.raises(mod.CommentError, match='Instagram.*editing'):
         mod.apply_comment(client, store, change.id, change.fingerprint)
     assert not graph.writes
 
@@ -266,7 +266,7 @@ def test_apply_revalidates_unavailable_instagram_edit_even_for_handwritten_chang
 def test_missing_author_id_cannot_verify_own_instagram_comment(tmp_path):
     mod, _, graph, client, store = service(tmp_path, "instagram")
     graph.comments["800"] = {"id": "800", "text": "old", "from": {"username": "Example"}}
-    with pytest.raises(mod.CommentError, match="autor propio"):
+    with pytest.raises(mod.CommentError, match='own author'):
         mod.prepare_comment(client, store, media_id="789", action="delete", comment_id="800")
 
 

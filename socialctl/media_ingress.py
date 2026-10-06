@@ -36,7 +36,7 @@ def policy_for(brand) -> dict:
         if (brand.cuentas.get("instagram") or {}).get("media_url_base") != policy["public_url_base"]:
             raise ValueError()
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise MediaRegistryError("política de media del servidor ausente o inválida") from exc
+        raise MediaRegistryError("server media policy is missing or invalid") from exc
     return policy
 
 
@@ -45,7 +45,7 @@ def read_exact(stream, count: int) -> bytes:
     while len(result) < count:
         chunk = stream.read(count - len(result))
         if not chunk:
-            raise MediaRegistryError("transferencia truncada")
+            raise MediaRegistryError("truncated transfer")
         result.extend(chunk)
     return bytes(result)
 
@@ -54,7 +54,7 @@ def write_transfer(brand, ident: str, stream) -> dict:
     manifest, post = load_bundle(brand, ident)
     header = canonical(manifest)
     if len(header) > MAX_HEADER:
-        raise MediaRegistryError("manifest demasiado grande")
+        raise MediaRegistryError("manifest is too large")
     # Revalidate all selected local assets before sending even the header.
     for item in manifest["assets"]:
         check_file(relative(brand.raiz / "media", item["relative_path"]), item)
@@ -69,32 +69,32 @@ def write_transfer(brand, ident: str, stream) -> dict:
 
 def _post_matches(manifest: dict, raw: bytes) -> None:
     if len(raw) != manifest["post_size"] or digest(raw) != manifest["post_sha256"]:
-        raise MediaRegistryError("post transferido alterado")
+        raise MediaRegistryError("transferred post was modified")
     referenced = {name: set() for name in (a["relative_path"] for a in manifest["assets"])}
     for platform, paths in post_media(raw).items():
         for path in paths:
             if path not in referenced:
-                raise MediaRegistryError("post referencia media fuera del manifest")
+                raise MediaRegistryError("post references media outside the manifest")
             referenced[path].add(manifest["slug"] + "/" + platform)
     if any(referenced[item["relative_path"]] != set(item["uses"]) for item in manifest["assets"]):
-        raise MediaRegistryError("usos del manifest no coinciden con el post")
+        raise MediaRegistryError("manifest usages do not match the post")
 
 
 def _inactive_draft(brand, slug: str, store: ScheduleStore) -> None:
     entries = [entry for entry in store.load() if entry.slug == slug]
     if any(entry.status == "published" or entry.platform_id for entry in entries):
-        raise MediaRegistryError("post con evidencia de publicación en la cola; usa un slug nuevo")
+        raise MediaRegistryError("post has publication evidence in the queue; use a new slug")
     if any(e.status not in {"cancelled", "error"} for e in entries):
-        raise MediaRegistryError("post protegido por cola activa; cancela/reconcilia y prepara de nuevo antes de editar")
+        raise MediaRegistryError("post is protected by an active queue; cancel/reconcile and prepare again before editing")
     if relative(brand.raiz, f".socialctl/media-publication-started/{slug}.json").exists():
-        raise MediaRegistryError("post con inicio de publicación registrado; usa un slug nuevo")
+        raise MediaRegistryError("post has a recorded publication start; use a new slug")
     # Published or uncertain media is not an inactive draft. Fail closed on broken journals.
     from socialctl.publication_steps import retry_media_blockers
     from socialctl.models import Platform
     if retry_media_blockers(brand, slug, list(Platform)):
-        raise MediaRegistryError("post con publicación previa o incierta; requiere reconciliación")
+        raise MediaRegistryError("post has a previous or uncertain publication; reconciliation required")
     if relative(brand.raiz, f"posts/{slug}/resultado.json").exists():
-        raise MediaRegistryError("post con resultado de publicación; no es un borrador inactivo")
+        raise MediaRegistryError("post has a publication result; it is not an inactive draft")
 
 
 def _update_preview(brand, manifest, existing, proposed, store):
@@ -102,7 +102,7 @@ def _update_preview(brand, manifest, existing, proposed, store):
     fingerprint = digest(canonical(dict(brand=brand.nombre, bundle=manifest["digest"],
                                         old_sha256=digest(existing), new_sha256=digest(proposed))))
     # Complete before/after text, without context-line truncation.
-    preview = "POST ACTUAL\n" + existing.decode("utf-8") + "\nPOST PROPUESTO\n" + proposed.decode("utf-8")
+    preview = "CURRENT POST\n" + existing.decode("utf-8") + "\nPROPOSED POST\n" + proposed.decode("utf-8")
     return dict(protocol="socialctl.media-update.v1", bundle=manifest["digest"],
                 preview=preview, update_digest=fingerprint)
 
@@ -110,10 +110,10 @@ def _update_preview(brand, manifest, existing, proposed, store):
 def receive(brand, stream, *, preview_update=False, update_digest=None) -> dict:
     policy = policy_for(brand)
     if preview_update and update_digest:
-        raise MediaRegistryError("preview no admite aprobación de actualización")
+        raise MediaRegistryError("preview does not support update approval")
     length = struct.unpack("!I", read_exact(stream, 4))[0]
     if not 0 < length <= MAX_HEADER:
-        raise MediaRegistryError("cabecera excede límite")
+        raise MediaRegistryError("header exceeds the limit")
     manifest = validate_manifest(brand, parse_json(read_exact(stream, length)))
     post = read_exact(stream, manifest["post_size"])
     _post_matches(manifest, post)
@@ -137,7 +137,7 @@ def receive(brand, stream, *, preview_update=False, update_digest=None) -> dict:
                 os.fsync(handle.fileno())
             check_file(target, item)
         if stream.read(1):
-            raise MediaRegistryError("bytes o frames adicionales no admitidos")
+            raise MediaRegistryError("extra bytes or frames are not supported")
         # No canonical asset path exists until every frame and EOF are verified.
         store = ScheduleStore(brand.raiz)
         for path in (store.executor_lock_path, store.mutation_lock_path, store.path, store.database_path):
@@ -145,7 +145,7 @@ def receive(brand, stream, *, preview_update=False, update_digest=None) -> dict:
         with store.executor_lock(), publication_gate(brand, manifest["slug"]), store._mutation_lock():
             # Recheck server policy and existing bytes under authoritative locks.
             if policy_for(brand) != policy:
-                raise MediaRegistryError("política modificada durante transferencia")
+                raise MediaRegistryError("policy changed during transfer")
             if bundle_path(brand, manifest["digest"]).exists():
                 load_bundle(brand, manifest["digest"])
             destination = relative(brand.raiz, f"posts/{manifest['slug']}/post.yml")
@@ -158,9 +158,9 @@ def receive(brand, stream, *, preview_update=False, update_digest=None) -> dict:
                 if preview_update:
                     return preview
                 if update_digest != preview["update_digest"]:
-                    raise MediaRegistryError("post existente difiere; exige --preview-update y su --update-digest")
+                    raise MediaRegistryError("existing post differs; requires --preview-update and its --update-digest")
             elif preview_update or update_digest:
-                raise MediaRegistryError("no existe conflicto de texto para actualizar")
+                raise MediaRegistryError("there is no text conflict to update")
             for item in manifest["assets"]:
                 for root in (Path(policy["private_root"]), Path(policy["public_root"])):
                     target = relative(root, item["relative_path"])
@@ -172,7 +172,7 @@ def receive(brand, stream, *, preview_update=False, update_digest=None) -> dict:
             if conflict:
                 backup = relative(brand.raiz, f".socialctl/media-post-backups/{manifest['slug']}/{digest(existing)}.yml")
                 if backup.exists() and backup.read_bytes() != existing:
-                    raise MediaRegistryError("backup existente alterado")
+                    raise MediaRegistryError("existing backup was modified")
                 if not backup.exists():
                     durable_write(backup, existing)
             if existing != post:
@@ -198,7 +198,7 @@ def verify(brand, ident: str, *, public=False, client=None) -> dict:
             hosted = relative(Path(policy["public_root"]), item["relative_path"])
             check_file(hosted, item)
             if hosted.stat().st_mode & 0o444 != 0o444:
-                raise MediaRegistryError("copia pública no es legible")
+                raise MediaRegistryError("public copy is unreadable")
             if public:
                 result["attestations"].append(attest_public_media(
                     relative(brand.raiz / "media", item["relative_path"]),
@@ -206,6 +206,6 @@ def verify(brand, ident: str, *, public=False, client=None) -> dict:
         result["hosted_ready"] = True
         result["public_ready"] = public
     elif public:
-        raise MediaRegistryError("verificación pública exige política del servidor")
+        raise MediaRegistryError("public verification requires a server policy")
     write_json(relative(brand.raiz, f".socialctl/media-readiness/{ident}.json"), result)
     return result

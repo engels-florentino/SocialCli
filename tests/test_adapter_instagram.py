@@ -309,7 +309,7 @@ def test_contenedor_en_error_no_publica(brand, post):
     assert not publicar.called
     assert resultado.status is PostStatus.ERROR
     assert sondeo.call_count == 1
-    assert "ha quedado en estado ERROR" in resultado.error
+    assert 'is in ERROR status' in resultado.error
 
 
 @respx.mock
@@ -336,7 +336,7 @@ def test_contenedor_expirado_corta_de_inmediato_en_vez_de_agotar_intentos(brand,
     assert resultado.status is PostStatus.ERROR
     assert sondeo.call_count == 1
     assert "EXPIRED" in resultado.error
-    assert "no terminó de procesarse" not in resultado.error
+    assert "did not finish processing" not in resultado.error
 
 
 @respx.mock
@@ -353,7 +353,7 @@ def test_contenedor_que_nunca_termina_da_error(brand, post):
         resultado = InstagramAdapter(espera_s=0, intentos=3).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "no terminó de procesarse" in resultado.error
+    assert "did not finish processing" in resultado.error
 
 
 @respx.mock
@@ -373,7 +373,7 @@ def test_status_code_desconocido_se_sigue_sondeando_hasta_agotar_intentos(brand,
 
     assert resultado.status is PostStatus.ERROR
     assert sondeo.call_count == 3
-    assert "no terminó de procesarse" in resultado.error
+    assert "did not finish processing" in resultado.error
 
 
 @respx.mock
@@ -409,7 +409,7 @@ def test_sondeo_con_error_de_conexion_no_lanza_excepcion(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "conectar" in resultado.error.lower()
+    assert "connect" in resultado.error.lower()
 
 
 @respx.mock
@@ -427,7 +427,7 @@ def test_sondeo_con_timeout_no_lanza_excepcion_y_da_mensaje_especifico(brand, po
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "tiempo de espera" in resultado.error.lower()
+    assert "timed out" in resultado.error.lower()
 
 
 @respx.mock
@@ -440,7 +440,7 @@ def test_sondeo_con_cuerpo_no_json_no_lanza_excepcion(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "cuerpo que no es json válido" in resultado.error.lower()
+    assert 'invalid json response' in resultado.error.lower()
 
 
 @respx.mock
@@ -457,7 +457,7 @@ def test_sondeo_sin_status_code_no_lanza_excepcion(brand, post):
     # suelta "status_code" también podría colarse en un mensaje genérico
     # que simplemente listara el campo esperado, así que se comprueba la
     # frase entera que solo emite ese `except` en concreto.
-    assert "respondió sin status_code al consultar el contenedor" in resultado.error.lower()
+    assert "returned no status_code" in resultado.error.lower()
 
 
 @respx.mock
@@ -491,7 +491,7 @@ def test_aborta_si_la_media_no_esta_subida_al_host(brand, post):
     assert not crear.called
     assert resultado.status is PostStatus.ERROR
     assert URL_CLIP in resultado.error
-    assert "no responde" in resultado.error
+    assert "did not return HTTP 200" in resultado.error
 
 
 @respx.mock
@@ -502,7 +502,7 @@ def test_fallo_de_conexion_comprobando_la_media_no_lanza_excepcion(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "accesible" in resultado.error.lower()
+    assert "accessible" in resultado.error.lower()
 
 
 @respx.mock
@@ -516,7 +516,7 @@ def test_timeout_comprobando_la_media_no_lanza_excepcion_y_da_mensaje_especifico
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "tiempo de espera" in resultado.error.lower()
+    assert "timed out" in resultado.error.lower()
 
 
 def test_media_url_base_con_caracter_invalido_produce_error_manejado(tmp_path, post):
@@ -540,7 +540,7 @@ def test_media_url_base_con_caracter_invalido_produce_error_manejado(tmp_path, p
 
     assert resultado.status is PostStatus.ERROR
     assert "url" in resultado.error.lower()
-    assert "no válida" in resultado.error.lower()
+    assert "invalid" in resultado.error.lower()
 
 
 @respx.mock
@@ -567,7 +567,7 @@ def test_ig_user_id_con_caracter_invalido_produce_error_manejado(tmp_path, post)
 
     assert resultado.status is PostStatus.ERROR
     assert "url" in resultado.error.lower()
-    assert "no válida" in resultado.error.lower()
+    assert "invalid" in resultado.error.lower()
 
 
 # --- Creación del contenedor: errores de red / formato --------------------
@@ -582,7 +582,7 @@ def test_fallo_de_conexion_creando_el_contenedor_no_lanza_excepcion(brand, post)
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "conectar" in resultado.error.lower()
+    assert "connect" in resultado.error.lower()
 
 
 @respx.mock
@@ -594,7 +594,7 @@ def test_timeout_creando_el_contenedor_no_lanza_excepcion_y_da_mensaje_especific
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "tiempo de espera" in resultado.error.lower()
+    assert "timed out" in resultado.error.lower()
 
 
 @respx.mock
@@ -620,7 +620,7 @@ def test_creacion_con_cuerpo_no_json_no_lanza_excepcion(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "cuerpo que no es json válido" in resultado.error.lower()
+    assert 'invalid json response' in resultado.error.lower()
 
 
 @respx.mock
@@ -637,7 +637,7 @@ def test_creacion_sin_id_no_lanza_excepcion(brand, post):
     # accidente en "ha ocurr-id-o", el mensaje del resguardo genérico de
     # `publish()`, así que un test con solo "id" seguía en verde aunque se
     # eliminara el `except KeyError` real.
-    assert "respondió sin el id del contenedor de media" in resultado.error.lower()
+    assert 'returned no media container id' in resultado.error.lower()
 
 
 @respx.mock
@@ -667,9 +667,9 @@ def test_contenedor_id_no_textual_da_error_claro(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "identificador de contenedor de media inesperado" in resultado.error
+    assert 'unexpected media container ID' in resultado.error
     assert "ValidationError" not in resultado.error
-    assert "ha ocurrido un error inesperado en Instagram" not in resultado.error
+    assert 'ha ocurrido un error inesperado in Instagram' not in resultado.error
 
 
 # --- Publicación final: errores de red / formato ---------------------------
@@ -706,7 +706,7 @@ def test_fallo_de_conexion_publicando_no_lanza_excepcion(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "conectar" in resultado.error.lower()
+    assert "connect" in resultado.error.lower()
 
 
 @respx.mock
@@ -722,7 +722,7 @@ def test_timeout_publicando_no_lanza_excepcion_y_da_mensaje_especifico(brand, po
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "tiempo de espera" in resultado.error.lower()
+    assert "timed out" in resultado.error.lower()
 
 
 @respx.mock
@@ -740,7 +740,7 @@ def test_publicacion_con_cuerpo_no_json_no_lanza_excepcion(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "cuerpo que no es json válido" in resultado.error.lower()
+    assert 'invalid json response' in resultado.error.lower()
 
 
 @respx.mock
@@ -756,7 +756,7 @@ def test_publicacion_sin_id_no_lanza_excepcion(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "respondió sin el id de la publicación" in resultado.error.lower()
+    assert 'returned no post id' in resultado.error.lower()
 
 
 @respx.mock
@@ -808,18 +808,18 @@ def test_post_id_no_textual_da_error_claro(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "identificador de publicación inesperado" in resultado.error
+    assert 'unexpected post ID' in resultado.error
     # Frase distintiva que advierte de que la publicación probablemente ya
     # existe: ni aparece en el resguardo genérico
     # ("ha ocurrido un error inesperado en Instagram") ni en el nombre de
     # ninguna excepción implicada (ValidationError, AllMockedAssertionError).
-    assert "probablemente ya está hecha en Instagram" in resultado.error
+    assert 'probably published on Instagram' in resultado.error
     # Advertencia explícita de que reintentar puede duplicar la publicación:
     # tampoco aparece en el resguardo genérico ni en esos nombres de excepción.
-    assert "puede duplicarla" in resultado.error
-    assert "Comprueba la cuenta antes de volver a publicar" in resultado.error
+    assert "could duplicate it" in resultado.error
+    assert 'Check the account before publishing again' in resultado.error
     assert "ValidationError" not in resultado.error
-    assert "ha ocurrido un error inesperado en Instagram" not in resultado.error
+    assert 'ha ocurrido un error inesperado in Instagram' not in resultado.error
     # El campo estructurado que `retry` consulta para negarse a reintentar
     # esta red en automático (hallazgo de revisión: antes `retry` solo
     # miraba si la palabra "duplicar" aparecía en `error`, lo que un
@@ -867,7 +867,7 @@ def test_mensaje_de_error_con_message_no_textual_da_mensaje_util(brand, post):
     # dispararía sin el arreglo.
     assert "HTTP 400" in resultado.error
     assert "12345" in resultado.error
-    assert "ha ocurrido un error inesperado en Instagram" not in resultado.error
+    assert 'ha ocurrido un error inesperado in Instagram' not in resultado.error
     assert "ValidationError" not in resultado.error
 
 
@@ -1106,7 +1106,7 @@ def test_sin_media_no_lanza_excepcion(brand, tmp_path):
         resultado = InstagramAdapter(espera_s=0).publish(post_sin_media, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "no hay ninguna imagen o vídeo" in resultado.error.lower()
+    assert 'no image or video' in resultado.error.lower()
 
 
 def test_varios_archivos_fallan_antes_de_auth_o_http(brand, post):
@@ -1124,7 +1124,7 @@ def test_varios_archivos_fallan_antes_de_auth_o_http(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post_con_dos, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "1 archivo" in resultado.error
+    assert '1 file' in resultado.error
     assert requests == []
 
 
@@ -1392,7 +1392,7 @@ def test_timeout_publicando_marca_riesgo_duplicado(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "tiempo de espera" in resultado.error.lower()
+    assert "timed out" in resultado.error.lower()
     assert resultado.riesgo_duplicado is True
 
 
@@ -1409,7 +1409,7 @@ def test_fallo_de_conexion_publicando_marca_riesgo_duplicado(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "conectar" in resultado.error.lower()
+    assert "connect" in resultado.error.lower()
     assert resultado.riesgo_duplicado is True
 
 
@@ -1428,7 +1428,7 @@ def test_publicacion_con_cuerpo_no_json_marca_riesgo_duplicado(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "cuerpo que no es json válido" in resultado.error.lower()
+    assert 'invalid json response' in resultado.error.lower()
     assert resultado.riesgo_duplicado is True
 
 
@@ -1445,7 +1445,7 @@ def test_publicacion_sin_id_marca_riesgo_duplicado(brand, post):
         resultado = InstagramAdapter(espera_s=0).publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "respondió sin el id de la publicación" in resultado.error.lower()
+    assert 'returned no post id' in resultado.error.lower()
     assert resultado.riesgo_duplicado is True
 
 

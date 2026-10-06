@@ -1,9 +1,4 @@
-"""Cola local, persistente e idempotente de publicaciones programadas.
-
-La cola no guarda secretos ni copia media: solo conserva la referencia al
-post, la red, el instante y el estado de ejecución. El contenido sigue
-viviendo en ``post.yml`` y los resultados en ``resultado.json``.
-"""
+"""Local persistent and idempotent scheduling queue."""
 
 from __future__ import annotations
 
@@ -33,7 +28,7 @@ _REUSABLE_HISTORY_STATUSES = {"cancelled", "published", "error"}
 
 
 class ScheduleError(ValueError):
-    """Error legible de formato o consistencia de la cola."""
+    """A readable queue format or consistency error."""
 
 
 class ScheduleEntry(BaseModel):
@@ -57,7 +52,7 @@ class ScheduleEntry(BaseModel):
     @classmethod
     def validate_datetime(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
-            raise ScheduleError("la fecha debe incluir zona horaria, por ejemplo -04:00")
+            raise ScheduleError("date must include a timezone, for example -04:00")
         return value
 
 
@@ -73,7 +68,7 @@ def tombstone_identity(entry: ScheduleEntry) -> tuple:
 
 
 class ScheduleStore:
-    """Persistencia atómica de la cola de una marca."""
+    """Atomic persistence for a brand's queue."""
 
     def __init__(self, brand_root: Path, *, backend: str | None = None) -> None:
         self.root = brand_root / ".socialctl"
@@ -82,7 +77,7 @@ class ScheduleStore:
         self.executor_lock_path = self.root / "executor.lock"
         self.database_path = self.root / "schedules.sqlite3"
         if backend not in (None, "json", "sqlite"):
-            raise ScheduleError("backend debe ser json o sqlite")
+            raise ScheduleError("backend must be json or sqlite")
         if backend == "sqlite" and not self.database_path.exists():
             with self._mutation_lock():
                 if not self.database_path.exists():
@@ -106,17 +101,17 @@ class ScheduleStore:
             try:
                 return [ScheduleEntry.model_validate(item) for item in schedule_sqlite.load(self.database_path)]
             except (OSError, ValueError, sqlite3.Error) as exc:
-                raise ScheduleError(f"no se pudo leer SQLite: {exc}") from exc
+                raise ScheduleError(f"could not read SQLite: {exc}") from exc
         if not self.path.exists():
             return []
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             entries = data.get("entries", []) if isinstance(data, dict) else data
             if not isinstance(entries, list):
-                raise ScheduleError("la cola no contiene una lista de entradas")
+                raise ScheduleError("queue does not contain a list of entries")
             return [ScheduleEntry.model_validate(item) for item in entries]
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
-            raise ScheduleError(f"no se pudo leer la cola {self.path}: {exc}") from exc
+            raise ScheduleError(f"could not read the queue {self.path}: {exc}") from exc
 
     def save(self, entries: list[ScheduleEntry]) -> None:
         with self._mutation_lock():
@@ -130,7 +125,7 @@ class ScheduleStore:
                 self._sync_directory(self.root)
                 return
             except (OSError, ValueError, sqlite3.Error) as exc:
-                raise ScheduleError(f"no se pudo guardar SQLite: {exc}") from exc
+                raise ScheduleError(f"could not save SQLite: {exc}") from exc
         payload = {
             "version": 1,
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -159,15 +154,10 @@ class ScheduleStore:
                     os.unlink(tmp_name)
                 except OSError:
                     pass
-            raise ScheduleError(f"no se pudo guardar la cola {self.path}: {exc}") from exc
+            raise ScheduleError(f"could not save the queue {self.path}: {exc}") from exc
 
     def _ensure_root(self) -> None:
-        """Crea el directorio de cola y hace durable su entrada de padre.
-
-        Se sincroniza el padre en cada guardado, incluso si ``.socialctl`` ya
-        existe: un intento previo pudo crear el directorio y fallar justo en
-        ese fsync, de modo que comprobar solo ``exists()`` perdería el retry.
-        """
+        """Create the queue directory and durably record its parent entry."""
         self.root.mkdir(parents=True, exist_ok=True)
         self._sync_directory(self.root.parent)
 
@@ -196,13 +186,13 @@ class ScheduleStore:
             entries = self._load_unlocked()
             for old in entries:
                 if old.id == entry.id and old.status not in _REUSABLE_HISTORY_STATUSES:
-                    raise ScheduleError(f"ya existe una programación pendiente con id {entry.id}")
+                    raise ScheduleError(f"a pending schedule already exists with ID {entry.id}")
             entries.append(entry)
             entries.sort(key=lambda item: item.scheduled_at)
             self._save_unlocked(entries)
 
     def add_many(self, new_entries: list[ScheduleEntry]) -> None:
-        """Añade un lote de forma atómica: o entran todas o ninguna."""
+        """Add a batch atomically: all entries or none."""
         with self._mutation_lock():
             entries = self._load_unlocked()
             ids = {
@@ -212,10 +202,10 @@ class ScheduleStore:
             }
             nuevos = [entry.id for entry in new_entries]
             if len(set(nuevos)) != len(nuevos):
-                raise ScheduleError("el lote contiene identificadores repetidos")
+                raise ScheduleError("batch contains duplicate identifiers")
             repetidos = ids.intersection(nuevos)
             if repetidos:
-                raise ScheduleError(f"ya existe una programación pendiente con id {sorted(repetidos)[0]}")
+                raise ScheduleError(f"a pending schedule already exists with ID {sorted(repetidos)[0]}")
             entries.extend(new_entries)
             entries.sort(key=lambda item: item.scheduled_at)
             self._save_unlocked(entries)
@@ -226,7 +216,7 @@ class ScheduleStore:
             index = self._current_index(entries, entry.id)
             if entries[index].created_at != entry.created_at:
                 raise ScheduleError(
-                    f"la programación {entry.id} es una ocurrencia histórica obsoleta"
+                    f"schedule {entry.id} is an obsolete historical occurrence"
                 )
             entries[index] = entry
             self._save_unlocked(entries)
@@ -247,7 +237,7 @@ class ScheduleStore:
 
     def claim_due(self, entry_id: str, moment: datetime, *,
                   expected: ScheduleEntry | None = None) -> ScheduleEntry | None:
-        """Pasa una entrada vencida de approved a running de forma atómica."""
+        """Atomically move a due approved entry to running."""
         with self._mutation_lock():
             entries = self._load_unlocked()
             entry = entries[self._current_index(entries, entry_id)]
@@ -268,13 +258,13 @@ class ScheduleStore:
             return entry.model_copy(deep=True)
 
     def cancel(self, entry_id: str, moment: datetime) -> ScheduleEntry:
-        """Cancela solo si la entrada sigue en un estado cancelable."""
+        """Cancel only while the entry remains in a cancelable state."""
         with self._mutation_lock():
             entries = self._load_unlocked()
             entry = entries[self._current_index(entries, entry_id)]
             if entry.status not in {"approved", "error"}:
                 raise ScheduleError(
-                    f"no se puede cancelar {entry_id}: estado actual {entry.status}"
+                    f"cannot cancel {entry_id}: current state {entry.status}"
                 )
             entry.status = "cancelled"
             entry.updated_at = moment
@@ -284,13 +274,13 @@ class ScheduleStore:
     def reschedule(
         self, entry_id: str, scheduled_at: datetime, moment: datetime
     ) -> ScheduleEntry:
-        """Reprograma solo si no fue reclamada por un executor concurrente."""
+        """Reschedule only if a concurrent executor has not claimed the entry."""
         with self._mutation_lock():
             entries = self._load_unlocked()
             entry = entries[self._current_index(entries, entry_id)]
             if entry.status not in {"approved", "error"}:
                 raise ScheduleError(
-                    f"no se puede reprogramar {entry_id}: estado actual {entry.status}"
+                    f"cannot reschedule {entry_id}: current state {entry.status}"
                 )
             entry.scheduled_at = scheduled_at
             entry.status = "approved"
@@ -309,7 +299,7 @@ class ScheduleStore:
         last_error: str | None = None,
         platform_id: str | None | object = _UNSET,
     ) -> ScheduleEntry | None:
-        """Actualiza campos de ejecución solo desde un estado todavía vigente."""
+        """Update execution fields only from a still-current state."""
         with self._mutation_lock():
             entries = self._load_unlocked()
             entry = entries[self._current_index(entries, entry_id)]
@@ -327,7 +317,7 @@ class ScheduleStore:
     def _current_index(entries: list[ScheduleEntry], entry_id: str) -> int:
         matches = [index for index, entry in enumerate(entries) if entry.id == entry_id]
         if not matches:
-            raise ScheduleError(f"no existe la programación {entry_id}")
+            raise ScheduleError(f"schedule does not exist: {entry_id}")
         active = [
             index
             for index in matches
@@ -335,14 +325,14 @@ class ScheduleStore:
         ]
         if len(active) > 1:
             raise ScheduleError(
-                f"la cola contiene varias programaciones activas con id {entry_id}"
+                f"queue contains multiple active schedules with ID {entry_id}"
             )
         if active:
             return active[0]
         return max(matches, key=lambda index: (entries[index].created_at, index))
 
     def recover_stale(self, max_age_s: int = 900) -> int:
-        """Aísla para revisión una ejecución cuyo resultado remoto es incierto."""
+        """Isolate an interrupted execution with an uncertain remote result for review."""
         now = now_utc()
         with self._mutation_lock():
             entries = self._load_unlocked()
@@ -352,7 +342,7 @@ class ScheduleStore:
                 if entry.status == "running" and age > max_age_s:
                     entry.status = "manual_review"
                     entry.last_error = (
-                        "ejecución interrumpida: confirma el resultado remoto antes de reintentar"
+                        "execution interrupted: confirm the remote result before retrying"
                     )
                     entry.updated_at = now
                     changed += 1
@@ -388,7 +378,7 @@ class ScheduleStore:
                 identities.add(identity)
             return identities
         except (OSError, ValueError, TypeError, KeyError) as exc:
-            raise ScheduleError("ledger de tombstones inválido; ejecución bloqueada") from exc
+            raise ScheduleError("invalid tombstone ledger; execution blocked") from exc
 
     def assert_ready(self) -> None:
         from socialctl.schedule_remote import is_remote, REMOTE_NOTICE
@@ -399,25 +389,25 @@ class ScheduleStore:
         guard = self.root / "migration-active.json"
         if guard.exists():
             if not validate_committed_guard(self):
-                raise ScheduleError("migración interrumpida o en curso; exige recuperación explícita antes de ejecutar")
+                raise ScheduleError("migration interrupted or in progress; explicit recovery required before execution")
         for path in (self.root / "native-migrations").glob("*/intent.json"):
             try:
                 if json.loads(path.read_bytes())["status"] == "committed" and validate_committed_guard(self):
                     continue
             except (OSError, ValueError, KeyError):
                 pass
-            raise ScheduleError("transferencia nativa interrumpida; exige migration-recover")
+            raise ScheduleError("native transfer interrupted; requires migration-recover")
         for path in (self.root / "migrations").glob("*/intent.json"):
             try:
                 if json.loads(path.read_bytes())["status"] in {"committed", "rolled_back"}:
                     continue
             except (OSError, ValueError, KeyError):
                 pass
-            raise ScheduleError("migración interrumpida; exige rollback explícito antes de ejecutar")
+            raise ScheduleError("migration interrupted; explicit rollback required before execution")
 
     @contextmanager
     def executor_lock(self) -> Iterator[None]:
-        """Impide que dos procesos ejecuten simultáneamente la misma marca."""
+        """Prevent two processes from executing the same brand simultaneously."""
         self.root.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(
             self.executor_lock_path, os.O_RDWR | os.O_CREAT, 0o600
@@ -429,7 +419,7 @@ class ScheduleStore:
                 acquired = True
             except BlockingIOError as exc:
                 raise ScheduleError(
-                    "ya hay otro ejecutor procesando la cola de esta marca"
+                    "another executor is already processing this brand's queue"
                 ) from exc
             self.assert_ready()
             yield
@@ -459,11 +449,10 @@ def parse_scheduled_at(value: str) -> datetime:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ScheduleError(
-            "fecha inválida; usa ISO 8601 con zona horaria, por ejemplo "
-            "2026-09-15T14:00:00-04:00"
+            'invalid date; use ISO 8601 with timezone, for example 2026-09-15T14:00:00-04:00'
         ) from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ScheduleError("la fecha debe incluir zona horaria, por ejemplo -04:00")
+        raise ScheduleError("date must include a timezone, for example -04:00")
     return parsed
 
 
@@ -482,7 +471,7 @@ def _canonical_json(value: Any) -> bytes:
 
 
 def approval_hash(post: Post, brand: Brand, platform: Platform) -> str:
-    """Huella v2 de payload, identidad de cuenta y bytes reales de media."""
+    """Compute the v2 fingerprint of payload, account identity and actual media bytes."""
     platform_post = post.platforms[platform]
     media = [
         {
@@ -525,7 +514,7 @@ def approval_hash(post: Post, brand: Brand, platform: Platform) -> str:
                     digest.update(chunk)
         except OSError as exc:
             raise ScheduleError(
-                f"no se pudo calcular la huella de aprobación de {asset.path}: {exc}"
+                f"could not calculate the approval fingerprint for {asset.path}: {exc}"
             ) from exc
     return f"{APPROVAL_HASH_VERSION}:{digest.hexdigest()}"
 
@@ -540,7 +529,7 @@ def schedule_digest(slug: str, approvals: dict[str, str], at: datetime) -> str:
 
 
 def legacy_approval_hash(post: Post, platform: Platform) -> str:
-    """Reproduce exactamente la huella sin versión de las colas existentes."""
+    """Reproduce the exact unversioned fingerprint used by existing queues."""
     platform_post = post.platforms[platform]
     digest = hashlib.sha256()
     digest.update(platform_post.body.encode("utf-8"))
@@ -564,26 +553,23 @@ def approval_review_reason(
     brand: Brand,
     platform: Platform,
 ) -> str | None:
-    """Devuelve el motivo para retener una entrada; ``None`` autoriza v2."""
+    """Return a manual-review reason, or None for an unchanged v2 approval."""
     if not stored_hash:
-        return "entrada antigua sin huella de aprobación; requiere revisión manual"
+        return "legacy entry has no approval fingerprint; manual review required"
     if stored_hash.startswith(f"{APPROVAL_HASH_VERSION}:"):
         current = approval_hash(post, brand, platform)
         if hmac.compare_digest(stored_hash, current):
             return None
         return (
-            "la huella de aprobación no coincide: cambió el contenido, la media "
-            "o la identidad de cuenta; requiere revisión manual"
+            'approval fingerprint does not match: content, media or account identity changed; manual review required'
         )
     if ":" in stored_hash:
-        return "versión de huella de aprobación desconocida; requiere revisión manual"
+        return "unknown approval fingerprint version; manual review required"
     current_legacy = legacy_approval_hash(post, platform)
     if not hmac.compare_digest(stored_hash, current_legacy):
         return (
-            "la huella de aprobación antigua no coincide con el contenido actual; "
-            "requiere revisión manual"
+            'legacy approval fingerprint does not match current content; manual review required'
         )
     return (
-        "la huella de aprobación antigua coincide, pero no cubría los bytes de media "
-        "ni la identidad de cuenta; requiere revisión manual"
+        'the legacy approval fingerprint matches, but did not cover media bytes or account identity; manual review required'
     )

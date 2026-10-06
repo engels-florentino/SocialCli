@@ -44,14 +44,14 @@ class CommentCursorRejected(CommentError):
 
 def _id(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[0-9]+(?:_[0-9]+)*", value):
-        raise CommentError("Meta requiere un ID numérico, no una URL ni una ruta")
+        raise CommentError("Meta requires a numeric ID, not a URL or path")
     return value
 
 
 class MetaCommentsClient:
     def __init__(self, brand: Brand, platform: Platform, client: httpx.Client):
         if platform not in {Platform.FACEBOOK, Platform.INSTAGRAM}:
-            raise CommentError("comentarios disponibles solo para Facebook e Instagram")
+            raise CommentError("comments available only for Facebook and Instagram")
         self.brand, self.platform, self.client = brand, platform, client
         self._access_token = None
 
@@ -68,7 +68,7 @@ class MetaCommentsClient:
                 self._access_token = obtener_token(self.brand, self.platform, self.client)
             token = self._access_token
         except AuthError:
-            raise CommentError("Meta requiere credenciales válidas de la marca") from None
+            raise CommentError("Meta requires valid brand credentials") from None
         writing = method != "GET"
         try:
             response = self.client.request(method, f"{GRAPH}/{path}",
@@ -76,7 +76,7 @@ class MetaCommentsClient:
         except Exception:
             error = CommentUncertain if writing else CommentError
             raise error("Meta: transporte interrumpido; resultado desconocido" if writing else
-                        "Meta: no se pudo completar la lectura") from None
+                        "Meta: failed to complete read") from None
         if not response.is_success:
             params = kwargs.get("params") or {}
             if method == "GET" and isinstance(params.get("after"), str):
@@ -89,16 +89,16 @@ class MetaCommentsClient:
                     if (remote_error.get("code") == 100 and isinstance(message, str)
                             and "cursor" in message.casefold()):
                         raise CommentCursorRejected(
-                            "Meta rechazó el cursor incremental guardado")
+                            "Meta rejected saved incremental cursor")
             error = (CommentUncertain if response.status_code >= 500 or response.is_redirect
                      else CommentRejected) if writing else CommentError
-            raise error(f"Meta HTTP {response.status_code}: operación no confirmada; comprueba permisos")
+            raise error(f"Meta HTTP {response.status_code}: operation unconfirmed; check permissions")
         try:
             data = response.json()
             if not isinstance(data, dict) or "error" in data:
                 raise ValueError()
         except Exception:
-            raise (CommentUncertain if writing else CommentError)("Meta: respuesta no verificable") from None
+            raise (CommentUncertain if writing else CommentError)("Meta: unverifiable response") from None
         return data
 
     def inspect_media(self, media_id):
@@ -108,19 +108,19 @@ class MetaCommentsClient:
                            if self.platform is Platform.INSTAGRAM else {"fields": "id"})
         page = _id((self.brand.cuentas.get("facebook") or {}).get("page_id"))
         if me.get("id") != page:
-            raise CommentError("la Página autenticada no coincide con la marca")
+            raise CommentError("authenticated Page does not match brand")
         if self.platform is Platform.INSTAGRAM and (me.get("instagram_business_account") or {}).get("id") != configured:
-            raise CommentError("la cuenta Instagram autenticada no coincide con la marca")
+            raise CommentError("authenticated Instagram account does not match brand")
         owner_field = "from" if self.platform is Platform.FACEBOOK else "owner"
         media = self._request("GET", media_id, params={"fields": f"id,{owner_field}"})
         if media.get("id") != media_id or (media.get(owner_field) or {}).get("id") != configured:
-            raise CommentError("no se verificó el propietario exacto del medio")
+            raise CommentError("exact media owner was not verified")
         return {"id": media_id, "owner_id": configured, "authenticated_page": page}
 
     def list_comments(self, media_id, *, parent_id=None, max_pages=100, include_moderation=False,
                       after=None):
         if type(include_moderation) is not bool:
-            raise CommentError("include_moderation debe ser booleano")
+            raise CommentError("include_moderation must be boolean")
         self.inspect_media(media_id)
         if parent_id:
             self.find_comment(media_id, parent_id)
@@ -140,14 +140,14 @@ class MetaCommentsClient:
         params = {"fields": fields, "limit": "100"}
         if after is not None:
             if not isinstance(after, str) or not re.fullmatch(r"[A-Za-z0-9_=-]{1,2048}", after):
-                raise CommentError("cursor incremental inválido")
+                raise CommentError("invalid incremental cursor")
             params["after"] = after
         rows, cursors, last_cursor = [], ({after} if after else set()), None
         for _ in range(max_pages):
             payload = self._request("GET", path, params=params)
             data = payload.get("data")
             if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
-                raise CommentError("Meta: lista de comentarios inválida")
+                raise CommentError("Meta: invalid comments list")
             rows.extend(data)
             paging = payload.get("paging", {})
             if not isinstance(paging, dict):
@@ -169,14 +169,14 @@ class MetaCommentsClient:
         result = self.list_comments(media_id, parent_id=parent_id)
         matches = [row for row in result["data"] if row.get("id") == comment_id]
         if len(matches) != 1:
-            raise CommentError("comentario no verificado en el medio; ausencia o permisos no concluyentes")
+            raise CommentError("comment not verified on media; absence or permissions inconclusive")
         row = matches[0]
         field = "message" if self.platform is Platform.FACEBOOK else "text"
         if not isinstance(row.get(field), str):
-            raise CommentError("el comentario no devuelve texto verificable")
+            raise CommentError("comment does not return verifiable text")
         author = row.get("from") or {}
         if own and author.get("id") != self.account_id:
-            raise CommentError("no se verificó el autor propio del comentario por ID")
+            raise CommentError("comment's own author was not verified by ID")
         return {"id": comment_id, "text": row[field], "author_id": author.get("id"),
                 "media_id": media_id, "parent_id": parent_id}
 
@@ -184,7 +184,7 @@ class MetaCommentsClient:
         current = self.find_comment(change.media_id, change.remote_id,
                                     parent_id=change.parent_id, own=True)
         if current["text"] != change.text:
-            raise CommentError("el texto remoto difiere del texto aprobado")
+            raise CommentError("remote text differs from approved text")
         return current
 
     def write(self, change):
@@ -198,12 +198,12 @@ class MetaCommentsClient:
                                    data={"message": change.text})
         if change.action in {"delete", "edit"}:
             if result.get("success") is not True:
-                raise CommentUncertain("Meta no confirmó la mutación del comentario")
+                raise CommentUncertain("Meta did not confirm comment mutation")
             return change.comment_id
         try:
             return _id(result.get("id"))
         except CommentError:
-            raise CommentUncertain("Meta no devolvió un ID de comentario válido; no repetir") from None
+            raise CommentUncertain("Meta did not return a valid comment ID; do not repeat") from None
 
 
 class CommentChange(BaseModel):
@@ -252,14 +252,14 @@ class CommentStore(ChangeStore):
         try:
             change = CommentChange.model_validate_json(self.path_for(change_id).read_text())
         except (OSError, ValidationError):
-            raise CommentError("no se pudo leer el ChangeSet de comentario") from None
+            raise CommentError("failed to read comment ChangeSet") from None
         if change.id != change_id or not hmac.compare_digest(fingerprint(change), change.fingerprint):
-            raise CommentError("propuesta de comentario alterada")
+            raise CommentError("comment proposal was altered")
         return change
 
     def save(self, change):
         if not hmac.compare_digest(fingerprint(change), change.fingerprint):
-            raise CommentError("propuesta de comentario alterada")
+            raise CommentError("comment proposal was altered")
         self.write_json(change.id, change.model_dump(mode="json"))
 
     def write_json(self, identifier, payload):
@@ -278,21 +278,21 @@ class CommentStore(ChangeStore):
             if temporary:
                 try: os.unlink(temporary)
                 except OSError: pass
-            raise CommentError("no se pudo persistir el diario durable; próximo paso bloqueado") from None
+            raise CommentError("failed to persist durable journal; next step blocked") from None
 
 
 def _validate_operation(client, *, action, text, parent_id, comment_id):
     if action not in {"add", "reply", "edit", "delete"}:
-        raise CommentError("acción desconocida")
+        raise CommentError("unknown action")
     if action == "edit" and client.platform is Platform.INSTAGRAM:
-        raise CommentError("Instagram: editar texto no está disponible; no se elimina y recrea")
+        raise CommentError("Instagram: text editing is unavailable; content will not be deleted and recreated")
     if action != "delete" and (not isinstance(text, str) or not text.strip()):
-        raise CommentError("se requiere texto explícito no vacío")
+        raise CommentError("explicit nonempty text required")
     if action == "delete" and text is not None:
-        raise CommentError("delete no admite texto")
+        raise CommentError("delete does not accept text")
     if ((action == "reply" and parent_id is None) or (action == "add" and parent_id is not None)
             or (action in {"edit", "delete"}) != (comment_id is not None)):
-        raise CommentError("IDs de padre/comentario incompatibles con la acción")
+        raise CommentError("parent/comment IDs incompatible with action")
 
 
 def prepare_comment(client, store, *, media_id, text=None, action="add", parent_id=None,
@@ -320,9 +320,9 @@ def _bound(client, change):
                         parent_id=change.parent_id, comment_id=change.comment_id)
     if (change.brand, change.brand_root, change.platform, change.account_id) != (
         client.brand.nombre, str(client.brand.raiz.resolve()), client.platform.value, client.account_id):
-        raise CommentError("la marca/cuenta configurada no coincide con la propuesta")
+        raise CommentError("configured brand/account does not match proposal")
     if client.inspect_media(change.media_id) != change.before["media"]:
-        raise CommentError("la identidad o propiedad remota cambió")
+        raise CommentError("remote identity or ownership changed")
 
 
 def _event(change, event):
@@ -364,15 +364,15 @@ def apply_comment(client, store, change_id, approval_digest):
     with store.apply_lock(change_id):
         change = store.load(change_id)
         if not hmac.compare_digest(approval_digest, change.fingerprint):
-            raise CommentError("aprobación no coincide con la huella exacta")
+            raise CommentError("approval does not match exact fingerprint")
         _bound(client, change)
         if change.status != "proposed":
             return _reconcile(client, store, change)
         if change.parent_id and client.find_comment(change.media_id, change.parent_id) != change.before["parent"]:
-            raise CommentError("el comentario padre cambió desde el preview")
+            raise CommentError("parent comment changed since preview")
         if change.comment_id and client.find_comment(change.media_id, change.comment_id,
                 parent_id=change.parent_id, own=True) != change.before["comment"]:
-            raise CommentError("el comentario cambió desde el preview")
+            raise CommentError("comment changed since preview")
         change.status = "applying"
         _event(change, "approved_exact_digest_and_write_intent")
         store.save(change)  # Failure here MUST block remote mutation.

@@ -35,7 +35,7 @@ def test_marker_blocks_local_executor_and_mutations(tmp_path, monkeypatch, comma
     marker(brand)
     result = runner.invoke(app, command + ["--brand", "Histopast", "--root", str(tmp_path)])
     assert result.exit_code == 1, result.output
-    assert "remoto" in result.output
+    assert 'remote' in result.output
     assert ScheduleStore(brand.raiz).load() == original
 
 
@@ -43,12 +43,12 @@ def test_marker_blocks_direct_store_writes_and_marks_readonly_stale(tmp_path):
     brand, _ = _make_social(tmp_path)
     _schedule(tmp_path)
     marker(brand)
-    with pytest.raises(ScheduleError, match="remoto"):
+    with pytest.raises(ScheduleError, match='remote'):
         ScheduleStore(brand.raiz).save([])
     for command in ("schedule-status", "schedule-health"):
         result = runner.invoke(app, [command, "--brand", "Histopast", "--root", str(tmp_path)])
         assert result.exit_code == 0, result.output
-        assert "remoto" in result.output and "obsoleta" in result.output
+        assert 'remote' in result.output and 'stale' in result.output
         assert "clip/facebook" not in result.output
 
 
@@ -124,7 +124,7 @@ def test_marker_blocks_migration_rollback_before_reading_backups(tmp_path):
     from socialctl.queue_migration import rollback
     brand, _ = _make_social(tmp_path)
     marker(brand)
-    with pytest.raises(ScheduleError, match="remoto"):
+    with pytest.raises(ScheduleError, match='remote'):
         rollback(brand, "not-a-proposal")
 
 
@@ -162,7 +162,7 @@ def test_remote_failed_dryrun_preserves_actionable_validation_preview(tmp_path, 
     result = runner.invoke(app, ["schedule-remote", "schedule", "clip", "--at", "2030-01-01T00:00:00Z", "--dry-run", "--brand", "Histopast", "--root", str(tmp_path)])
     assert result.exit_code == 1
     assert payload["preview"] in result.output
-    assert "No se programa nada" in result.output
+    assert 'Nothing scheduled' in result.output
     assert "SECRET" not in result.output
 
 
@@ -199,6 +199,6 @@ def test_remote_preview_relay_preserves_origin_validation_failure(tmp_path, monk
     result = runner.invoke(app, ['schedule-remote', 'schedule', 'clip', '--at', '2030-01-01T00:00:00Z',
                                 '--dry-run', '--brand', 'Histopast', '--root', str(local)])
     assert result.exit_code == 1, result.output
-    assert 'declara standalone o youtube_long' in result.output
+    assert 'declare standalone or youtube_long' in result.output
     assert not ScheduleStore(server_brand.raiz).load()
     assert not ScheduleStore(brand.raiz).load()

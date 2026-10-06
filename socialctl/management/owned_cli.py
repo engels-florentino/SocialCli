@@ -20,17 +20,17 @@ def _json(value):
 
 
 def render_owned_preview(change):
-    return ("DRY-RUN — PREVIEW COMPLETO de recurso propio YouTube\n"
+    return ("DRY-RUN — FULL PREVIEW of owned YouTube resource\n"
         + _json(change.model_dump(mode="json"))
-        + "\nLa aprobación cubre before, after, efectos, plan y bytes con su SHA256 completos."
-        + "\nResultados inciertos no se repiten con otra UUID. Reconcile solo relee; no restaura ni continúa efectos."
-        + f"\nHuella exacta para aprobar: {change.fingerprint}")
+        + "\nApproval covers complete before, after, effects, plan and bytes with their SHA256."
+        + "\nUncertain outcomes are not repeated with another UUID. Reconcile only rereads; does not restore or continue effects."
+        + f"\nExact fingerprint for approval: {change.fingerprint}")
 
 
 def register(content_app, default_root):
     from socialctl.management.cli import _brand, _fail
 
-    owned = typer.Typer(help="Playlists, canal, secciones y recursos propios; propuestas estrictas y aprobación durable.")
+    owned = typer.Typer(help="Playlists, channel, sections and owned resources; strict proposals and durable approval.")
     content_app.add_typer(owned, name="youtube-owned")
 
     def read(root, brand, callback):
@@ -72,10 +72,10 @@ def register(content_app, default_root):
         read(root, brand, lambda client: client.inspect_video(video_id, parts=parts.split(",")))
 
     @owned.command("prepare")
-    def prepare(file: Path = typer.Option(..., "--file", help="YAML version1, action y campos específicos; nunca endpoint/payload arbitrario."),
+    def prepare(file: Path = typer.Option(..., "--file", help="YAML version1, action and specific fields; never arbitrary endpoint/payload."),
                 brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root"),
                 dry_run: bool = typer.Option(False, "--dry-run")):
-        """Prepara localmente y muestra siempre el dry-run completo; no escribe en YouTube."""
+        """Prepare locally and always display full dry-run without writing to YouTube."""
         selected = _brand(root, brand)
         try:
             edit = load_owned_edit(file)
@@ -101,9 +101,9 @@ def register(content_app, default_root):
         try:
             change = store.load(change_id)
             typer.echo(render_owned_preview(change))
-            approval = typer.prompt("Escribe la huella exacta para aprobar")
+            approval = typer.prompt("Enter the exact fingerprint to approve")
             if approval != change.fingerprint:
-                _fail("aprobación no coincide con la huella exacta")
+                _fail("approval does not match exact fingerprint")
             with make_http_client() as http:
                 result = apply_owned(YouTubeOwnedClient(selected, http), store, change_id, approval)
         except (ChangeError, OSError) as exc:
@@ -114,7 +114,7 @@ def register(content_app, default_root):
 
     @owned.command("reconcile")
     def reconcile(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root")):
-        """Solo lectura remota; nunca reenvía ni continúa escrituras."""
+        """Remote reads only; never resend or continue writes."""
         selected = _brand(root, brand)
         try:
             with make_http_client() as http:

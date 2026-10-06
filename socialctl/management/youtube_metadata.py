@@ -23,24 +23,24 @@ class YouTubeMetadataClient(YouTubeManagementClient):
         configured = self.configured_channel_id
         token = self._token()
         if self._authenticated_channel(token) != configured:
-            raise YouTubeManagementError("el canal autenticado no coincide con la marca")
+            raise YouTubeManagementError("authenticated channel does not match brand")
         payload = self._get_json(VIDEOS_URL, token,
             params={"part": "snippet,status,localizations,contentDetails", "id": video_id}, operation="leer metadatos")
         items = payload.get("items")
         if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
-            raise YouTubeManagementError("YouTube no devolvió un vídeo único verificable")
+            raise YouTubeManagementError("YouTube did not return a unique verifiable video")
         resource = items[0]
         if resource.get("id") != video_id or not isinstance(resource.get("etag"), str) or not resource["etag"]:
-            raise YouTubeManagementError("vídeo o ETag inesperado")
+            raise YouTubeManagementError("unexpected video or ETag")
         snippet, status = resource.get("snippet"), resource.get("status")
         if not isinstance(snippet, dict) or not isinstance(status, dict):
-            raise YouTubeManagementError("snippet/status ausente o inválido")
+            raise YouTubeManagementError("snippet/status missing or invalid")
         if snippet.get("channelId") != configured:
-            raise YouTubeManagementError("el vídeo no pertenece al canal configurado")
+            raise YouTubeManagementError("video does not belong to configured channel")
         if set(snippet) - WRITABLE_SNIPPET_FIELDS - READ_ONLY_SNIPPET_FIELDS:
-            raise YouTubeManagementError("snippet contiene campo desconocido; edición bloqueada")
+            raise YouTubeManagementError("snippet contains unknown field; editing blocked")
         if set(status) - STATUS_FIELDS - STATUS_READ_ONLY:
-            raise YouTubeManagementError("status contiene campo desconocido; edición bloqueada")
+            raise YouTubeManagementError("status contains unknown field; editing blocked")
         validate_localizations(resource.get("localizations", {}))
         validate_status({key: value for key, value in status.items() if key in STATUS_FIELDS})
         return MetadataVideo(video_id, configured, resource["etag"], resource)
@@ -50,21 +50,21 @@ class YouTubeMetadataClient(YouTubeManagementClient):
             raise YouTubeUpdateRejected("parte mutable desconocida")
         current = self.inspect(video_id)
         if current.etag != etag:
-            raise YouTubeUpdateConflict("ETag cambió antes del PUT; no se escribió")
+            raise YouTubeUpdateConflict("ETag changed before PUT; no write performed")
         current_parts = editable_parts(current.resource)
         try:
             for part, value in parts.items():
                 if not isinstance(value, dict):
-                    raise ChangeError("parte inválida")
+                    raise ChangeError("invalid part")
                 if set(current_parts[part]) - set(value):
-                    raise ChangeError("no se pueden omitir campos mutables presentes; se requiere parte completa")
+                    raise ChangeError("present mutable fields cannot be omitted; complete part required")
                 if part == "snippet":
                     if set(value) - WRITABLE_SNIPPET_FIELDS:
-                        raise ChangeError("snippet contiene campo desconocido o de solo lectura")
+                        raise ChangeError("snippet contains unknown or read-only field")
                     _validate_snippet(value)
                     current_audio = current.resource["snippet"].get("defaultAudioLanguage")
                     if value.get("defaultAudioLanguage") != current_audio:
-                        raise ChangeError("defaultAudioLanguage solo se preserva; edición no verificada")
+                        raise ChangeError("defaultAudioLanguage is preserved only; editing unverified")
                 elif part == "status":
                     validate_status(value, outgoing=True)
                 else:

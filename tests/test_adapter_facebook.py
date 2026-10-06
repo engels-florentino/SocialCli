@@ -104,7 +104,7 @@ def test_varios_archivos_fallan_antes_de_auth_o_http(brand, tmp_path):
         resultado = FacebookAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "1 archivo" in resultado.error
+    assert '1 file' in resultado.error
     assert requests == []
 
 
@@ -157,7 +157,7 @@ def test_mensaje_de_error_con_message_no_textual_da_mensaje_util(brand):
     # dispararía sin el arreglo.
     assert "HTTP 400" in resultado.error
     assert "12345" in resultado.error
-    assert "ha ocurrido un error inesperado en Facebook" not in resultado.error
+    assert 'ha ocurrido un error inesperado in Facebook' not in resultado.error
     assert "ValidationError" not in resultado.error
 
 
@@ -185,7 +185,7 @@ def test_fallo_de_conexion_no_lanza_excepcion(brand):
         resultado = FacebookAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "conectar" in resultado.error.lower()
+    assert "connect" in resultado.error.lower()
     assert resultado.riesgo_duplicado is True
 
 
@@ -204,7 +204,7 @@ def test_timeout_no_lanza_excepcion_y_da_mensaje_especifico(brand):
         resultado = FacebookAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "tiempo de espera" in resultado.error.lower()
+    assert "timed out" in resultado.error.lower()
     assert resultado.riesgo_duplicado is True
 
 
@@ -223,7 +223,7 @@ def test_respuesta_200_con_cuerpo_no_json_no_lanza_excepcion(brand):
     # de excepción del resguardo genérico ("JSONDecodeError"), así que este
     # test seguía en verde aunque se eliminara el `except` real. Esta frase
     # completa solo la emite ese `except` específico.
-    assert "cuerpo que no es json válido" in resultado.error.lower()
+    assert 'invalid json response' in resultado.error.lower()
 
 
 @respx.mock
@@ -241,7 +241,7 @@ def test_respuesta_200_sin_id_no_lanza_excepcion(brand):
     # resguardo genérico de `publish()`, así que este test seguía en verde
     # aunque se eliminara el `except KeyError` real. Esta frase completa solo
     # la emite ese `except` específico.
-    assert "respondió sin el id de la publicación" in resultado.error.lower()
+    assert 'returned no post id' in resultado.error.lower()
 
 
 @pytest.mark.parametrize("invalid_id", [None, "", "   ", 123])
@@ -267,7 +267,7 @@ def test_respuesta_200_con_id_invalido_es_incierta_y_no_intenta_comentario(
     assert resultado.status is PostStatus.ERROR
     assert resultado.platform_id is None
     assert resultado.riesgo_duplicado is True
-    assert "identificador" in (resultado.error or "").lower()
+    assert "post id" in (resultado.error or "").lower()
     assert [request.url.path for request in requests] == ["/v26.0/12345/feed"]
 
 
@@ -293,7 +293,7 @@ def test_page_id_con_caracter_invalido_produce_error_manejado(tmp_path):
 
     assert resultado.status is PostStatus.ERROR
     assert "url" in resultado.error.lower()
-    assert "no válida" in resultado.error.lower()
+    assert "invalid" in resultado.error.lower()
     assert resultado.riesgo_duplicado is False
 
 
@@ -311,7 +311,7 @@ def test_archivo_borrado_antes_de_publicar_no_lanza_excepcion(brand, tmp_path):
         resultado = FacebookAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "no existe" in resultado.error.lower()
+    assert "no longer exists" in resultado.error.lower()
 
 
 def test_ruta_de_media_es_un_directorio_no_lanza_excepcion(brand, tmp_path):
@@ -331,7 +331,7 @@ def test_ruta_de_media_es_un_directorio_no_lanza_excepcion(brand, tmp_path):
         resultado = FacebookAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "directorio" in resultado.error.lower()
+    assert "directory" in resultado.error.lower()
 
 
 def test_archivo_sin_permisos_de_lectura_no_lanza_excepcion(brand, tmp_path):
@@ -356,7 +356,7 @@ def test_archivo_sin_permisos_de_lectura_no_lanza_excepcion(brand, tmp_path):
         imagen.chmod(permisos_originales)
 
     assert resultado.status is PostStatus.ERROR
-    assert "no hay permisos de lectura" in resultado.error.lower()
+    assert 'not readable' in resultado.error.lower()
 
 
 def test_fallo_inesperado_generico_no_escapa_de_publish(brand, monkeypatch):
@@ -424,7 +424,7 @@ def test_el_fichero_se_sube_en_streaming_y_se_cierra_aunque_falle_la_peticion(
         resultado = FacebookAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert ficheros_abiertos, "se esperaba que el adaptador abriera el fichero de vídeo"
+    assert ficheros_abiertos, 'se expected que el adaptador abriera el fichero de vídeo'
     assert ficheros_abiertos[-1].closed, (
         "el fichero debe cerrarse aunque la petición falle a mitad"
     )

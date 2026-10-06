@@ -1,27 +1,4 @@
-"""`<Marca>/metricas/resumen.md`: el snapshot en algo que se lee de un vistazo.
-
-Existe para que el usuario pueda mirar cómo va su marca sin invocar a nadie,
-y para que el gestor de redes tenga una entrada barata antes de bajar al
-JSON. Lo que aporta sobre el JSON crudo son tres cosas: la **variación**
-frente al snapshot anterior, el **pilar y el gancho** de cada pieza sacados
-de `piezas.yml` —juntos, es donde se ve el patrón—, y unas **columnas por
-red**: cada una muestra lo que mide su objetivo (retención y suscriptores en
-YouTube; compartidos y guardados en Instagram; solo compartidos en TikTok,
-que no da guardados —ver el comentario junto a `COLUMNAS`—), no las columnas
-de YouTube para las cuatro.
-
-Una pieza que no estaba en el snapshot anterior no muestra variación: no ha
-"subido" desde cero, es que antes no existía.
-
-Además de lo anterior, la tabla lleva una columna **Aviso**: cuando el
-lector de una red no pudo enriquecer una pieza -cuota de YouTube agotada, o
-una métrica que Meta retiró (ver `CLAVE_ENRIQUECIMIENTO_FALLIDO` en
-`socialctl/metricas/youtube.py`)-, la marca con `enriquecimiento_fallido` en
-sus `especificas`, y esa clave solo existe cuando algo falló. Sin esta
-columna una lectura parcial se leería como completa, que es justo lo que esa
-señal existe para evitar; por eso se muestra aquí aunque el brief original
-de esta tarea no traía esta columna.
-"""
+"""Render daily snapshot as readable Markdown at <Brand>/metricas/resumen.md; detailed data remains in JSON."""
 
 from __future__ import annotations
 
@@ -42,13 +19,13 @@ COLUMNAS: dict[Platform, tuple[tuple[str, str], ...]] = {
     # YouTube: retención y suscriptores, que es lo que mide el objetivo de
     # los largos y el de crecer en suscriptores.
     Platform.YOUTUBE: (
-        ("% visto", "porcentaje_visto"),
+        ("% viewed", "porcentaje_visto"),
         ("Subs", "suscriptores_ganados"),
     ),
     # Instagram: el spec (§7) mide su objetivo -alcance- con vistas,
     # compartidos y guardados. Sin estas dos columnas, el gestor tendría que
     # bajar al JSON para lo que en esta red es lo central.
-    Platform.INSTAGRAM: (("Compart.", "compartidos"), ("Guardados", "guardados")),
+    Platform.INSTAGRAM: (("Shares", "compartidos"), ("Saves", "guardados")),
     # TikTok: **no hay columna de guardados, y no es un olvido.** La Display
     # API de TikTok no expone esa métrica -ver el docstring de
     # `socialctl/metricas/tiktok.py`-, verificado contra la cuenta real de
@@ -64,22 +41,14 @@ COLUMNAS: dict[Platform, tuple[tuple[str, str], ...]] = {
     # tampoco sustituye `alcance` por una métrica parecida). Si alguien
     # reintenta esto: la Display API sigue sin dar guardados; compruébalo
     # tú mismo contra la cuenta real antes de asumir que cambió.
-    Platform.TIKTOK: (("Compart.", "compartidos"),),
+    Platform.TIKTOK: (("Shares", "compartidos"),),
     # Facebook no da guardados, y desde la Graph API v26.0 tampoco da alcance
     # por publicación (ver `METRICAS_MUERTAS` en `metricas/facebook.py`). Lo
     # que sí da, y mide mejor el objetivo, es la retención media: cuántos
     # segundos aguantan de media, en segundos ya convertidos.
-    Platform.FACEBOOK: (("Compart.", "compartidos"), ("Retención s", "retencion_media_seg")),
+    Platform.FACEBOOK: (("Shares", "compartidos"), ("Retention s", "retencion_media_seg")),
 }
-"""Hasta dos columnas propias de cada red, además de las cinco comunes.
-
-Dos como máximo, nunca más: la tabla tiene que caber en una pantalla y
-leerse de un vistazo; el detalle completo está en el JSON del día. Cada red
-muestra lo que mide **su** objetivo, no las columnas de YouTube para las
-cuatro -y TikTok, que solo tiene una métrica propia que de verdad aporte a
-ese objetivo, se queda con una sola en vez de rellenar la segunda con algo
-que no mide nada mejor-.
-"""
+"""Use at most two platform-specific columns alongside the five common columns."""
 
 #: Cuántos caracteres del motivo de un enriquecimiento fallido caben en la
 #: celda de "Aviso" antes de recortar. La tabla tiene que seguir leyéndose de
@@ -93,17 +62,7 @@ LARGO_TITULO = 48
 
 
 def _recortar(texto: str, largo: int) -> str:
-    """Recorta a `largo` caracteres **por palabra** y marcando el corte con `…`.
-
-    Antes se cortaba con un `[:48]` a secas, y el resultado era un título
-    partido a mitad de palabra y sin ninguna señal de que faltaba algo
-    (`…y fundiero`), que se lee como un error del fichero y no como un
-    recorte. Se corta por el último espacio que quepa; si la primera palabra
-    ya no cabe -un motivo de error sin espacios, por ejemplo-, se corta
-    donde sea, porque lo que no puede es desbordar la celda.
-
-    El `…` cuenta dentro de `largo`: el resultado nunca lo pasa.
-    """
+    """Truncate to largo characters at word boundaries, marking truncation with an ellipsis."""
     if len(texto) <= largo:
         return texto
     recortado = texto[: largo - 1].rstrip()
@@ -114,23 +73,12 @@ def _recortar(texto: str, largo: int) -> str:
 
 
 def _escapar(celda: str) -> str:
-    """Deja una celda lista para una tabla markdown.
-
-    Un título con `|` -«1519: Cortés | la conquista»- partía la fila en dos
-    columnas de más y descuadraba la tabla entera a partir de ahí. Se escapa
-    la barra, que es lo único que markdown interpreta dentro de una celda, y
-    se aplanan los saltos de línea, que la romperían igual.
-    """
+    """Escape pipes and replace line breaks so text fits a Markdown table cell."""
     return celda.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
 
 
 def _valor(pieza: Pieza | None, clave: str) -> object | None:
-    """Busca `clave` primero en `Metricas` y luego en `especificas`.
-
-    Las dos fuentes conviven en la misma tabla a propósito: al gestor le da
-    igual si `guardados` es un campo del modelo común y `porcentaje_visto`
-    una clave específica de YouTube; lo que quiere es la columna.
-    """
+    """Look up clave in common metrics first, then platform-specific metrics."""
     if pieza is None:
         return None
     if clave in Metricas.model_fields:
@@ -139,12 +87,7 @@ def _valor(pieza: Pieza | None, clave: str) -> object | None:
 
 
 def _variacion(actual: object, previo: object) -> str:
-    """`+54`, `-20`, `+3.5`, o vacío si no hay con qué comparar o no cambió.
-
-    Un `(+0)` en la celda no dice nada que la propia cifra no diga ya, y
-    repetido en media tabla tapa las variaciones que sí importan: cuando el
-    valor no se ha movido, la celda va limpia.
-    """
+    """Format signed delta, or empty text when unchanged or unavailable."""
     if not isinstance(actual, (int, float)) or not isinstance(previo, (int, float)):
         return ""
     diferencia = actual - previo
@@ -162,26 +105,14 @@ def _celda(valor: object) -> str:
 
 
 def _celda_comparada(actual: object, previo: object) -> str:
-    """`254 (+54)`, o solo `254` si no hay snapshot anterior con esa pieza.
-
-    La variación va dentro de la misma celda y no en una columna aparte: con
-    tres métricas comparadas, tres columnas `Δ` más harían la tabla
-    ilegible, que es justo lo que este fichero viene a evitar.
-    """
+    """Format value with delta when an earlier matching item exists."""
     base = _celda(actual)
     delta = _variacion(actual, previo)
     return f"{base} ({delta})" if delta else base
 
 
 def _aviso(pieza: Pieza) -> str:
-    """`⚠ <motivo>` si el enriquecimiento de `pieza` falló, `—` si no.
-
-    `CLAVE_ENRIQUECIMIENTO_FALLIDO` solo existe en `especificas` cuando algo
-    falló -cuota de YouTube agotada, o una métrica que Meta retiró-, así que
-    su sola presencia ya es la señal (ver el docstring del módulo). Sin esta
-    columna, una lectura parcial se vería en `resumen.md` exactamente igual
-    que una completa.
-    """
+    """Show enrichment failure reason or an em dash; never infer missing data as zero."""
     motivo = pieza.especificas.get(CLAVE_ENRIQUECIMIENTO_FALLIDO)
     if not motivo:
         return "—"
@@ -193,18 +124,18 @@ def render_resumen(
 ) -> str:
     editoriales = {(p.get("red"), p.get("id")): p for p in piezas}
     lineas = [
-        f"# Métricas de {snapshot.marca}",
+        f"# Metrics for {snapshot.marca}",
         "",
         f"**Snapshot:** {snapshot.fecha.isoformat()}",
     ]
 
     if anterior is None:
         lineas.append(
-            "**Variación:** no hay snapshot anterior con el que comparar "
-            "(primer snapshot)."
+            "**Change:** no previous snapshot available for comparison "
+            "(first snapshot)."
         )
     else:
-        lineas.append(f"**Comparado con:** {anterior.fecha.isoformat()}")
+        lineas.append(f"**Compared with:** {anterior.fecha.isoformat()}")
     lineas.append("")
 
     for platform, lectura in snapshot.redes.items():
@@ -212,7 +143,7 @@ def render_resumen(
         lineas.append("")
         if lectura.estado is not EstadoLectura.OK:
             lineas += [
-                f"**Estado:** `{lectura.estado.value}` — {lectura.error or 'sin detalle'}",
+                f"**Status:** `{lectura.estado.value}` — {lectura.error or 'no details'}",
                 "",
             ]
             # El aviso de estado SÍ, pero la tabla también si hay piezas. Con
@@ -231,9 +162,9 @@ def render_resumen(
 
         if lectura.cuenta is not None:
             lineas += [
-                f"Seguidores: {_celda(lectura.cuenta.seguidores)} · "
-                f"Piezas: {_celda(lectura.cuenta.total_piezas)} · "
-                f"Vistas totales: {_celda(lectura.cuenta.total_vistas)}",
+                f"Followers: {_celda(lectura.cuenta.seguidores)} · "
+                f"Items: {_celda(lectura.cuenta.total_piezas)} · "
+                f"Total views: {_celda(lectura.cuenta.total_vistas)}",
                 "",
             ]
 
@@ -244,9 +175,9 @@ def render_resumen(
         # `COLUMNAS` cubre las cuatro redes de `Platform`, que son todas las
         # que puede traer un snapshot: no hay caso por defecto que atender.
         columnas = COLUMNAS[platform]
-        titulos = ["Publicado", "Pieza", "Pilar", "Gancho", "Vistas"]
+        titulos = ["Published", "Item", "Pillar", "Hook", "Views"]
         titulos += [titulo for titulo, _ in columnas]
-        titulos.append("Aviso")
+        titulos.append("Notice")
         lineas += [
             "| " + " | ".join(titulos) + " |",
             "|" + "---|" * len(titulos),
@@ -280,8 +211,8 @@ def render_resumen(
             reach_rows = [(pieza, reach) for pieza, reach in reach_rows
                           if isinstance(reach, dict) and reach.get("impressions") is not None]
             if reach_rows:
-                lineas += ["### Alcance de miniaturas (28 días · YouTube Reporting)", "",
-                           "| Pieza | Impresiones | CTR | Hasta | Informe |",
+                lineas += ["### Thumbnail reach (28 days · YouTube Reporting)", "",
+                           "| Item | Impressions | CTR | Through | Report |",
                            "|---|---:|---:|---|---|"]
                 for pieza, reach in sorted(reach_rows,
                                            key=lambda item: item[1]["impressions"],
@@ -295,15 +226,15 @@ def render_resumen(
                     lineas.append("| " + " | ".join(_escapar(value) for value in cells) + " |")
                 lineas.append("")
             else:
-                lineas += ["**Miniaturas:** sin informe de alcance importado para estas piezas.", ""]
+                lineas += ["**Thumbnails:** no imported reach report for these items.", ""]
 
     lineas += [
         "---",
         "",
-        "Generado por `socialctl stats`. El detalle completo —curva de retención,",
-        "fuentes de tráfico, audiencia— está en el JSON del mismo día.",
-        "Impresiones y CTR de miniatura proceden de YouTube Reporting cuando",
-        "hay un informe de alcance importado; un dato ausente no equivale a cero.",
+        "Generated by `socialcli stats`. Full detail — retention curve,",
+        "traffic sources, audience — is in the JSON for the same day.",
+        "Thumbnail impressions and CTR come from YouTube Reporting when",
+        "an imported reach report exists; missing data does not equal zero.",
         "",
     ]
     return "\n".join(lineas)

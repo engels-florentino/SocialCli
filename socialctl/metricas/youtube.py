@@ -1,17 +1,4 @@
-"""Lectura de métricas de YouTube: Analytics API + Data API.
-
-Dos APIs porque miden cosas distintas: la Data API da el catálogo (qué
-vídeos hay, título, fecha, duración y estadísticas acumuladas) y la
-Analytics API da el comportamiento (minutos vistos, porcentaje visto,
-suscriptores ganados, de dónde vino la gente y en qué minuto se fue).
-
-Las dos que de verdad explican el resultado son la **curva de retención**
--dónde abandona el espectador- y las **fuentes de tráfico** -si los cortes
-traen gente al largo o no-. Sin ellas solo se cuenta; con ellas se entiende.
-
-Lo que NO da la API y seguirá siendo dato manual: impresiones y CTR de
-miniatura, que solo existen en YouTube Studio.
-"""
+"""Read YouTube metrics via Data API for catalog/cumulative stats and Analytics API for bounded period metrics and enrichment."""
 
 from __future__ import annotations
 
@@ -118,7 +105,7 @@ _DURACION = re.compile(
 
 
 def _segundos(iso8601: str) -> int | None:
-    """Convierte una duración ISO 8601 de YouTube (`PT16M20S`) a segundos."""
+    """Convert YouTube ISO 8601 duration to seconds."""
     m = _DURACION.match(iso8601 or "")
     if not m:
         return None
@@ -127,12 +114,7 @@ def _segundos(iso8601: str) -> int | None:
 
 
 def _entero(valor: object) -> int | None:
-    """Convierte a int lo que venga, o `None` si no hay dato.
-
-    La Data API devuelve las estadísticas como cadenas, y omite la clave
-    entera cuando el creador ha ocultado esa métrica: ahí `None` es la
-    respuesta correcta, no cero.
-    """
+    """Convert available data to integer; absent metrics remain None."""
     if valor is None:
         return None
     try:
@@ -146,17 +128,7 @@ def _filas(respuesta: dict) -> list[list]:
 
 
 class _CuotaAgotada(RuntimeError):
-    """`_pedir` la lanza, en vez de `RuntimeError`, cuando el 403 no es de scope.
-
-    Sigue siendo un `RuntimeError` -mismo texto, mismo mensaje ya redactado-,
-    así que nada que ya capture `RuntimeError` deja de capturarla: el único
-    efecto es que `leer()` puede reconocer, sin repetir el criterio de
-    `_pedir`, el único caso que de verdad justifica dejar de insistir con el
-    resto de piezas. Reutiliza exactamente la distinción que `_pedir` ya
-    hace hoy entre «sin permiso» (`SinPermiso`, se arregla reautenticando) y
-    «cualquier otro 403» (aquí: por descarte, la cuota diaria agotada, que
-    no se arregla insistiendo).
-    """
+    """Non-scope YouTube HTTP failure, distinct from SinPermiso so only actual quota exhaustion stops later enrichment."""
 
 
 class YouTubeLector(Lector):
@@ -210,8 +182,8 @@ class YouTubeLector(Lector):
                 pieza.especificas["curva_retencion"] = []
                 pieza.especificas["fuentes_trafico"] = {}
                 pieza.especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO] = (
-                    "no se pidió: la cuota de Analytics ya se agotó al "
-                    "enriquecer una pieza anterior"
+                    "not requested: Analytics quota was already exhausted while "
+                    "enriching an earlier item"
                 )
             else:
                 try:
@@ -237,7 +209,7 @@ class YouTubeLector(Lector):
             except (ResourceError, ValueError, KeyError, TypeError):
                 for pieza in piezas:
                     pieza.especificas['thumbnail_reach_error'] = (
-                        'informe de alcance importado ilegible; impresiones/CTR desconocidos')
+                        'imported reach report unreadable; impressions/CTR unknown')
 
         return LecturaRed(
             estado=EstadoLectura.OK,
@@ -249,31 +221,7 @@ class YouTubeLector(Lector):
     # --- peticiones -----------------------------------------------------
 
     def _pedir(self, client: httpx.Client, url: str, cabeceras: dict, params: dict) -> dict:
-        """Hace la petición y traduce cualquier respuesta que no sea de éxito.
-
-        Dos traducciones, no una:
-
-        - **Scope insuficiente** → `SinPermiso`, con el permiso exacto que
-          falta y el comando `auth` que lo arregla.
-        - **Cualquier otro fallo** (el caso que importa: la cuota diaria de
-          10.000 unidades agotada) → `RuntimeError` **con el mensaje de la
-          API dentro**. `raise_for_status()` a secas descartaría el cuerpo y
-          dejaría en el snapshot un `Client error '403 Forbidden' for url …`
-          que no dice nada; el spec (§9) pide el texto de la API. Cuando ese
-          «cualquier otro fallo» es además un 403 -por descarte, cuota
-          agotada, ya que el scope insuficiente se distingue arriba- se
-          lanza `_CuotaAgotada`, una subclase de `RuntimeError` con el mismo
-          mensaje: quien llama puede reconocer ese caso concreto sin que
-          cambie nada para quien solo espera un `RuntimeError`.
-
-        El mensaje se extrae con `mensaje_de_error` de
-        `socialctl/adapters/errores.py` -el mismo helper que usan los cuatro
-        adaptadores de publicación- en vez de con un criterio nuevo: además
-        de no divergir, es el que ya **redacta el token** de cualquier texto
-        que devuelva, por si un proxy intermedio refleja la petición fallida
-        en su página de error. Un `error` del snapshot va a `piezas.yml` y a
-        git: nunca puede arrastrar un secreto.
-        """
+        """Request data and distinguish missing granted scope from other errors using sanitized messages."""
         r = client.get(url, headers=cabeceras, params=params)
         if r.is_success:
             return r.json()
@@ -298,12 +246,12 @@ class YouTubeLector(Lector):
             # distinga-, pero permite que `leer()` deje de insistir con el
             # resto de piezas sin repetir aquí ningún criterio nuevo.
             raise _CuotaAgotada(
-                f"YouTube respondió {r.status_code} a {url}: "
+                f"YouTube returned {r.status_code} for {url}: "
                 f"{mensaje_de_error(r, token)}"
             )
 
         raise RuntimeError(
-            f"YouTube respondió {r.status_code} a {url}: "
+            f"YouTube returned {r.status_code} for {url}: "
             f"{mensaje_de_error(r, token)}"
         )
 
@@ -315,8 +263,8 @@ class YouTubeLector(Lector):
         items = datos.get("items") or []
         if not items:
             raise RuntimeError(
-                "la Data API no devolvió ningún canal para este token: "
-                "comprueba que autorizaste la cuenta correcta"
+                "Data API returned no channel for this token: "
+                "check that you authorized the correct account"
             )
         return items[0]
 
@@ -415,21 +363,7 @@ class YouTubeLector(Lector):
     def _enriquecer(
         self, client: httpx.Client, cabeceras: dict, hoy: date, pieza: Pieza
     ) -> None:
-        """Añade la retención y el tráfico de `pieza`, o la deja sin ellos.
-
-        Aísla las dos peticiones de **esta** pieza: si cualquiera de las dos
-        falla, ninguna se da por buena a medias -`curva_retencion` y
-        `fuentes_trafico` quedan vacías, nunca inventadas- y la pieza se
-        marca con `CLAVE_ENRIQUECIMIENTO_FALLIDO` (ver el bloque de
-        `MAX_VIDEOS` para el porqué de esa clave y no `LecturaRed.error`).
-        Quien llama decide qué hacer con la pieza: esta función nunca la
-        descarta.
-
-        Vuelve a lanzar `_CuotaAgotada` -después de dejar la pieza en el
-        estado de arriba- para que `leer()` sepa que debe dejar de intentarlo
-        con el resto; cualquier otro fallo se resuelve aquí mismo, porque
-        solo afecta a esta pieza.
-        """
+        """Enrich one item with retention and traffic; both requests must succeed, otherwise record failure without partial enrichment."""
         try:
             pieza.especificas["curva_retencion"] = self._retencion(
                 client, cabeceras, hoy, pieza.id

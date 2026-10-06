@@ -152,7 +152,7 @@ def test_trae_la_curva_de_retencion_y_las_fuentes_de_trafico(brand):
 
     esp = lectura.piezas[0].especificas
     assert esp["minutos_vistos"] == 1200
-    assert esp["duracion_media_seg"] == 480
+    assert esp['duracion_media_seg'] == 480
     assert esp["porcentaje_visto"] == 48.5
     assert esp["suscriptores_ganados"] == 12
 
@@ -259,7 +259,7 @@ def test_un_403_de_scope_dice_que_permiso_falta(brand):
 
     mensaje = str(excinfo.value)
     assert "youtube.readonly" in mensaje
-    assert "socialctl auth youtube" in mensaje
+    assert 'socialcli auth youtube' in mensaje
 
 
 @respx.mock
@@ -460,7 +460,6 @@ def test_un_fallo_del_catalogo_antes_del_bucle_tumba_la_lectura_entera(brand):
 
     assert lectura.estado is EstadoLectura.ERROR
     assert lectura.piezas == [], "sin catálogo no hay ninguna pieza que conservar"
-
 
 @respx.mock
 def test_la_pieza_con_enriquecimiento_fallido_lo_dice_sin_arrastrar_el_token(brand):

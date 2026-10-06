@@ -87,7 +87,7 @@ def register(app, content_app):
              brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
              max_pages: int = typer.Option(20, "--max-pages", min=1, max=100),
              resume: bool = typer.Option(False, "--resume"), json_output: bool = typer.Option(False, "--json")):
-        """Lee contenido propio y guarda páginas completas bajo la identidad verificada."""
+        """Read owned content and save complete pages under verified identity."""
         def operation():
             selected = cargar_brand(root, brand)
             with make_http_client() as client:
@@ -110,9 +110,9 @@ def register(app, content_app):
     @content_app.command("list")
     def list_content(platform: Platform = typer.Option(..., "--platform"),
                      brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-                     account: str | None = typer.Option(None, "--account", help="ID histórico explícito; nunca se reasigna."),
+                     account: str | None = typer.Option(None, "--account", help="Explicit historical ID; never reassigned."),
                      json_output: bool = typer.Option(False, "--json")):
-        """Lista las últimas observaciones locales, sin consultar la red."""
+        """List latest local observations without network access."""
         guarded(lambda: listing(root, brand, platform, account), json_output)
 
     @content_app.command("export")
@@ -120,14 +120,14 @@ def register(app, content_app):
                brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                account: str | None = typer.Option(None, "--account"),
                json_output: bool = typer.Option(False, "--json")):
-        """Exporta campos públicos del inventario a stdout; el raw privado permanece local."""
+        """Export public inventory fields to stdout; private raw data stays local."""
         guarded(lambda: listing(root, brand, platform, account), json_output)
 
     @app.command("doctor")
     def doctor(brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                platform: Platform | None = typer.Option(None, "--platform"),
                json_output: bool = typer.Option(False, "--json")):
-        """Comprueba configuración, media local, identidad y salud del ejecutor remoto configurado."""
+        """Check configuration, local media, identity and configured remote executor health."""
         def operation():
             selected = cargar_brand(root, brand)
             media = safe(selected.raiz / "media")
@@ -147,7 +147,7 @@ def register(app, content_app):
     def capabilities(brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                      platform: str | None = typer.Option(None, "--platform"),
                      json_output: bool = typer.Option(False, "--json")):
-        """Clasificación documentada, no permisos concedidos ni disponibilidad de esta cuenta."""
+        """Documented classification; does not indicate granted permissions or account availability."""
         from socialctl.capabilities import capability_report
         def operation():
             selected = cargar_brand(root, brand)

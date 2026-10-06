@@ -28,7 +28,7 @@ from socialctl.models import MediaKind, Platform, StoryPost
 
 
 class StoryError(ChangeError):
-    """Error saneado de validación, binding, persistencia o estado."""
+    """Sanitized validation, binding, persistence or state error."""
 
 
 # Contrato conservador de Instagram Stories documentado por Meta. Meta expresa
@@ -125,25 +125,25 @@ def _read_edges(path: Path) -> tuple[bytes, bytes]:
             handle.seek(-2, 2)
             tail = handle.read(2)
     except OSError as exc:
-        raise StoryError(f"no se pudo inspeccionar la media de la Story: {exc}") from None
+        raise StoryError(f"failed to inspect Story media: {exc}") from None
     return head, tail
 
 
 def _probe_story(path: Path, kind: MediaKind, extension: str) -> tuple[int, int, float | None]:
-    """Comprueba el contenedor/codec real y devuelve metadatos observados."""
+    """Validate actual container/codec and return observed metadata."""
     head, tail = _read_edges(path)
     if kind is MediaKind.IMAGE and (
         not head.startswith(b"\xff\xd8\xff") or tail != b"\xff\xd9"
     ):
-        raise StoryError("formato real de imagen no admitido: se requieren bytes JPEG")
+        raise StoryError("unsupported actual image format: JPEG bytes required")
     if kind is MediaKind.VIDEO and (
         len(head) < 12 or head[4:8] != b"ftyp"
     ):
-        raise StoryError("formato real de vídeo no admitido: se requiere contenedor MP4 o MOV")
+        raise StoryError("unsupported actual video format: MP4 or MOV container required")
     try:
         probe = _ffprobe(path)
     except (MediaInvalida, OSError, ValueError, json.JSONDecodeError) as exc:
-        raise StoryError(f"la media no contiene un {extension.upper()} legible y real: {exc}") from None
+        raise StoryError(f"media does not contain an actual readable {extension.upper()}: {exc}") from None
 
     streams = probe.get("streams") or []
     video_stream = next(
@@ -151,11 +151,11 @@ def _probe_story(path: Path, kind: MediaKind, extension: str) -> tuple[int, int,
         streams[0] if streams else None,
     )
     if not isinstance(video_stream, dict):
-        raise StoryError("la media de la Story no contiene una imagen o pista de vídeo legible")
+        raise StoryError("Story media does not contain a readable image or video track")
     width = video_stream.get("width")
     height = video_stream.get("height")
     if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
-        raise StoryError("la media de la Story debe tener dimensiones reales positivas")
+        raise StoryError("Story media must have positive actual dimensions")
     if _rotacion_grados(video_stream) % 180 == 90:
         width, height = height, width
 
@@ -163,13 +163,13 @@ def _probe_story(path: Path, kind: MediaKind, extension: str) -> tuple[int, int,
     codec = str(video_stream.get("codec_name") or "").lower()
     if kind is MediaKind.IMAGE:
         if codec != "mjpeg" or "jpeg" not in format_name:
-            raise StoryError("formato real de imagen no admitido: se requiere JPEG legible")
+            raise StoryError("unsupported actual image format: readable JPEG required")
         return width, height, None
 
     if "mp4" not in format_name:
-        raise StoryError("formato real de vídeo no admitido: se requiere contenedor MP4 o MOV")
+        raise StoryError("unsupported actual video format: MP4 or MOV container required")
     if codec not in STORY_VIDEO_CODECS:
-        raise StoryError("codec de Story no admitido: usa vídeo H.264 o HEVC")
+        raise StoryError("unsupported Story codec: use H.264 or HEVC video")
     audio_streams = [
         stream for stream in streams if stream.get("codec_type") == "audio"
     ]
@@ -177,47 +177,47 @@ def _probe_story(path: Path, kind: MediaKind, extension: str) -> tuple[int, int,
         str(stream.get("codec_name") or "").lower() != STORY_AUDIO_CODEC
         for stream in audio_streams
     ):
-        raise StoryError("codec de audio de Story no admitido: usa AAC")
+        raise StoryError("unsupported Story audio codec: use AAC")
     raw_duration = (probe.get("format") or {}).get("duration")
     try:
         duration = float(raw_duration)
     except (TypeError, ValueError):
-        raise StoryError("el vídeo de la Story debe tener una duración real verificable") from None
+        raise StoryError("Story video must have a verifiable actual duration") from None
     return width, height, duration
 
 
 def _media_contract(story: StoryPost, brand) -> tuple[StoryPost, str, str, int]:
     media_root = (brand.raiz / "media").resolve()
     if story.media.path.is_symlink():
-        raise StoryError("la media de la Story debe ser un archivo regular, no un enlace")
+        raise StoryError("Story media must be a regular file, not a symlink")
     try:
         path = story.media.path.resolve(strict=True)
         relative = path.relative_to(media_root).as_posix()
     except (OSError, ValueError):
-        raise StoryError("la media de la Story debe existir dentro de la carpeta media de la marca") from None
+        raise StoryError("Story media must exist inside the brand media folder") from None
     if not path.is_file():
-        raise StoryError("la media de la Story debe ser un archivo regular, no un enlace")
+        raise StoryError("Story media must be a regular file, not a symlink")
 
     extension = path.suffix.lower()
     image_extensions = {".jpg", ".jpeg"}
     video_extensions = {".mp4", ".mov"}
     if story.media.kind is MediaKind.IMAGE and extension not in image_extensions:
-        raise StoryError("formato de imagen de Story no admitido: usa JPEG (.jpg o .jpeg)")
+        raise StoryError("unsupported Story image format: use JPEG (.jpg or .jpeg)")
     if story.media.kind is MediaKind.VIDEO and extension not in video_extensions:
-        raise StoryError("formato de vídeo de Story no admitido: usa MP4 o MOV")
+        raise StoryError("unsupported Story video format: use MP4 or MOV")
     size = path.stat().st_size
     if size <= 0 or story.media.size_bytes != size:
-        raise StoryError("el tamaño de la media no coincide o el archivo está vacío")
+        raise StoryError("media size mismatch or file is empty")
 
     width, height, duration = _probe_story(path, story.media.kind, extension)
     if story.media.kind is MediaKind.IMAGE:
         if size > STORY_IMAGE_MAX_BYTES:
-            raise StoryError("la imagen de Story supera el máximo documentado de 8 MB")
+            raise StoryError("Story image exceeds documented 8 MB maximum")
     else:
         if size > STORY_VIDEO_MAX_BYTES:
-            raise StoryError("el vídeo de Story supera el máximo documentado de 100 MB")
+            raise StoryError("Story video exceeds documented 100 MB maximum")
         if not STORY_VIDEO_MIN_DURATION_S <= duration <= STORY_VIDEO_MAX_DURATION_S:
-            raise StoryError("el vídeo de Story debe durar entre 3 y 60 segundos")
+            raise StoryError("Story video must last between 3 and 60 seconds")
 
     normalized_media = story.media.model_copy(
         update={
@@ -235,10 +235,10 @@ def _media_contract(story: StoryPost, brand) -> tuple[StoryPost, str, str, int]:
 def _validate_story(story: StoryPost, brand, *, at: datetime | None = None) -> tuple[StoryPost, str, str, int, str]:
     moment = at or now_utc()
     if story.expires_at <= moment:
-        raise StoryError("la propuesta de Story ha expirado; prepara una nueva")
+        raise StoryError("Story proposal expired; prepare a new one")
     if story.platform is Platform.INSTAGRAM:
         if story.public_url is None:
-            raise StoryError("Instagram exige una URL pública HTTPS para la media")
+            raise StoryError("Instagram requires a public HTTPS URL for media")
         try:
             validate_url(story.public_url)
         except HostedMediaError as exc:
@@ -252,11 +252,11 @@ def _validate_story(story: StoryPost, brand, *, at: datetime | None = None) -> t
                 raise StoryError(str(exc)) from None
         account = (brand.cuentas.get("facebook") or {}).get("page_id")
     else:
-        raise StoryError("Stories solo se admiten en Facebook o Instagram")
+        raise StoryError("Stories supported only on Facebook or Instagram")
     try:
         account_id = meta_id(account)
     except MetaError:
-        raise StoryError("falta un ID de cuenta Meta válido en accounts.yml") from None
+        raise StoryError("accounts.yml lacks a valid Meta account ID") from None
     normalized, relative, digest, size = _media_contract(story, brand)
     return normalized, relative, digest, size, account_id
 
@@ -321,8 +321,8 @@ def prepare_story(brand, store: StoryStore, story: StoryPost) -> StoryChange:
         duplicate = _active_duplicate(store, key)
         if duplicate is not None:
             raise StoryError(
-                f"Story duplicada: ya existe la propuesta activa {duplicate.id} "
-                f"en estado {duplicate.status}"
+                f"Duplicate Story: active proposal {duplicate.id} already exists "
+                f"with status {duplicate.status}"
             )
         moment = now_utc()
         capability = (
@@ -355,7 +355,7 @@ class MetaStoryClient:
 
     def __init__(self, brand, platform: Platform, client: httpx.Client, *, poll_wait_s: float = 60.0, poll_attempts: int = 5):
         if platform is not Platform.INSTAGRAM:
-            raise StoryError("el adaptador remoto de Stories solo está implementado para Instagram")
+            raise StoryError("remote Stories adapter is implemented only for Instagram")
         self.brand = brand
         self.platform = platform
         self.graph = MetaClient(brand, platform, client)
@@ -387,31 +387,31 @@ class MetaStoryClient:
             ) as response:
                 if response.status_code != 200:
                     raise StoryError(
-                        "la URL pública de la Story debe responder HTTP 200; "
-                        f"respondió {response.status_code}"
+                        "public Story URL must return HTTP 200; "
+                        f"returned {response.status_code}"
                     )
                 expected = "image/" if story.media.kind is MediaKind.IMAGE else "video/"
                 content_type = response.headers.get("content-type", "").lower()
                 if content_type and not content_type.startswith(expected):
                     raise StoryError(
-                        "el Content-Type público no coincide con el formato de la Story"
+                        "public Content-Type does not match Story format"
                     )
                 if response.headers.get("content-encoding", "identity") != "identity":
-                    raise StoryError("la media pública no debe estar comprimida")
+                    raise StoryError("public media must not be compressed")
                 length = response.headers.get("content-length")
                 if length is not None and (
                     not length.isdigit() or int(length) != expected_size
                 ):
-                    raise StoryError("el tamaño de la media pública no coincide con el archivo aprobado")
+                    raise StoryError("public media size does not match approved file")
                 for chunk in response.iter_bytes():
                     total += len(chunk)
                     if total > expected_size:
-                        raise StoryError("la media pública excede el tamaño del archivo aprobado")
+                        raise StoryError("public media exceeds approved file size")
                     remote_digest.update(chunk)
         except httpx.HTTPError:
-            raise StoryError("no se pudo comprobar la URL pública de la Story") from None
+            raise StoryError("failed to check public Story URL") from None
         if total != expected_size or remote_digest.hexdigest() != expected_digest:
-            raise StoryError("los bytes de la media pública no coinciden con el archivo aprobado")
+            raise StoryError("public media bytes do not match approved file")
 
     def create_container(self, story: StoryPost) -> str:
         assert story.public_url is not None
@@ -424,13 +424,13 @@ class MetaStoryClient:
         try:
             return meta_id(result.get("id"))
         except MetaError:
-            raise MetaUncertain("Meta aceptó crear el contenedor pero no devolvió un ID válido; no repetir") from None
+            raise MetaUncertain("Meta accepted container creation but returned no valid ID; do not repeat") from None
 
     def container_status(self, container_id: str) -> str:
         result = self.graph.request("GET", meta_id(container_id), params={"fields": "status_code"})
         status = result.get("status_code")
         if status not in {"EXPIRED", "ERROR", "FINISHED", "IN_PROGRESS", "PUBLISHED"}:
-            raise StoryError("Meta devolvió un estado de contenedor no verificable")
+            raise StoryError("Meta returned unverifiable container status")
         return status
 
     def publish_container(self, container_id: str) -> str:
@@ -442,7 +442,7 @@ class MetaStoryClient:
         try:
             return meta_id(result.get("id"))
         except MetaError:
-            raise MetaUncertain("Meta aceptó media_publish pero no devolvió un ID válido; no repetir") from None
+            raise MetaUncertain("Meta accepted media_publish but returned no valid ID; do not repeat") from None
 
     def verify_media(self, remote_id: str) -> dict:
         result = self.graph.request(
@@ -455,7 +455,7 @@ class MetaStoryClient:
             or (result.get("owner") or {}).get("id") != self.account_id
             or result.get("media_product_type") != "STORY"
         ):
-            raise StoryError("el ID remoto no se verificó como Story propia de la cuenta")
+            raise StoryError("remote ID was not verified as an account-owned Story")
         return result
 
 
@@ -466,10 +466,10 @@ def _bound(client, change: StoryChange) -> None:
         or client.platform.value != change.story.platform.value
         or client.account_id != change.account_id
     ):
-        raise StoryError("la marca/cuenta no coincide con la propuesta de Story")
+        raise StoryError("brand/account does not match Story proposal")
     identity = client.identity()
     if identity.get("account_id") != change.account_id:
-        raise StoryError("la identidad autenticada no coincide con la Story preparada")
+        raise StoryError("authenticated identity does not match prepared Story")
 
 
 def _recheck_local(change: StoryChange, brand) -> None:
@@ -481,7 +481,7 @@ def _recheck_local(change: StoryChange, brand) -> None:
         or size != change.media_size_bytes
         or account_id != change.account_id
     ):
-        raise StoryError("la media, URL, expiración o cuenta cambió desde el preview")
+        raise StoryError("media, URL, expiry or account changed since preview")
 
 
 def _save_failure(store: StoryStore, change: StoryChange, status: str, error: str, event: str) -> StoryChange:
@@ -496,7 +496,7 @@ def _verify(client, store: StoryStore, change: StoryChange) -> StoryChange:
     if not change.remote_id:
         if change.status in {"applying", "publishing"}:
             change.status = "uncertain"
-            change.last_error = "resultado remoto incierto sin ID; no se repetirá el POST"
+            change.last_error = "uncertain remote outcome without ID; POST will not be repeated"
             _event(change, "missing_remote_id_no_replay")
             store.save(change)
         return change
@@ -504,7 +504,7 @@ def _verify(client, store: StoryStore, change: StoryChange) -> StoryChange:
         receipt = client.verify_media(change.remote_id)
     except (MetaError, StoryError):
         change.status = "sent"
-        change.last_error = "Meta devolvió un ID, pero la Story todavía no pudo verificarse por GET"
+        change.last_error = "Meta returned an ID, but Story could not yet be verified by GET"
         _event(change, "verification_unavailable_no_replay")
     else:
         change.status = "verified"
@@ -527,27 +527,27 @@ def verify_story(client, store: StoryStore, change_id: str) -> StoryChange:
             try:
                 status = client.container_status(change.container_id)
             except (MetaError, StoryError):
-                change.last_error = "no se pudo verificar el estado actual del contenedor"
+                change.last_error = "failed to verify current container status"
                 _event(change, "container_verification_unavailable")
             else:
                 _event(change, "container_status_verified", status_code=status)
                 if status == "EXPIRED":
                     change.status = "expired"
-                    change.last_error = "el contenedor de Instagram expiró antes de publicarse"
+                    change.last_error = "Instagram container expired before publication"
                 elif status == "ERROR":
                     change.status = "blocked"
-                    change.last_error = "Meta no pudo procesar la media de la Story"
+                    change.last_error = "Meta could not process Story media"
                 elif status == "PUBLISHED":
                     change.status = "uncertain"
                     change.last_error = (
-                        "el contenedor figura PUBLISHED sin un ID remoto durable; "
-                        "no se repetirá media_publish"
+                        "container shows PUBLISHED without a durable remote ID; "
+                        "media_publish will not be repeated"
                     )
                 else:
                     change.status = "container_created"
                     change.last_error = (
-                        "el contenedor está listo" if status == "FINISHED"
-                        else "el contenedor sigue procesándose"
+                        "container is ready" if status == "FINISHED"
+                        else "container is still processing"
                     )
             store.save(change)
             return change
@@ -566,12 +566,12 @@ def apply_story(
         locks.enter_context(store.apply_lock(change_id))
         change = store.load(change_id)
         if not hmac.compare_digest(change.fingerprint, approval_digest):
-            raise StoryError("la aprobación no coincide con la huella exacta de la Story")
+            raise StoryError("approval does not match exact Story fingerprint")
         dedupe_lock = str(uuid.uuid5(uuid.NAMESPACE_URL, f"story:{change.brand_root}:{change.dedupe_key}"))
         locks.enter_context(store.apply_lock(dedupe_lock))
         duplicate = _active_duplicate(store, change.dedupe_key, excluding=change.id)
         if duplicate is not None:
-            raise StoryError(f"Story duplicada bloqueada por la operación activa {duplicate.id}")
+            raise StoryError(f"Duplicate Story blocked by active operation {duplicate.id}")
 
         if change.status == "verified":
             return change
@@ -579,14 +579,14 @@ def apply_story(
             return change
         current_brand = client.brand if client is not None else brand
         if current_brand is None:
-            raise StoryError("se requiere la marca explícita para aplicar la Story")
+            raise StoryError("explicit brand required to apply Story")
         if (
             change.story.expires_at <= now_utc()
             and change.container_id is None
             and change.remote_id is None
         ):
             return _save_failure(
-                store, change, "expired", "la aprobación de la Story ha expirado", "approval_expired_no_write"
+                store, change, "expired", "Story approval expired", "approval_expired_no_write"
             )
 
         if change.story.platform is Platform.FACEBOOK:
@@ -596,21 +596,21 @@ def apply_story(
                 return _save_failure(store, change, "blocked", str(exc), "local_binding_changed_no_write")
             change.status = "handoff_required"
             change.last_error = (
-                "Facebook Page Stories tiene API pública, pero su flujo photo_stories/video_stories "
-                "sigue pendiente de implementación; publica mediante Business Suite y registra la evidencia"
+                "Facebook Page Stories has a public API, but its photo_stories/video_stories flow "
+                "is not yet implemented; publish through Business Suite and record evidence"
             )
             _event(change, "facebook_page_story_handoff_no_remote_write")
             store.save(change)
             return change
 
         if client is None:
-            raise StoryError("se requiere adaptador Instagram para aplicar la Story")
+            raise StoryError("Instagram adapter required to apply Story")
         try:
             _bound(client, change)
         except (MetaError, StoryError) as exc:
             return _save_failure(
                 store, change, "blocked",
-                f"identidad o permiso de lectura no disponible: {exc}; el grant de escritura sigue sin verificar",
+                f"identity or read permission unavailable: {exc}; write grant remains unverified",
                 "identity_or_permission_blocked_no_write",
             )
 
@@ -624,7 +624,7 @@ def apply_story(
             and change.remote_id is None
         ):
             return _save_failure(
-                store, change, "expired", "la aprobación de la Story ha expirado", "approval_expired_no_write"
+                store, change, "expired", "Story approval expired", "approval_expired_no_write"
             )
         if change.container_id is None:
             try:
@@ -649,11 +649,11 @@ def apply_story(
             except MetaRejected:
                 return _save_failure(
                     store, change, "blocked",
-                    "Meta rechazó crear la Story; comprueba instagram_content_publish, elegibilidad y URL pública. El grant de escritura no está verificado",
+                    "Meta rejected Story creation; check instagram_content_publish, eligibility and public URL. Write grant is unverified",
                     "container_write_rejected",
                 )
             except (MetaUncertain, Exception) as exc:
-                message = str(exc) if isinstance(exc, MetaUncertain) else "fallo inesperado tras iniciar el POST"
+                message = str(exc) if isinstance(exc, MetaUncertain) else "unexpected failure after starting POST"
                 return _save_failure(store, change, "uncertain", message, "container_write_uncertain_no_replay")
             change.status = "container_created"
             _event(change, "container_id_persisted", container_id=change.container_id)
@@ -664,7 +664,7 @@ def apply_story(
             try:
                 status = client.container_status(change.container_id)
             except (MetaError, StoryError):
-                change.last_error = "no se pudo leer el estado del contenedor; se conserva su ID para continuar sin recrearlo"
+                change.last_error = "failed to read container status; ID preserved to continue without recreating it"
                 _event(change, "container_status_unavailable_safe_to_resume")
                 store.save(change)
                 return change
@@ -673,19 +673,19 @@ def apply_story(
             if status == "FINISHED":
                 break
             if status == "ERROR":
-                return _save_failure(store, change, "blocked", "Meta no pudo procesar la media de la Story", "container_processing_error")
+                return _save_failure(store, change, "blocked", "Meta could not process Story media", "container_processing_error")
             if status == "EXPIRED":
-                return _save_failure(store, change, "expired", "el contenedor de Instagram expiró antes de publicarse", "container_expired")
+                return _save_failure(store, change, "expired", "Instagram container expired before publication", "container_expired")
             if status == "PUBLISHED":
                 return _save_failure(
                     store, change, "uncertain",
-                    "el contenedor figura PUBLISHED sin un ID remoto durable; no se repetirá media_publish",
+                    "container shows PUBLISHED without a durable remote ID; media_publish will not be repeated",
                     "container_already_published_no_remote_id",
                 )
             if attempt < client.poll_attempts - 1:
                 time.sleep(client.poll_wait_s)
         if status != "FINISHED":
-            change.last_error = "el contenedor sigue procesándose; vuelve a ejecutar apply o verify más tarde"
+            change.last_error = "container is still processing; run apply or verify again later"
             _event(change, "container_still_processing_safe_to_resume")
             store.save(change)
             return change
@@ -699,11 +699,11 @@ def apply_story(
         except MetaRejected:
             return _save_failure(
                 store, change, "blocked",
-                "Meta rechazó media_publish; comprueba instagram_content_publish y elegibilidad. El grant de escritura no estaba verificado",
+                "Meta rejected media_publish; check instagram_content_publish and eligibility. Write grant was unverified",
                 "media_publish_rejected",
             )
         except (MetaUncertain, Exception) as exc:
-            message = str(exc) if isinstance(exc, MetaUncertain) else "resultado incierto tras media_publish"
+            message = str(exc) if isinstance(exc, MetaUncertain) else "uncertain outcome after media_publish"
             return _save_failure(store, change, "uncertain", message, "media_publish_uncertain_no_replay")
         change.status = "sent"
         _event(change, "remote_id_persisted", remote_id=change.remote_id)

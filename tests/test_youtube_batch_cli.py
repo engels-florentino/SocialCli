@@ -26,8 +26,8 @@ def test_complete_batch_dryrun_and_apply_share_exact_digest(tmp_path, monkeypatc
     for ident in ("video-1", "video-2", "video-3"):
         assert ident in preview.output
     assert batch.fingerprint in preview.output
-    assert "internal" in preview.output and "Hashtags visibles" in preview.output
-    assert "Antes" in preview.output and "Después" in preview.output
+    assert "internal" in preview.output and "Visible hashtags" in preview.output
+    assert "Before" in preview.output and "After" in preview.output
     assert api.writes == []
     denied = runner.invoke(app, ["changes", "apply", batch.id, "--brand", "MarcaA", "--yes"], input="yes\n")
     assert denied.exit_code == 1 and api.writes == []
@@ -46,8 +46,8 @@ def test_restore_cli_demands_dryrun_then_new_exact_approval(tmp_path, monkeypatc
     assert denied.exit_code == 1 and "--dry-run" in denied.output
     result = runner.invoke(app, ["changes", "restore", batch.id, "--brand", "MarcaA", "--dry-run"])
     assert result.exit_code == 0, result.output
-    assert "Restauración" in result.output
-    assert "no restaura" in result.output
+    assert "restoration" in result.output
+    assert 'does not restore' in result.output
     assert api.writes == []
     ids = [path.stem for path in store.root.glob("*.json") if path.stem != batch.id]
     status = runner.invoke(app, ["changes", "status", ids[0], "--brand", "MarcaA"])

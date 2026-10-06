@@ -13,7 +13,7 @@ def opaque_id(value):
     # Always query/JSON data, never URL paths; comma is a provider batch separator.
     if (not isinstance(value, str) or not 0 < len(value) <= 512 or "://" in value
         or any(not c.isprintable() or c.isspace() or c in ",?#" for c in value)):
-        raise ResourceError("ID opaco inválido")
+        raise ResourceError("invalid opaque ID")
     return value
 
 
@@ -28,7 +28,7 @@ class CommentTarget(BaseModel):
     @classmethod
     def no_null(cls, raw):
         if not isinstance(raw, dict) or any(v is None for v in raw.values()):
-            raise ResourceError("target exige campos suministrados sin null")
+            raise ResourceError("target requires supplied nonnull fields")
         return raw
 
     @model_validator(mode="after")
@@ -78,26 +78,26 @@ class CommunityEdit(BaseModel):
     @classmethod
     def exact_fields(cls, raw):
         if not isinstance(raw, dict) or not isinstance(raw.get("action"), str) or raw["action"] not in ACTIONS:
-            raise ResourceError("acción no admitida; spam/pin/heart/polls/cards/end-screens/related Shorts no se emulan")
+            raise ResourceError("unsupported action; spam/pin/heart/polls/cards/end-screens/related Shorts are not emulated")
         required, allowed = ACTIONS[raw["action"]]
         present = set(raw) - {"version", "action"}
         if required - present or present - allowed or any(raw[k] is None for k in present):
-            raise ResourceError("campos omitidos/extra/null para la acción")
+            raise ResourceError("missing/extra/null action fields")
         for key in present & {"video_id", "channel_id"}:
             resource_id(raw[key])
         for key in present & {"thread_id", "comment_id", "parent_id", "subscription_id", "reason_id", "secondary_reason_id"}:
             opaque_id(raw[key])
         if "text" in present and (not isinstance(raw["text"], str) or not raw["text"].strip()):
-            raise ResourceError("texto suministrado vacío")
+            raise ResourceError("supplied text is empty")
         return raw
 
     @model_validator(mode="after")
     def moderation(self):
         if self.action == "moderate":
             if len({t.comment_id for t in self.targets}) != len(self.targets):
-                raise ResourceError("IDs de moderación duplicados")
+                raise ResourceError("duplicate moderation IDs")
             if self.ban_author and self.moderation_status != "rejected":
-                raise ResourceError("banAuthor solo se admite con rejected")
+                raise ResourceError("banAuthor accepted only with rejected")
         return self
 
 
@@ -109,11 +109,11 @@ def validate_edit(edit):
     try:
         return CommunityEdit.model_validate(edit_raw(edit) if isinstance(edit, CommunityEdit) else edit)
     except ValidationError as exc:
-        raise ResourceError(f"propuesta de comunidad inválida: {exc}") from None
+        raise ResourceError(f"invalid community proposal: {exc}") from None
 
 
 def load_edit(path):
     try:
         return validate_edit(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
     except (OSError, yaml.YAMLError):
-        raise ResourceError("no se pudo leer YAML suministrado") from None
+        raise ResourceError("failed to read supplied YAML") from None

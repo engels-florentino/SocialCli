@@ -1,8 +1,4 @@
-"""Cliente seguro para inspeccionar y editar metadatos de YouTube.
-
-Este módulo usa exclusivamente el endpoint normal de Data API. V1 expone solo
-snippet; el cliente V2 valida otras partes antes de usar el transporte común.
-"""
+"""Safe YouTube metadata inspection and editing via standard Data API endpoints; V1 edits snippet, V2 validates other parts."""
 
 from __future__ import annotations
 
@@ -43,19 +39,19 @@ READ_ONLY_SNIPPET_FIELDS = frozenset(
 
 
 class YouTubeManagementError(RuntimeError):
-    """Fallo seguro de lectura o validación de identidad."""
+    """Safe read or identity validation failure."""
 
 
 class YouTubeUpdateRejected(YouTubeManagementError):
-    """YouTube rechazó de forma inequívoca la escritura."""
+    """YouTube unequivocally rejected the write."""
 
 
 class YouTubeUpdateConflict(YouTubeUpdateRejected):
-    """El ETag cambió entre la relectura y el PUT (HTTP 412)."""
+    """ETag changed between reread and PUT (HTTP 412)."""
 
 
 class YouTubeUpdateUncertain(YouTubeManagementError):
-    """No se puede saber con seguridad si el PUT llegó a aplicarse."""
+    """Whether PUT was applied cannot be determined reliably."""
 
 
 @dataclass(frozen=True)
@@ -67,7 +63,7 @@ class InspectedVideo:
 
 
 class YouTubeManagementClient:
-    """Inspecciona un vídeo y actualiza solo su ``snippet`` completo."""
+    """Inspect a video and update only its complete snippet."""
 
     def __init__(self, brand: Brand, client: httpx.Client) -> None:
         self.brand = brand
@@ -79,21 +75,21 @@ class YouTubeManagementClient:
         channel_id = account.get("channel_id") if isinstance(account, dict) else None
         if not isinstance(channel_id, str) or not channel_id.strip():
             raise YouTubeManagementError(
-                f"falta youtube.channel_id en {self.brand.raiz / 'accounts.yml'}"
+                f"youtube.channel_id missing in {self.brand.raiz / 'accounts.yml'}"
             )
         return channel_id
 
     def inspect(self, video_id: str) -> InspectedVideo:
-        """Lee un vídeo tras verificar cuenta configurada, token y propiedad."""
+        """Read video after verifying configured account, token and ownership."""
         if not isinstance(video_id, str) or not video_id.strip():
-            raise YouTubeManagementError("el id de vídeo está vacío")
+            raise YouTubeManagementError("video ID is empty")
 
         configured = self.configured_channel_id
         token = self._token()
         authenticated = self._authenticated_channel(token)
         if authenticated != configured:
             raise YouTubeManagementError(
-                "el canal autenticado no coincide con youtube.channel_id de la marca "
+                "authenticated channel does not match brand youtube.channel_id "
                 f"{self.brand.nombre}: autenticado={authenticated}, configurado={configured}"
             )
 
@@ -101,24 +97,24 @@ class YouTubeManagementClient:
             VIDEOS_URL,
             token,
             params={"part": "snippet", "id": video_id},
-            operation="leer el vídeo",
+            operation="read video",
         )
         items = payload.get("items") if isinstance(payload, dict) else None
         if not isinstance(items, list) or not items:
             raise YouTubeManagementError(
-                f"YouTube no devolvió el vídeo {video_id}; comprueba el id y sus permisos"
+                f"YouTube did not return video {video_id}; check its ID and permissions"
             )
         item = items[0]
         if not isinstance(item, dict) or item.get("id") != video_id:
-            raise YouTubeManagementError("YouTube devolvió un recurso de vídeo inesperado")
+            raise YouTubeManagementError("YouTube returned an unexpected video resource")
         snippet = item.get("snippet")
         if not isinstance(snippet, dict):
-            raise YouTubeManagementError("YouTube devolvió un snippet de vídeo inválido")
+            raise YouTubeManagementError("YouTube returned an invalid video snippet")
 
         channel_id = snippet.get("channelId")
         if channel_id != configured:
             raise YouTubeManagementError(
-                f"el vídeo {video_id} no pertenece al canal configurado de "
+                f"video {video_id} does not belong to the configured channel for "
                 f"{self.brand.nombre}"
             )
 
@@ -126,15 +122,15 @@ class YouTubeManagementClient:
         if unknown:
             names = ", ".join(sorted(unknown))
             raise YouTubeManagementError(
-                "el snippet contiene un campo desconocido cuya mutabilidad no es segura: "
-                f"{names}; se rechaza la edición para no descartarlo"
+                "snippet contains an unknown field with uncertain mutability: "
+                f"{names}; editing rejected to avoid dropping it"
             )
 
         etag = item.get("etag")
         if not isinstance(etag, str) or not etag:
             raise YouTubeManagementError(
-                "YouTube no devolvió un ETag; la edición se rechaza para no sobrescribir "
-                "un cambio concurrente"
+                "YouTube did not return an ETag; editing rejected to avoid overwriting "
+                "a concurrent change"
             )
         return InspectedVideo(
             video_id=video_id,
@@ -152,19 +148,15 @@ class YouTubeManagementClient:
         self, video_id: str, parts: dict[str, Any], *, etag: str,
         before_put: Callable[[], None] | None = None,
     ) -> None:
-        """Hace un único PUT condicional de las partes validadas por el llamador.
-
-        Todo fallo de transporte o 5xx queda como resultado incierto. Un 412
-        es conflicto definitivo; otros 4xx son rechazos definitivos.
-        """
+        """Send one conditional PUT for caller-validated parts. Transport/5xx errors are uncertain; 412 conflicts and other 4xx rejections are definitive."""
         if not etag:
-            raise YouTubeUpdateRejected("no se puede actualizar sin ETag")
+            raise YouTubeUpdateRejected("cannot update without ETag")
         configured = self.configured_channel_id
         token = self._token()
         authenticated = self._authenticated_channel(token)
         if authenticated != configured:
             raise YouTubeUpdateRejected(
-                "el canal autenticado cambió antes de videos.update; no se envió el PUT"
+                "authenticated channel changed before videos.update; PUT was not sent"
             )
         headers = {
             "Authorization": f"Bearer {token}",
@@ -185,49 +177,49 @@ class YouTubeManagementClient:
             )
         except httpx.TimeoutException:
             raise YouTubeUpdateUncertain(
-                "resultado incierto: se agotó el tiempo durante videos.update"
+                "uncertain outcome: videos.update timed out"
             ) from None
         except (httpx.HTTPError, httpx.InvalidURL):
             raise YouTubeUpdateUncertain(
-                "resultado incierto: se perdió la conexión durante videos.update"
+                "uncertain outcome: connection lost during videos.update"
             ) from None
         except Exception:
             raise YouTubeUpdateUncertain(
-                "resultado incierto: fallo inesperado durante videos.update"
+                "uncertain outcome: unexpected failure during videos.update"
             ) from None
 
         error = mensaje_de_error(response, token)
         if response.status_code == 412:
             raise YouTubeUpdateConflict(
-                "conflicto de ETag (HTTP 412 conditionNotMet); no se reintentó el PUT"
+                "ETag conflict (HTTP 412 conditionNotMet); PUT was not retried"
             )
         if 500 <= response.status_code:
             raise YouTubeUpdateUncertain(
-                f"resultado incierto tras videos.update: {error}"
+                f"uncertain outcome after videos.update: {error}"
             )
         if not response.is_success:
             if response.status_code == 403:
                 raise YouTubeUpdateRejected(
-                    "YouTube rechazó videos.update; reautoriza con el permiso de gestión "
-                    f"youtube.force-ssl o youtube. Detalle: {error}"
+                    "YouTube rejected videos.update; reauthorize with management permission "
+                    f"youtube.force-ssl or youtube. Details: {error}"
                 )
             raise YouTubeUpdateRejected(
-                f"YouTube rechazó videos.update sin aplicar el cambio: {error}"
+                f"YouTube rejected videos.update without applying the change: {error}"
             )
 
         try:
             payload = response.json()
         except Exception:
             raise YouTubeUpdateUncertain(
-                "resultado incierto: videos.update respondió sin JSON verificable"
+                "uncertain outcome: videos.update returned unverifiable JSON"
             ) from None
         if not isinstance(payload, dict) or payload.get("id") != video_id:
             raise YouTubeUpdateUncertain(
-                "resultado incierto: videos.update devolvió un recurso inesperado"
+                "uncertain outcome: videos.update returned an unexpected resource"
             )
 
     def editable_snippet(self, inspected: InspectedVideo) -> dict[str, Any]:
-        """Extrae todos los campos escribibles presentes, sin inventar ausentes."""
+        """Extract all present writable fields without inventing absent values."""
         return {
             key: inspected.snippet[key]
             for key in WRITABLE_SNIPPET_FIELDS
@@ -242,7 +234,7 @@ class YouTubeManagementClient:
         except Exception:
             # Un fallo imprevisto podría arrastrar el secreto en su texto.
             raise YouTubeManagementError(
-                "no se pudieron leer o refrescar las credenciales de YouTube"
+                "failed to read or refresh YouTube credentials"
             ) from None
 
     def _authenticated_channel(self, token: str) -> str:
@@ -250,16 +242,16 @@ class YouTubeManagementClient:
             CHANNELS_URL,
             token,
             params={"part": "id", "mine": "true"},
-            operation="comprobar el canal autenticado",
+            operation="check authenticated channel",
         )
         items = payload.get("items") if isinstance(payload, dict) else None
         if not isinstance(items, list) or not items or not isinstance(items[0], dict):
             raise YouTubeManagementError(
-                "la Data API no devolvió ningún canal para el token de la marca"
+                "Data API returned no channel for the brand token"
             )
         channel_id = items[0].get("id")
         if not isinstance(channel_id, str) or not channel_id:
-            raise YouTubeManagementError("la Data API devolvió un canal autenticado inválido")
+            raise YouTubeManagementError("Data API returned an invalid authenticated channel")
         return channel_id
 
     def _get_json(
@@ -271,34 +263,34 @@ class YouTubeManagementClient:
             )
         except httpx.TimeoutException:
             raise YouTubeManagementError(
-                f"se agotó el tiempo al {operation} en YouTube"
+                f"timed out while attempting to {operation} on YouTube"
             ) from None
         except (httpx.HTTPError, httpx.InvalidURL):
             raise YouTubeManagementError(
-                f"no se pudo conectar con YouTube para {operation}"
+                f"failed to connect to YouTube to {operation}"
             ) from None
         except Exception:
             raise YouTubeManagementError(
-                f"fallo inesperado al {operation} en YouTube"
+                f"unexpected failure during {operation} on YouTube"
             ) from None
         if not response.is_success:
             detail = mensaje_de_error(response, token)
             if response.status_code == 403:
                 raise YouTubeManagementError(
-                    f"YouTube no permitió {operation}; comprueba youtube.readonly. "
+                    f"YouTube did not allow {operation}; check youtube.readonly. "
                     f"Detalle: {detail}"
                 )
             raise YouTubeManagementError(
-                f"YouTube respondió {response.status_code} al {operation}: {detail}"
+                f"YouTube returned {response.status_code} during {operation}: {detail}"
             )
         try:
             payload = response.json()
         except Exception:
             raise YouTubeManagementError(
-                f"YouTube devolvió una respuesta no JSON al {operation}"
+                f"YouTube returned a non-JSON response during {operation}"
             ) from None
         if not isinstance(payload, dict):
             raise YouTubeManagementError(
-                f"YouTube devolvió una respuesta inválida al {operation}"
+                f"YouTube returned an invalid response during {operation}"
             )
         return payload

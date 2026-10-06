@@ -167,7 +167,7 @@ def test_no_remote_retries_and_immutable_preview_tampering(tmp_path, status):
     raw = json.loads(path.read_text())
     raw["effects"].append("Unapproved effect")
     path.write_text(json.dumps(raw))
-    with pytest.raises(ValueError, match="huella"):
+    with pytest.raises(ValueError, match='fingerprint'):
         store.load(change.id)
 
 

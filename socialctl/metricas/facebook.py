@@ -1,20 +1,4 @@
-"""Lectura de métricas de una Página de Facebook (Graph API).
-
-Meta retira nombres de métricas con cada versión de la Graph API, y esto no
-es un aviso teórico: el 2026-09-11, verificando contra la Página real, ocho
-nombres que este módulo iba a pedir estaban muertos (ver `METRICAS_MUERTAS`).
-Por eso aquí nada da por hecho que una métrica pedida exista: `valor_insight`
-devuelve `None` si no viene, y la lectura sigue. Una métrica desaparecida no
-puede tumbar la red entera ni convertirse en un cero que el gestor de redes
-interpretaría como "no lo vio nadie".
-
-Lo segundo que no se puede dar por hecho es que un error sea inofensivo: la
-Graph API manda el `access_token` en la URL, así que aquí no se usa
-`raise_for_status()` en ninguna parte. Todo error HTTP pasa por
-`comprobar_respuesta`, que construye el mensaje con `mensaje_de_error` -el
-mismo helper de `socialctl/adapters/errores.py` que usan los adaptadores de
-publicación-, y ese sí redacta el token de cualquier texto que devuelva.
-"""
+"""Read Facebook Page metrics via Graph API, degrading gracefully when removed insight names require fallback."""
 
 from __future__ import annotations
 
@@ -144,11 +128,7 @@ VERTICAL_HASTA_SEG = 180
 
 
 def valor_insight(insights: dict, nombre: str) -> object | None:
-    """Saca el valor de una métrica de un bloque `insights` de la Graph API.
-
-    Devuelve `None` si la métrica no está —que es lo que pasa cuando Meta la
-    retira—, en vez de un cero que se confundiría con un dato real.
-    """
+    """Extract Graph API insight value, preserving missing metrics as None rather than zero."""
     for entrada in (insights or {}).get("data", []):
         if entrada.get("name") == nombre:
             valores = entrada.get("values") or []
@@ -157,22 +137,7 @@ def valor_insight(insights: dict, nombre: str) -> object | None:
 
 
 def segundos(milisegundos: object | None) -> float | None:
-    """Milisegundos de la Graph API → segundos, con un decimal.
-
-    Meta da los tiempos de vídeo en **milisegundos**
-    (`post_video_view_time`, `post_video_avg_time_watched`); el resto de este
-    proyecto trabaja en segundos (`duracion_seg` aquí, `duracion_media_seg`
-    en `socialctl/metricas/youtube.py`). La conversión se hace en este único
-    sitio para que en el snapshot no convivan dos unidades: un
-    `retencion_media_seg` que en realidad fueran milisegundos convertiría 8,5
-    segundos en 8473, y el gestor de redes concluiría que el vídeo retiene
-    dos horas y cuarto.
-
-    Un decimal porque la media de un vídeo corto se juega en décimas:
-    `8473` ms → `8.5` s. `None` sigue siendo `None` -métrica retirada o que
-    no aplica-, y un valor que no sea numérico también, en vez de reventar la
-    lectura de la Página entera por un formato inesperado.
-    """
+    """Convert Graph API milliseconds to seconds with one decimal place."""
     if milisegundos is None:
         return None
     try:
@@ -184,14 +149,7 @@ def segundos(milisegundos: object | None) -> float | None:
 def comprobar_permiso(
     respuesta: httpx.Response, platform: Platform, scope: str
 ) -> None:
-    """Traduce el 403/#10 de Meta a `SinPermiso` con el scope que falta.
-
-    El cuerpo de un 403 no siempre es JSON: un proxy o un WAF por delante de
-    la Graph API puede devolver una página HTML. Por eso el `json()` va
-    dentro de un `try`: si no se puede interpretar, esta función no decide
-    nada y deja que quien llama levante el error HTTP normal; lo que no puede
-    pasar es que se caiga con un `JSONDecodeError` y tape el fallo real.
-    """
+    """Translate Meta 403/#10 to SinPermiso with exact missing scope; handle non-JSON responses safely."""
     if respuesta.status_code not in (400, 403):
         return
     try:
@@ -209,63 +167,18 @@ def comprobar_permiso(
 def comprobar_respuesta(
     respuesta: httpx.Response, platform: Platform, scope: str, token: str
 ) -> dict:
-    """Devuelve el JSON de una respuesta de la Graph API, o falla sin filtrar el token.
-
-    Aquí **no** se usa `raise_for_status()`, y no es una preferencia de
-    estilo. La Graph API exige el `access_token` como parámetro de consulta,
-    así que la URL de la petición lo lleva dentro; el mensaje de
-    `HTTPStatusError` incluye esa URL entera -`Client error '403 Forbidden'
-    for url '…&access_token=EAAG…'`-, `leer_red` lo guardaría tal cual en
-    `LecturaRed.error`, y de ahí iría al JSON del snapshot y a `resumen.md`,
-    **los dos versionados en git**.
-
-    El mensaje se extrae con `mensaje_de_error` (`socialctl/adapters/
-    errores.py`), el mismo helper que usan los cuatro adaptadores de
-    publicación desde que se arregló este mismo incidente en ellos: además de
-    no inventar un criterio nuevo, redacta el token de cualquier texto que
-    devuelva, incluido el cuerpo crudo de un proxy que refleje la petición
-    fallida.
-
-    El orden importa: primero `comprobar_permiso`, para que un 403 por scope
-    salga como `SinPermiso` -con el permiso que falta y el `auth` que lo
-    arregla- y no como un error HTTP genérico.
-    """
+    """Parse Graph API JSON without leaking query-string tokens; avoid raise_for_status because its URL could expose credentials."""
     comprobar_permiso(respuesta, platform, scope)
     if not respuesta.is_success:
         raise RuntimeError(
-            f"{platform.value} respondió {respuesta.status_code}: "
+            f"{platform.value} returned {respuesta.status_code}: "
             f"{mensaje_de_error(respuesta, token)}"
         )
     return respuesta.json()
 
 
 def es_metrica_invalida(respuesta: httpx.Response) -> bool:
-    """True si el 400 es el de una métrica de `insights` que Meta retiró.
-
-    El hallazgo real, verificado el 2026-09-11 contra la Página (ver
-    `METRICAS_MUERTAS`): cuando el NOMBRE de una métrica de
-    `insights.metric(...)` ya no existe, la petición ENTERA del listado
-    -`fields=...,insights.metric(a,b,c,d)`- falla con **400** y el cuerpo
-    `{"error": {"code": 100, "message": "(#100) The value must be a valid
-    insights metric"}}`. No es un 200 con huecos -ese es un caso distinto,
-    ya cubierto por `valor_insight`: la métrica existe pero no aplica a esa
-    publicación (una foto sin métricas de vídeo, por ejemplo)-.
-
-    Se exige el código (100) Y el texto, no solo uno de los dos:
-
-    - Solo el código no basta porque 100 ("parámetro inválido") es una
-      categoría amplia de la Graph API que cubre muchos otros fallos de
-      `fields` que sí deben seguir tumbando la lectura (regla del brief:
-      "no lo hagas tolerante de más").
-    - El texto tampoco basta solo, por prudencia simétrica: no hay ninguna
-      garantía documentada de que Meta no reutilice ese mismo texto bajo
-      otro código en el futuro.
-
-    Deliberadamente no se confunde con un problema de permisos -403 con
-    código 10 ó 200, o "permission" en el mensaje-, que ya tiene su propia
-    rama en `comprobar_permiso` y se resuelve reautenticando, no
-    reintentando sin insights.
-    """
+    """Identify 400 responses caused by a retired insights metric name."""
     if respuesta.status_code != 400:
         return False
     try:
@@ -289,35 +202,7 @@ def pedir_listado_con_insights(
     scope: str,
     token: str,
 ) -> tuple[dict, str | None]:
-    """Pide un listado con `insights.metric(...)`, degradando si Meta retiró alguna.
-
-    Usado por el listado de publicaciones de Facebook y el de medias de
-    Instagram: las dos peticiones que piden a la vez el catálogo (id, fecha,
-    enlace...) y un bloque de insights, y las dos expuestas al mismo
-    hallazgo -ver `es_metrica_invalida`-.
-
-    Primero se pide `campos_base` + el bloque de insights, tal cual se pedía
-    antes de este arreglo. Si esa petición falla con el 400 concreto de una
-    métrica retirada, se reintenta la MISMA petición -mismo `extra`, mismo
-    id de cuenta, implícito en `url`- pero SOLO con `campos_base`, sin
-    insights: así se recupera el listado completo con todo lo que no
-    dependía de la métrica muerta (comentarios, compartidos, fecha, tipo,
-    enlace...), en vez de perder la red entera por un nombre que Meta borró.
-
-    Cualquier otro fallo -incluido un 400 que no sea el de métrica
-    inválida, o un fallo en el propio reintento- se deja subir tal cual por
-    `comprobar_respuesta`, sin tocar: la regla es degradar este caso
-    concreto, no volverse tolerante con cualquier error.
-
-    Devuelve `(datos, motivo)`. `motivo` es `None` cuando la primera
-    petición tuvo éxito -el caso de siempre-, y el mensaje ya redactado
-    (vía `mensaje_de_error`, nunca el texto crudo) del 400 que forzó el
-    reintento cuando no. Quien llama usa ese mensaje para marcar cada pieza
-    con `CLAVE_ENRIQUECIMIENTO_FALLIDO`, el mismo mecanismo de señal que
-    `socialctl/metricas/youtube.py` -una clave que solo existe en
-    `especificas` cuando algo falló, para que su sola presencia sea la
-    señal-, sin tocar `LecturaRed.estado` ni los modelos.
-    """
+    """Request listings with insights, falling back when Meta rejects retired metrics."""
     params_con_insights = {
         **extra,
         "fields": f"{campos_base},insights.metric({metricas})",
@@ -341,21 +226,7 @@ def _seguir_paginas(
     scope: str,
     token: str,
 ) -> dict:
-    """Junta en un solo `data` todas las páginas del listado.
-
-    La Graph API pagina con `paging.next`: una URL completa -con el mismo
-    `fields`, el mismo `limit` y el `access_token` ya dentro- que apunta al
-    siguiente lote. Antes de este arreglo solo se leía la primera página, así
-    que a partir de la publicación nº 100 todo desaparecía del snapshot y de
-    `piezas.yml` **sin que nada lo dijera** (ver `MAX_PAGINAS_META` para por
-    qué aquí se pagina en vez de declarar un tope, como hacen YouTube y
-    TikTok).
-
-    Una página que falle no se traga: sube por `comprobar_respuesta` como
-    cualquier otro error de esta red, igual que si fallara la primera. Y el
-    token nunca llega al mensaje: `comprobar_respuesta` lo redacta, y por eso
-    se le sigue pasando aunque aquí venga dentro de la URL de `next`.
-    """
+    """Combine bounded Graph API pages into one data list; prevent unbounded quota use and warn on truncation."""
     acumulado = list(primera.get("data") or [])
     siguiente = (primera.get("paging") or {}).get("next")
     paginas = 1
@@ -367,52 +238,29 @@ def _seguir_paginas(
         paginas += 1
     if siguiente:
         warnings.warn(
-            f"{platform.value}: el listado tiene más de {MAX_PAGINAS_META} "
-            f"páginas de {POR_PAGINA_META}; se leen las "
-            f"{MAX_PAGINAS_META * POR_PAGINA_META} publicaciones más recientes "
-            "y las anteriores no entran en este snapshot.",
+            f"{platform.value}: listing exceeds {MAX_PAGINAS_META} "
+            f"pages of {POR_PAGINA_META}; reading the "
+            f"{MAX_PAGINAS_META * POR_PAGINA_META} most recent posts "
+            "and older posts are excluded from this snapshot.",
             stacklevel=3,
         )
     return {**primera, "data": acumulado}
 
 
 def id_de_cuenta(brand: Brand, red: str, campo: str) -> str:
-    """Devuelve el id configurado de una cuenta, o falla diciendo cuál falta.
-
-    `accounts.yml` nace con `page_id: ""` e `ig_user_id: ""`. Sin esta
-    comprobación, el lector pediría `GET {GRAFO}/` -sin id- y Meta
-    respondería un error genérico que no dice nada de lo que de verdad pasa:
-    que la marca no está configurada todavía.
-    """
+    """Return configured account ID or report exact missing field."""
     valor = (brand.cuentas.get(red) or {}).get(campo) or ""
     if not str(valor).strip():
         raise RuntimeError(
-            f"la marca '{brand.nombre}' no tiene configurado '{red}.{campo}' en "
-            f"{brand.raiz / 'accounts.yml'}: rellénalo antes de leer métricas "
-            f"de {red} (ver SETUP.md)"
+            f"brand '{brand.nombre}' has no '{red}.{campo}' configured in "
+            f"{brand.raiz / 'accounts.yml'}: fill it in before reading metrics "
+            f"for {red} (see SETUP.md)"
         )
     return str(valor).strip()
 
 
 def fecha_meta(texto: str) -> datetime:
-    """`2026-08-31T18:00:00+0000` → datetime naive en UTC, **convertido de verdad**.
-
-    Antes hacía `.replace(tzinfo=None)`, que no convierte: **tira** el
-    offset y se queda con la hora local de la app disfrazada de UTC. Con
-    `+0000` -lo que devuelve hoy la Página- no se notaba, pero la Graph API
-    da `created_time` en la zona horaria de la app: con `+0200`, las 18:00
-    de Meta son las 16:00 UTC y se guardaban como las 18:00; con `-0700`, la
-    diferencia llega a cruzar de día.
-
-    Eso importa porque `publicado_el` se compara con el de las otras redes,
-    que sí están en UTC de verdad (YouTube hace `astimezone(timezone.utc)`,
-    TikTok parte de un epoch UTC): un desfase de horas rompe el filtro
-    `--desde` y la comparación "a la misma edad de publicación" que el skill
-    `gestor-redes` manda hacer.
-
-    Naive en UTC (no `aware`) porque es la forma que usan las cuatro redes
-    en `Pieza.publicado_el`, y mezclar naive y aware reventaría al compararlas.
-    """
+    """Convert offset-aware Meta timestamp to naive UTC, preserving the actual instant."""
     return (
         datetime.strptime(texto, "%Y-%m-%dT%H:%M:%S%z")
         .astimezone(timezone.utc)
@@ -478,12 +326,7 @@ class FacebookLector(Lector):
     def _duracion_video(
         self, client: httpx.Client, token: str, id_video: str
     ) -> int | None:
-        """Segundos del vídeo de una publicación, o `None` si no se sabe.
-
-        Un fallo aquí no puede tumbar la lectura de la Página entera: la
-        duración es un extra, y sin ella la pieza sigue siendo válida (con
-        `tipo` decidido solo por `media_type` y `duracion_seg` en `None`).
-        """
+        """Read attached video duration in seconds; unavailable duration does not abort Page metrics."""
         try:
             datos = self._pedir(
                 client, f"{GRAFO}/{id_video}",

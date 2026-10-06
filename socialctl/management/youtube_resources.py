@@ -66,7 +66,7 @@ def provider_reason(response, token):
 
 def resource_id(value):
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_=-]{1,512}", value):
-        raise ResourceError("ID de YouTube inválido; no se admiten URLs ni rutas")
+        raise ResourceError("Invalid YouTube ID; URLs and paths are not accepted")
     return value
 
 
@@ -76,7 +76,7 @@ class _FixedOAuth:
 
     def post(self, url, **kwargs):
         if url != "https://oauth2.googleapis.com/token":
-            raise ResourceError("endpoint OAuth no permitido")
+            raise ResourceError("OAuth endpoint not allowed")
         return self.client.post(url, follow_redirects=False, **kwargs)
 
 
@@ -92,13 +92,13 @@ class YouTubeResourcesClient(YouTubeManagementClient):
         try:
             return resource_id(super().configured_channel_id)
         except YouTubeManagementError:
-            raise ResourceError("falta un canal de YouTube válido en la configuración de la marca") from None
+            raise ResourceError("brand configuration lacks a valid YouTube channel") from None
 
     def _authenticated_channel(self, token):
         payload = self._json(self._request("GET", f"{API}/channels", params={"part": "id", "mine": "true"}))
         items = payload.get("items")
         if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
-            raise ResourceError("identidad ambigua: no se devolvió exactamente un canal autenticado")
+            raise ResourceError("ambiguous identity: exactly one authenticated channel was not returned")
         # channels.list is paginated. One item on this page is not evidence of
         # one authenticated channel unless totalResults confirms it. The API
         # reports resultsPerPage as capacity (observed: 5 for one result), not
@@ -111,7 +111,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
             or type(page.get("totalResults")) is not int or page["totalResults"] != 1
             or type(page.get("resultsPerPage")) is not int
             or not len(items) <= page["resultsPerPage"] <= 50):
-            raise ResourceError("identidad de canal incompleta o ambigua: requiere totalResults=1 y capacidad resultsPerPage válida (1–50)")
+            raise ResourceError("incomplete or ambiguous channel identity: requires totalResults=1 and valid resultsPerPage capacity (1–50)")
         return resource_id(items[0].get("id"))
 
     def _token(self):
@@ -120,7 +120,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
             try:
                 self._access_token = obtener_token(self.brand, Platform.YOUTUBE, _FixedOAuth(self.client))
             except Exception:
-                raise ResourceError("credenciales de YouTube no disponibles; refresco no confirmado") from None
+                raise ResourceError("YouTube credentials unavailable; refresh unconfirmed") from None
         return self._access_token
 
     def inspect(self, video_id):
@@ -133,29 +133,29 @@ class YouTubeResourcesClient(YouTubeManagementClient):
         # All call sites use literal known endpoints; reject future accidental expansion.
         parsed = httpx.URL(url)
         if parsed.scheme != "https" or parsed.host != "www.googleapis.com" or parsed.port not in {None, 443} or parsed.userinfo or parsed.query or not self._endpoint_allowed(method, parsed.path):
-            raise ResourceError("host o endpoint de YouTube no permitido")
+            raise ResourceError("YouTube host or endpoint not allowed")
         writing = method != "GET"
         try:
             token = self._token()
         except YouTubeManagementError:
-            raise ResourceError("credenciales de YouTube no disponibles") from None
+            raise ResourceError("YouTube credentials unavailable") from None
         try:
             with self.client.stream(method, url,
                 headers={**(headers or {}), "Authorization": f"Bearer {token}", "Accept-Encoding": "identity"},
                 follow_redirects=False, **kwargs) as response:
                 if response.status_code == 412 and writing:
-                    raise ResourceConflict("conflict: YouTube rechazó If-Match (412)")
+                    raise ResourceConflict("conflict: YouTube rejected If-Match (412)")
                 if not response.is_success:
                     error = ((ResourceUncertain if response.is_redirect or response.status_code >= 500
                               else ResourceRejected) if writing else ResourceError)
                     reason = provider_reason(response, token)
                     detail = f"; reason={reason}" if reason else ""
-                    raise error(f"YouTube HTTP {response.status_code}{detail}; revisa permisos específicos, operación no confirmada",
+                    raise error(f"YouTube HTTP {response.status_code}{detail}; check specific permissions, operation unconfirmed",
                         http_status=response.status_code, provider_reason=reason)
                 data = bytearray()
                 for chunk in response.iter_bytes():
                     if len(data) + len(chunk) > max_response:
-                        raise (ResourceUncertain if writing else ResourceError)("respuesta de YouTube supera el límite de bytes")
+                        raise (ResourceUncertain if writing else ResourceError)("YouTube response exceeds byte limit")
                     data.extend(chunk)
                 response_headers = {k: v for k, v in response.headers.items()
                                     if k.lower() not in {"content-encoding", "content-length"}}
@@ -165,7 +165,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
             raise
         except Exception:
             raise (ResourceUncertain if writing else ResourceError)(
-                "YouTube: transporte interrumpido; resultado no confirmado") from None
+                "YouTube: transport interrupted; outcome unconfirmed") from None
 
     def _endpoint_allowed(self, method, path):
         paths = {"/youtube/v3/channels", "/youtube/v3/videos", "/youtube/v3/captions",
@@ -180,7 +180,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
                 raise ValueError()
             return payload
         except Exception:
-            raise (ResourceUncertain if writing else ResourceError)("YouTube: respuesta no verificable") from None
+            raise (ResourceUncertain if writing else ResourceError)("YouTube: unverifiable response") from None
 
     def _get_json(self, url, token, *, params, operation):
         return self._json(self._request("GET", url, params=params))
@@ -191,14 +191,14 @@ class YouTubeResourcesClient(YouTubeManagementClient):
             params={"part": "snippet", "videoId": resource_id(video_id)}))
         # captions.list documents no pagination parameters or continuation schema.
         if payload.get("nextPageToken") or payload.get("next") or payload.get("pageInfo"):
-            raise ResourceError("lista incompleta: paginación no documentada en captions.list")
+            raise ResourceError("incomplete list: pagination is undocumented for captions.list")
         items = payload.get("items")
         if not isinstance(items, list):
-            raise ResourceError("lista de subtítulos inválida")
+            raise ResourceError("invalid captions list")
         ids = set()
         for item in items:
             if not isinstance(item, dict):
-                raise ResourceError("subtítulo inválido")
+                raise ResourceError("invalid caption")
             cid = resource_id(item.get("id"))
             snippet = item.get("snippet")
             if (cid in ids or not isinstance(snippet, dict) or snippet.get("videoId") != video_id
@@ -206,7 +206,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
                 or type(snippet.get("isDraft")) is not bool
                 or not isinstance(snippet.get("language"), str) or not snippet["language"]
                 or not isinstance(snippet.get("name"), str)):
-                raise ResourceError("subtítulo sin identidad, propiedad, ETag o estado verificables")
+                raise ResourceError("caption lacks verifiable identity, ownership, ETag or status")
             ids.add(cid)
         return items
 
@@ -214,7 +214,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
         resource_id(track_id)
         matches = [t for t in self.list_captions(video_id) if t["id"] == track_id]
         if len(matches) != 1:
-            raise ResourceError("no se verificó el subtítulo en el vídeo propio; ausencia o permisos no concluyentes")
+            raise ResourceError("caption was not verified on owned video; absence or permissions inconclusive")
         return matches[0]
 
     def download_caption(self, video_id, track_id):
@@ -223,7 +223,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
         response = self._request("GET", f"{API}/captions/{quote(resource_id(track_id), safe='')}", max_response=MAX_CAPTION)
         data = response.content
         if not data or len(data) > MAX_CAPTION:
-            raise ResourceError("descarga de subtítulos vacía o superior a 100MB")
+            raise ResourceError("caption download is empty or exceeds 100MB")
         return data
 
     def mutate(self, change, data):
@@ -237,7 +237,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
             response = self._request("DELETE", f"{API}/captions", headers=headers,
                 params={"id": change.track_id})
             if response.status_code != 204:
-                raise ResourceUncertain("captions.delete no devolvió 204; resultado incierto")
+                raise ResourceUncertain("captions.delete did not return 204; uncertain outcome")
             return {"deleted_id": change.track_id, "http_status": 204}
         else:
             inserting = change.action == "caption-insert"

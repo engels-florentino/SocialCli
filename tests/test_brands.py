@@ -198,10 +198,10 @@ def test_guardar_open_id_tiktok_escribe_el_valor_y_conserva_los_comentarios(tmp_
     # Los comentarios explicativos del fichero (de otras secciones y de la
     # propia sección tiktok) deben seguir intactos: una reescritura con
     # yaml.safe_dump los habría borrado todos.
-    assert "IDs de las cuentas de esta marca" in texto
-    assert "Debe ser una cuenta Business" in texto
+    assert 'Account identifiers for this brand' in texto
+    assert 'Requires a professional account' in texto
     assert "auth tiktok" in texto  # comentario propio de open_id en la plantilla
-    assert "inbox  -> sube al buzon" in texto
+    assert 'inbox  -> upload to inbox' in texto
 
     # El resto de la sección tiktok no debe haberse tocado.
     assert "mode: inbox" in texto
@@ -259,14 +259,14 @@ def test_crear_brand_incluye_la_plantilla_de_estrategia(tmp_path):
 
     texto = estrategia.read_text(encoding="utf-8")
     for seccion in (
-        "## Objetivo",
-        "## Cadencia por red",
-        "## Pilares de contenido",
-        "## Plan próximo",
-        "## Aprendizajes",
-        "## Decisiones cerradas",
+        "## Goal",
+        "## Cadence by platform",
+        "## Content pillars",
+        "## Upcoming plan",
+        "## Lessons",
+        "## Settled decisions",
     ):
-        assert seccion in texto, f"falta la seccion {seccion}"
+        assert seccion in texto, f'section is missing {seccion}'
 
 
 def test_la_plantilla_de_estrategia_no_menciona_ninguna_marca_concreta(tmp_path):

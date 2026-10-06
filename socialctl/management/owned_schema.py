@@ -45,7 +45,7 @@ def image_id(value):
     # always passed in query/JSON, never interpolated into a URL path.
     if (not isinstance(value, str) or not 0 < len(value) <= 512 or "://" in value or "@" in value
         or any(not char.isprintable() or char.isspace() for char in value)):
-        raise ResourceError("ID de imagen inválido")
+        raise ResourceError("invalid image ID")
     return value
 
 
@@ -56,7 +56,7 @@ def section_id(value):
     if (not isinstance(value, str) or not 0 < len(value) <= 512 or "://" in value
         or "@" in value or "," in value
         or any(not char.isprintable() or char.isspace() for char in value)):
-        raise ResourceError("ID de sección inválido")
+        raise ResourceError("invalid section ID")
     return value
 
 
@@ -96,11 +96,11 @@ class OwnedEdit(BaseModel):
     @classmethod
     def exact_action_fields(cls, value):
         if not isinstance(value, dict) or not isinstance(value.get("action"), str) or value["action"] not in ACTIONS:
-            raise ResourceError("acción de recurso propio no admitida")
+            raise ResourceError("unsupported owned-resource action")
         required, allowed = ACTIONS[value["action"]]
         present = set(value) - {"action", "version"}
         if required - present or present - allowed or any(value[k] is None for k in present):
-            raise ResourceError("campos omitidos/extra/null para la acción; omitir conserva, null no se admite")
+            raise ResourceError("missing/extra/null action fields; omission preserves values, null is not accepted")
         for key in present & {"playlist_id", "item_id", "video_id", "channel_id", "target_channel_id"}:
             resource_id(value[key])
         if "section_id" in present:
@@ -108,11 +108,11 @@ class OwnedEdit(BaseModel):
         if "image_id" in present:
             image_id(value["image_id"])
         if value["action"] == "image-update" and not (present & {"file", "patch"}):
-            raise ResourceError("image-update exige patch de metadatos y/o archivo suministrado")
+            raise ResourceError("image-update requires metadata patch and/or supplied file")
         if "file" in present and (not isinstance(value["file"], str) or not value["file"]):
-            raise ResourceError("archivo suministrado inválido")
+            raise ResourceError("invalid supplied file")
         if "patch" in present and (not isinstance(value["patch"], dict) or not value["patch"]):
-            raise ResourceError("patch vacío o inválido")
+            raise ResourceError("empty or invalid patch")
         return value
 
 
@@ -124,7 +124,7 @@ def validate_edit(edit):
     try:
         return OwnedEdit.model_validate(edit_raw(edit) if isinstance(edit, OwnedEdit) else edit)
     except ValidationError as exc:
-        raise ResourceError(f"propuesta inválida: {exc}") from None
+        raise ResourceError(f"invalid proposal: {exc}") from None
 
 
 def target(edit):
@@ -145,27 +145,27 @@ def load_owned_edit(path):
     try:
         return validate_edit(yaml.safe_load(Path(path).read_text(encoding="utf-8")))
     except (OSError, yaml.YAMLError):
-        raise ResourceError("no se pudo leer YAML de propuesta") from None
+        raise ResourceError("failed to read proposal YAML") from None
 
 
 def mapping(value, allowed, label):
     if not isinstance(value, dict) or set(value) - set(allowed) or any(v is None for v in value.values()):
-        raise ResourceError(f"{label}: campos desconocidos/no editables o null")
+        raise ResourceError(f"{label}: unknown/noneditable fields or null")
     return value
 
 
 def text_fields(value, fields):
     for key in set(value) & set(fields):
         if not isinstance(value[key], str):
-            raise ResourceError(f"{key} debe ser texto")
+            raise ResourceError(f"{key} must be text")
 
 
 def localizations(value):
     if not isinstance(value, dict):
-        raise ResourceError("localizations debe ser mapping")
+        raise ResourceError("localizations must be a mapping")
     for lang, localized in value.items():
         if not isinstance(lang, str) or not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", lang):
-            raise ResourceError("idioma de localizations inválido")
+            raise ResourceError("invalid localizations language")
         mapping(localized, {"title", "description"}, "localizations")
         text_fields(localized, {"title", "description"})
     return value
@@ -216,7 +216,7 @@ def editable(resource, part, row):
         ("videos", "recordingDetails"): ({"recordingDate"}, set()),
     }
     if (resource, part) not in scopes:
-        raise ResourceError("parte no admitida")
+        raise ResourceError("unsupported part")
     writable, readonly = scopes[resource, part]
     mapping(raw, writable | readonly, f"{resource}.{part}")
     return copy.deepcopy({k: v for k, v in raw.items() if k in writable})
@@ -225,7 +225,7 @@ def editable(resource, part, row):
 def section_type(value):
     types = {"allPlaylists", "completedEvents", "liveEvents", "multipleChannels", "multiplePlaylists", "popularUploads", "recentUploads", "singlePlaylist", "subscriptions", "upcomingEvents"}
     if not isinstance(value, str) or value not in types:
-        raise ResourceError("tipo de sección no admitido")
+        raise ResourceError("unsupported section type")
     return value
 
 
@@ -235,26 +235,26 @@ def section_valid(body, account):
     details = body.get("contentDetails", {})
     for key, ids in details.items():
         if not isinstance(ids, list) or not ids or any(not isinstance(rid, str) for rid in ids) or len(ids) != len(set(ids)):
-            raise ResourceError("IDs de sección vacíos/duplicados/inválidos")
+            raise ResourceError("empty/duplicate/invalid section IDs")
         for rid in ids:
             resource_id(rid)
         if key == "channels" and account in ids:
-            raise ResourceError("la sección no puede incluir el propio canal")
+            raise ResourceError("section cannot include own channel")
     typ = snip["type"]
     if typ in {"singlePlaylist", "multiplePlaylists"}:
         if not details.get("playlists") or "channels" in details or (typ == "singlePlaylist" and len(details["playlists"]) != 1):
-            raise ResourceError("contenido no válido para la sección de playlists")
+            raise ResourceError("invalid content for playlist section")
     elif typ == "multipleChannels":
         if not details.get("channels") or "playlists" in details:
-            raise ResourceError("sección exige solo canales")
+            raise ResourceError("section requires channels only")
     elif details:
-        raise ResourceError("este tipo de sección no admite contentDetails")
+        raise ResourceError("this section type does not accept contentDetails")
     if typ in {"multiplePlaylists", "multipleChannels"}:
         title = snip.get("title")
         if not isinstance(title, str) or not title.strip() or len(title) > 100 or "<" in title or ">" in title:
-            raise ResourceError("título de sección requerido/inválido")
+            raise ResourceError("section title required/invalid")
     elif "title" in snip:
-        raise ResourceError("este tipo de sección ignora title; no se propone un no-op")
+        raise ResourceError("this section type ignores title; no no-op proposed")
 
 
 def build_after(edit, resource, before, account):
@@ -269,7 +269,7 @@ def build_after(edit, resource, before, account):
                 raise ValueError()
             datetime.fromisoformat(value.replace("Z", "+00:00"))
         except (ValueError, TypeError):
-            raise ResourceError("recordingDate exige fecha ISO 8601 con zona explícita") from None
+            raise ResourceError("recordingDate requires ISO 8601 timestamp with explicit timezone") from None
         return {"recordingDetails": {**editable("videos", "recordingDetails", before), "recordingDate": value}}
     if action == "item-insert":
         return {"snippet": {"playlistId": edit.playlist_id, "resourceId": {"kind": "youtube#video", "videoId": edit.video_id}, "position": edit.position}}
@@ -297,7 +297,7 @@ def build_after(edit, resource, before, account):
                 mapping(val, CHANNEL_FIELDS, "brandingSettings.channel")
                 text_fields(val, CHANNEL_FIELDS)
     if resource == "channels" and len(patch) != 1:
-        raise ResourceError("channels.update admite exactamente una parte")
+        raise ResourceError("channels.update accepts exactly one part")
     parts = set(patch)
     if resource in {"playlists", "playlistItems", "channelSections", "playlistImages"}:
         parts.add("snippet")
@@ -308,35 +308,35 @@ def build_after(edit, resource, before, account):
         channel = after.get("brandingSettings", {}).get("channel", {})
         for field, limit in {"keywords": 500, "description": 1000}.items():
             if len(channel.get(field, "")) > limit:
-                raise ResourceError(f"brandingSettings.channel.{field} supera el máximo documentado de {limit} caracteres")
+                raise ResourceError(f"brandingSettings.channel.{field} exceeds documented maximum of {limit} characters")
     for part, value in after.items():
         text_fields(value, {"title", "description", "defaultLanguage", "note", "startAt", "endAt"})
         if "position" in value and (type(value["position"]) is not int or value["position"] < 0 or value["position"] > 4999):
-            raise ResourceError("position exige un entero cero-based válido")
+            raise ResourceError("position requires a valid zero-based integer")
     if resource == "playlists":
         snip = after["snippet"]
         if not snip.get("title", "").strip():
-            raise ResourceError("título/description de playlist inválidos")
+            raise ResourceError("invalid playlist title/description")
         status = after.get("status", {})
         text_fields(status, {"privacyStatus", "podcastStatus"})
         if "privacyStatus" in status and status["privacyStatus"] not in {"public", "unlisted", "private"}:
-            raise ResourceError("privacyStatus inválido")
+            raise ResourceError("invalid privacyStatus")
         if "podcastStatus" in status and status["podcastStatus"] not in {"enabled", "disabled", "unspecified"}:
-            raise ResourceError("podcastStatus inválido")
+            raise ResourceError("invalid podcastStatus")
         if action == "playlist-create" and ("description" not in snip or "privacyStatus" not in status or "podcastStatus" in status):
-            raise ResourceError("crear playlist exige title/description/privacy explícitos; podcastStatus solo update")
+            raise ResourceError("playlist creation requires explicit title/description/privacy; podcastStatus is update-only")
         if after.get("localizations") and not snip.get("defaultLanguage"):
-            raise ResourceError("localizations requiere defaultLanguage")
+            raise ResourceError("localizations requires defaultLanguage")
     elif resource == "channelSections":
         section_valid(after, account)
     elif resource == "playlistItems" and len(after.get("contentDetails", {}).get("note", "")) > 280:
-        raise ResourceError("note supera el máximo documentado de 280 caracteres")
+        raise ResourceError("note exceeds documented maximum of 280 characters")
     elif resource == "playlistImages":
         for key in {"width", "height"} & set(after["snippet"]):
             if type(after["snippet"][key]) is not int or not 0 < after["snippet"][key] <= 2147483647:
-                raise ResourceError("dimensiones de imagen deben ser enteros positivos")
+                raise ResourceError("image dimensions must be positive integers")
     elif resource == "channels" and after.get("localizations"):
         settings = before.get("brandingSettings", {}).get("channel", {})
         if not settings.get("defaultLanguage") and not before.get("snippet", {}).get("defaultLanguage"):
-            raise ResourceError("localizations del canal requiere defaultLanguage existente")
+            raise ResourceError("channel localizations requires existing defaultLanguage")
     return after

@@ -27,20 +27,20 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
     def identity(self):
         configured = self.configured_channel_id
         if self._authenticated_channel(self._token()) != configured:
-            raise ResourceError("el canal autenticado no coincide con la marca/cuenta configurada")
+            raise ResourceError("authenticated channel does not match configured brand/account")
         return configured
 
     def _validate_row(self, resource, row, *, parent=None):
         if not isinstance(row, dict):
-            raise ResourceError("recurso inválido")
+            raise ResourceError("invalid resource")
         owned_resource_id(resource, row.get("id"))
         if row.get("kind", KINDS[resource]) != KINDS[resource]:
-            raise ResourceError("tipo de recurso inesperado")
+            raise ResourceError("unexpected resource type")
         if resource != "playlistImages" and (not isinstance(row.get("etag"), str) or not row["etag"]):
-            raise ResourceError("recurso sin ETag verificable")
+            raise ResourceError("resource lacks verifiable ETag")
         snip = row.get("snippet")
         if not isinstance(snip, dict):
-            raise ResourceError("recurso sin snippet verificable")
+            raise ResourceError("resource lacks snippet verificable")
         if resource == "channels":
             owned = row["id"] == self.configured_channel_id
         elif resource in {"playlistImages", "playlistItems"}:
@@ -48,36 +48,36 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
             if resource == "playlistItems":
                 rid = snip.get("resourceId")
                 if not isinstance(rid, dict) or set(rid) != {"kind", "videoId"} or rid["kind"] != "youtube#video":
-                    raise ResourceError("playlistItem sin videoId/resourceId explícito")
+                    raise ResourceError("playlistItem lacks explicit videoId/resourceId")
                 resource_id(rid["videoId"])
                 if type(snip.get("position")) is not int or snip["position"] < 0:
-                    raise ResourceError("posición de playlistItem inválida")
+                    raise ResourceError("invalid playlistItem position")
                 content = row.get("contentDetails", {})
                 if not isinstance(content, dict) or ("videoId" in content and content["videoId"] != rid["videoId"]):
-                    raise ResourceError("playlistItem tiene identidades de vídeo contradictorias")
+                    raise ResourceError("playlistItem has contradictory video identities")
                 owned = owned and snip.get("channelId") == self.configured_channel_id
             else:
                 if snip.get("type") != "hero" or set(snip) - {"playlistId", "type", "width", "height"}:
-                    raise ResourceError("tipo/campos de imagen desconocidos")
+                    raise ResourceError("unknown image type/fields")
                 for field in {"width", "height"} & set(snip):
                     if type(snip[field]) is not int or snip[field] <= 0:
-                        raise ResourceError("dimensiones remotas de imagen inválidas")
+                        raise ResourceError("invalid remote image dimensions")
         else:
             owned = snip.get("channelId") == self.configured_channel_id
         if not owned:
-            raise ResourceError("el recurso no pertenece al canal/playlist configurado")
+            raise ResourceError("resource does not belong to configured channel/playlist")
         return row
 
     def one(self, resource, rid, *, parent=None, parts=None, optional=False):
         if resource not in PARTS:
-            raise ResourceError("recurso de lectura no admitido")
+            raise ResourceError("unsupported read resource")
         self.identity()
         if resource in {"playlistItems", "playlistImages"}:
             self.one("playlists", resource_id(parent))
         if resource == "playlistImages":
             result = self.list_images(parent)
             if not result["complete"]:
-                raise ResourceError("listado de imágenes incompleto; identidad no verificable")
+                raise ResourceError("incomplete image listing; identity unverifiable")
             rows = [r for r in result["items"] if r["id"] == image_id(rid)]
         else:
             owned_resource_id(resource, rid)
@@ -93,17 +93,17 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
             if rows is None and self._empty_complete(payload):
                 rows = []
             if not isinstance(rows, list) or len(rows) > 1 or any(k in payload for k in ("nextPageToken", "prevPageToken")):
-                raise ResourceError("lectura por ID incompleta o ambigua")
+                raise ResourceError("incomplete or ambiguous ID read")
             page = payload.get("pageInfo")
             if page is not None and (not isinstance(page, dict) or type(page.get("totalResults")) is not int or page["totalResults"] != len(rows)):
-                raise ResourceError("lectura por ID contradictoria: totalResults no coincide")
+                raise ResourceError("contradictory ID read: totalResults mismatch")
         if not rows:
             if optional:
                 return None
-            raise ResourceError("no se encontró el ID propio; ausencia/permisos no concluyentes")
+            raise ResourceError("owned ID not found; absence/permissions inconclusive")
         row = self._validate_row(resource, rows[0], parent=parent)
         if row["id"] != rid:
-            raise ResourceError("ID devuelto no coincide con el ID solicitado")
+            raise ResourceError("returned ID does not match requested ID")
         return row
 
     @staticmethod
@@ -113,10 +113,10 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
         if (set(payload) - {"kind", "etag", "items", "eventId", "visitorId"}
             or payload.get("kind") != "youtube#channelSectionListResponse"
             or not isinstance(payload.get("etag"), str) or not payload["etag"]):
-            raise ResourceError("envoltura no paginada de secciones inválida")
+            raise ResourceError("invalid unpaginated sections envelope")
         rows = payload.get("items", [])
         if not isinstance(rows, list) or len(rows) > 10:
-            raise ResourceError("items de secciones inválidos o límite excedido")
+            raise ResourceError("invalid section items or limit exceeded")
         return rows
 
     @staticmethod
@@ -128,10 +128,10 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
 
     def _list(self, resource, params, *, parent=None, max_pages=100):
         if type(max_pages) is not int or not 1 <= max_pages <= 100:
-            raise ResourceError("max-pages exige un entero entre 1 y 100")
+            raise ResourceError("max-pages requires integer between 1 and 100")
         self.identity()
         report = {"items": [], "complete": False, "absence_proven": False, "pages": 0,
-            "limitation": "Lectura acotada; la lista no prueba ausencia global ni permisos de escritura.", "error": None}
+            "limitation": "Bounded read; list does not prove global absence or write permissions.", "error": None}
         tokens, ids = set(), set()
         token = None
         expected_total = None
@@ -147,12 +147,12 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
                 if rows is None and self._empty_complete(payload):
                     rows = []
                 if not isinstance(rows, list) or len(rows) > (10 if resource == "channelSections" else 50):
-                    raise ResourceError("items inválidos o límite excedido")
+                    raise ResourceError("invalid items or limit exceeded")
                 page_rows = []
                 for row in rows:
                     self._validate_row(resource, row, parent=parent)
                     if row["id"] in ids:
-                        raise ResourceError("lista incompleta: ID duplicado entre páginas")
+                        raise ResourceError("incomplete list: duplicate ID across pages")
                     ids.add(row["id"])
                     page_rows.append(row)
                 report["items"].extend(page_rows)
@@ -160,29 +160,29 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
                 next_token = payload.get("nextPageToken")
                 if resource == "channelSections":
                     if any(k in payload for k in ("nextPageToken", "prevPageToken")):
-                        raise ResourceError("paginación no documentada de secciones")
+                        raise ResourceError("undocumented section pagination")
                     report["complete"] = True
                     break
                 page = payload.get("pageInfo")
                 if not isinstance(page, dict) or type(page.get("totalResults")) is not int or page["totalResults"] < 0:
-                    raise ResourceError("falta totalResults válido; lista incompleta")
+                    raise ResourceError("missing valid totalResults; incomplete list")
                 if expected_total is not None and page["totalResults"] != expected_total:
-                    raise ResourceError("total de lista cambió durante la lectura")
+                    raise ResourceError("list total changed during read")
                 expected_total = page["totalResults"]
                 if "nextPageToken" not in payload:
                     report["complete"] = len(report["items"]) == expected_total
                     if not report["complete"]:
-                        report["error"] = "totalResults no coincide con IDs leídos; lista incompleta"
+                        report["error"] = "totalResults does not match IDs read; incomplete list"
                     break
                 if not isinstance(next_token, str) or not next_token or len(next_token) > 2048 or next_token in tokens:
-                    raise ResourceError("lista incompleta: continuación inválida/repetida")
+                    raise ResourceError("incomplete list: invalid/repeated continuation")
                 tokens.add(next_token)
                 token = next_token
             except ResourceError as exc:
                 report["error"] = str(exc)
                 break
         if not report["complete"] and not report["error"]:
-            report["error"] = "límite de páginas; lista incompleta"
+            report["error"] = "page limit; incomplete list"
         return report
 
     def list_playlists(self, *, max_pages=100):
@@ -204,16 +204,16 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
     def inspect_channel(self, channel_id, *, parts=None):
         selected = set(parts or PARTS["channels"].split(","))
         if not selected or selected - CHANNEL_PARTS:
-            raise ResourceError("partes de canal de lectura no admitidas")
+            raise ResourceError("unsupported channel read parts")
         selected.add("snippet")
         if resource_id(channel_id) != self.configured_channel_id:
-            raise ResourceError("canal no coincide con la marca")
+            raise ResourceError("channel does not match brand")
         return self.one("channels", channel_id, parts=",".join(sorted(selected)))
 
     def inspect_video(self, video_id, *, parts=None):
         selected = set(parts or PARTS["videos"].split(","))
         if not selected or selected - VIDEO_PARTS:
-            raise ResourceError("partes de vídeo de lectura no admitidas")
+            raise ResourceError("unsupported video read parts")
         selected.add("snippet")
         return self.one("videos", video_id, parts=",".join(sorted(selected)))
 
@@ -221,7 +221,7 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
         """One fixed effect. Only the durable coordinator calls this method."""
         edit = validate_edit(edit)
         if target(edit) != (resource, rid):
-            raise ResourceError("acción e ID no coinciden con el recurso de destino")
+            raise ResourceError("action and ID do not match target resource")
         action = edit.action
         deleting = action.endswith("-delete")
         inserting = action in {"playlist-create", "item-insert", "section-create", "image-insert"}
@@ -254,6 +254,6 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
                     headers={**headers, "Content-Type": f"multipart/related; boundary={boundary}"}, content=content)
         if deleting or action in {"watermark-set", "watermark-unset"}:
             if response.status_code != 204:
-                raise ResourceUncertain("se esperaba 204 No Content; resultado no confirmado")
+                raise ResourceUncertain("expected 204 No Content; outcome unconfirmed")
             return {"http_status": 204}
         return self._json(response, writing=True)

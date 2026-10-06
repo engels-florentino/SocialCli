@@ -109,10 +109,10 @@ def test_el_json_es_legible_y_no_lleva_claves_inventadas(tmp_path):
     ruta = guardar_snapshot(brand, _snapshot(date(2026, 9, 11)))
     crudo = json.loads(ruta.read_text(encoding="utf-8"))
 
-    assert crudo["marca"] == "Histopast"
+    assert crudo['marca'] == "Histopast"
     assert crudo["fecha"] == "2026-09-11"
     assert crudo["redes"]["youtube"]["estado"] == "ok"
-    assert crudo["redes"]["youtube"]["piezas"][0]["acumulado"]["comentarios"] is None
+    assert crudo["redes"]["youtube"]['piezas'][0]["acumulado"]["comentarios"] is None
 
 
 def test_dos_snapshots_el_mismo_dia_no_duplican(tmp_path):
@@ -159,7 +159,7 @@ def test_un_snapshot_ilegible_se_ignora_con_aviso_en_vez_de_tumbar_la_lectura(tm
     ruta.parent.mkdir(parents=True, exist_ok=True)
     ruta.write_text('{"fecha": "2026-09-11", "marca": "Hist', encoding="utf-8")
 
-    with pytest.warns(UserWarning, match="no se puede leer"):
+    with pytest.warns(UserWarning, match='cannot be read'):
         assert cargar_snapshot(brand, date(2026, 9, 11)) is None
 
 
@@ -240,7 +240,7 @@ def test_la_limpieza_no_toca_piezas_yml_ni_resumen_md_aunque_sean_viejos(tmp_pat
     borrados, fallidos = limpiar_snapshots_antiguos(brand, hoy=hoy)
 
     assert fallidos == []
-    assert all(ruta.name not in ("piezas.yml", "resumen.md") for ruta in borrados)
+    assert all(ruta.name not in ('piezas.yml', "resumen.md") for ruta in borrados)
     assert piezas.is_file()
     assert resumen.is_file()
 

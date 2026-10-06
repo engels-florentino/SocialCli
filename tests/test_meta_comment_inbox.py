@@ -304,7 +304,7 @@ def test_uncertain_reply_blocks_replay_and_reconcile_is_get_only(tmp_path):
     graph.failure = "timeout"
     result = apply_inbox_draft(client, comment_store, inbox, media_id="789",
         comment_id="800", approval_digest=change.fingerprint)
-    assert result.status == "incierto"
+    assert result.status == 'incierto'
     with pytest.raises(CommentError, match="reconcile-draft"):
         apply_inbox_draft(client, comment_store, inbox, media_id="789",
             comment_id="800", approval_digest=change.fingerprint)
@@ -312,7 +312,7 @@ def test_uncertain_reply_blocks_replay_and_reconcile_is_get_only(tmp_path):
     graph.failure = None
     reconciled = reconcile_inbox_draft(client, comment_store, inbox,
         media_id="789", comment_id="800")
-    assert reconciled.status == "incierto"
+    assert reconciled.status == 'incierto'
     assert len(graph.writes) == writes == 1
 
 
@@ -359,7 +359,7 @@ def test_configurable_frequency_limit_blocks_before_second_post(tmp_path):
     second, _ = prepare_inbox_draft(client, comment_store, inbox,
         media_id="789", comment_id="801", text="Another explicit answer")
 
-    with pytest.raises(CommentError, match="frecuencia"):
+    with pytest.raises(CommentError, match='frequency'):
         apply_inbox_draft(client, comment_store, inbox, media_id="789", comment_id="801",
                           approval_digest=second.fingerprint, max_replies=1, window_seconds=3600)
     assert len(graph.writes) == 1
@@ -424,7 +424,7 @@ def test_superseded_inbox_draft_cannot_post_through_legacy_apply(tmp_path, monke
                            input=old.fingerprint + "\n")
 
     assert bypass.exit_code != 0
-    assert "reemplazado" in bypass.output
+    assert 'replaced' in bypass.output
     assert not graph.writes
     applied = runner.invoke(app, ["comments", "apply-draft", "789", "800",
         "--platform", "facebook", *common], input=current.fingerprint + "\n")

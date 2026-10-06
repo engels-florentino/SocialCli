@@ -40,15 +40,15 @@ def rewrite_media(raw: bytes, replacements: dict[str, dict[str, str]]) -> bytes:
     """Replace only media scalar tokens. Aliases/anchors/duplicate keys fail closed."""
     text = raw.decode("utf-8")
     if any(isinstance(token, (yaml.tokens.AnchorToken, yaml.tokens.AliasToken)) for token in yaml.scan(text)):
-        raise ScheduleError("YAML con alias/anchor no admite migración segura")
+        raise ScheduleError("YAML aliases/anchors do not support safe migration")
     root = yaml.compose(text)
     def mapping(node):
         if not isinstance(node, yaml.MappingNode):
-            raise ScheduleError("forma YAML no soportada")
+            raise ScheduleError("unsupported YAML structure")
         result = {}
         for key, value in node.value:
             if not isinstance(key, yaml.ScalarNode) or key.value in result or key.value == "<<":
-                raise ScheduleError("claves YAML ambiguas")
+                raise ScheduleError("ambiguous YAML keys")
             result[key.value] = value
             if isinstance(value, yaml.MappingNode):
                 mapping(value)
@@ -58,10 +58,10 @@ def rewrite_media(raw: bytes, replacements: dict[str, dict[str, str]]) -> bytes:
     for platform, paths in replacements.items():
         media = mapping(platforms[platform]).get("media")
         if not isinstance(media, yaml.SequenceNode):
-            raise ScheduleError("media debe ser lista explícita")
+            raise ScheduleError("media must be an explicit list")
         for item in media.value:
             if not isinstance(item, yaml.ScalarNode) or item.tag != "tag:yaml.org,2002:str" or item.value not in paths:
-                raise ScheduleError("media YAML ambigua o modificada")
+                raise ScheduleError("ambiguous or modified YAML media")
             spans.append((item.start_mark.index, item.end_mark.index, json.dumps(paths[item.value])))
     for start, end, replacement in sorted(spans, reverse=True):
         text = text[:start] + replacement + text[end:]

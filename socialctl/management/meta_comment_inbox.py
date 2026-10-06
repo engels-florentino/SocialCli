@@ -82,9 +82,9 @@ def _parse_time(value: str, label: str = "fecha") -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (TypeError, ValueError, AttributeError):
-        raise CommentError(f"{label} debe ser RFC3339") from None
+        raise CommentError(f"{label} must be RFC3339") from None
     if parsed.tzinfo is None:
-        raise CommentError(f"{label} debe incluir zona horaria")
+        raise CommentError(f"{label} must include a timezone")
     return parsed.astimezone(timezone.utc)
 
 
@@ -132,7 +132,7 @@ class CommentInboxStore:
         try:
             return InboxData.model_validate_json(self.path.read_text(encoding="utf-8"))
         except (OSError, ValidationError):
-            raise CommentError("no se pudo leer el estado durable de comentarios") from None
+            raise CommentError("failed to read durable comment state") from None
 
     def save(self, data: InboxData) -> None:
         temporary = None
@@ -162,7 +162,7 @@ class CommentInboxStore:
                     os.unlink(temporary)
                 except OSError:
                     pass
-            raise CommentError("no se pudo persistir el estado durable de comentarios") from None
+            raise CommentError("failed to persist durable comment state") from None
 
     @contextmanager
     def lock(self):
@@ -180,7 +180,7 @@ def _cursor(data: InboxData, client: MetaCommentsClient, media_id: str) -> Inbox
     rows = [row for row in data.cursors if (row.platform, row.account_id, row.media_id) ==
             (client.platform.value, client.account_id, media_id)]
     if len(rows) > 1:
-        raise CommentError("estado durable ambiguo para el cursor del medio")
+        raise CommentError("ambiguous durable state for media cursor")
     return rows[0] if rows else None
 
 
@@ -188,7 +188,7 @@ def _record(data: InboxData, client: MetaCommentsClient, media_id: str, comment_
     rows = [row for row in data.comments if (row.platform, row.account_id, row.media_id, row.comment_id) ==
             (client.platform.value, client.account_id, media_id, comment_id)]
     if len(rows) != 1:
-        raise CommentError("comentario no observado de forma inequívoca en la bandeja")
+        raise CommentError("comment was not unambiguously observed in inbox")
     return rows[0]
 
 
@@ -212,7 +212,7 @@ def grouped_inbox(data: InboxData, *, platform: str | None = None, media_id: str
 def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id: str,
                since: str | None = None, max_pages: int = 100) -> dict:
     if not 1 <= max_pages <= 100:
-        raise CommentError("max_pages debe estar entre 1 y 100")
+        raise CommentError("max_pages must be between 1 and 100")
     media_id = str(media_id)
     current = store.load()
     prior_cursor = _cursor(current, client, media_id)
@@ -232,7 +232,7 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
         # without `after`, retaining the completed cut-off or a conservative
         # overlap window anchored to the sync that saved the rejected cursor.
         if effective_since is None:
-            anchor = _parse_time(prior_cursor.last_sync_at, "fecha del cursor")
+            anchor = _parse_time(prior_cursor.last_sync_at, "cursor timestamp")
             effective_since = (anchor - CURSOR_FALLBACK_WINDOW).isoformat().replace(
                 "+00:00", "Z")
         listing = client.list_comments(media_id, max_pages=max_pages, after=None)
@@ -242,9 +242,9 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
     for row in listing["data"]:
         ident = row.get("id")
         if not isinstance(ident, str):
-            raise CommentError("Meta devolvió un comentario sin ID verificable")
+            raise CommentError("Meta returned a comment without a verifiable ID")
         if ident in remote and remote[ident] != row:
-            raise CommentError("Meta devolvió el mismo comentario con datos incompatibles")
+            raise CommentError("Meta returned the same comment with incompatible data")
         remote[ident] = row
 
     added = updated = unchanged = skipped_own = skipped_before_since = 0
@@ -261,7 +261,7 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             field = "message" if client.platform.value == "facebook" else "text"
             text = raw.get(field)
             if not isinstance(text, str) or not isinstance(author_id, str) or not author_id:
-                raise CommentError("Meta devolvió texto o autor no verificable")
+                raise CommentError("Meta returned unverifiable text or author")
             key = (client.platform.value, client.account_id, ident)
             previous = existing.get(key)
             created = raw.get("created_time") if client.platform.value == "facebook" else raw.get("timestamp")
@@ -275,7 +275,7 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             language, kind = classify_comment(text)
             if previous:
                 if previous.media_id != media_id:
-                    raise CommentError("un ID remoto ya pertenece a otra pieza en la bandeja")
+                    raise CommentError("remote ID already belongs to another inbox item")
                 if previous.text != text:
                     previous.text, previous.language, previous.kind = text, language, kind
                     previous.updated_at = now
@@ -324,18 +324,18 @@ def prepare_inbox_draft(client: MetaCommentsClient, comment_store: CommentStore,
                         inbox_store: CommentInboxStore, *, media_id: str,
                         comment_id: str, text: str):
     if not isinstance(text, str) or not text.strip():
-        raise CommentError("el borrador debe contener texto explícito no vacío")
+        raise CommentError("draft must contain explicit nonempty text")
     with inbox_store.lock():
         data = inbox_store.load()
         record = _record(data, client, media_id, comment_id)
         key = response_key(client.account_id, comment_id, text)
         if record.status in {"aprobado", "respondido", "incierto"}:
-            raise CommentError("el comentario ya tiene una respuesta aprobada o incierta; no se crea otro POST")
+            raise CommentError("comment already has an approved or uncertain reply; no additional POST created")
         if record.idempotency_key == key and record.change_id:
             return comment_store.load(record.change_id), record
         if any(row is not record and row.idempotency_key == key and
                row.status in {"draft", "aprobado", "respondido", "incierto"} for row in data.comments):
-            raise CommentError("respuesta duplicada para la misma cuenta, comentario y texto")
+            raise CommentError("duplicate reply for the same account, comment and text")
         change = prepare_comment(client, comment_store, media_id=media_id, action="reply",
             parent_id=comment_id, text=text, inbox_binding={
                 "platform": client.platform.value, "account_id": client.account_id,
@@ -366,10 +366,10 @@ def _recent_attempts(data: InboxData, *, account_id: str, window_seconds: int, a
             if event.get("event") != "reply_write_intent":
                 continue
             try:
-                if _parse_time(event["at"], "fecha del diario") >= cutoff:
+                if _parse_time(event["at"], "journal timestamp") >= cutoff:
                     count += 1
             except (CommentError, KeyError):
-                raise CommentError("diario de frecuencia inválido") from None
+                raise CommentError("invalid frequency journal") from None
     return count
 
 
@@ -377,18 +377,18 @@ def apply_inbox_draft(client: MetaCommentsClient, comment_store: CommentStore,
                       inbox_store: CommentInboxStore, *, media_id: str, comment_id: str,
                       approval_digest: str, max_replies: int = 10, window_seconds: int = 3600):
     if max_replies < 1 or window_seconds < 1:
-        raise CommentError("los límites de frecuencia deben ser enteros positivos")
+        raise CommentError("frequency limits must be positive integers")
     with inbox_store.lock():
         data = inbox_store.load()
         record = _record(data, client, media_id, comment_id)
         if not record.fingerprint or not hmac.compare_digest(approval_digest, record.fingerprint):
-            raise CommentError("aprobación no coincide con la huella exacta")
+            raise CommentError("approval does not match exact fingerprint")
         if record.status == "respondido":
             return record
         if record.status == "incierto":
-            raise CommentError("resultado incierto bloqueado; ejecuta reconcile-draft antes de otro intento")
+            raise CommentError("uncertain outcome blocked; run reconcile-draft before another attempt")
         if record.status not in {"draft", "aprobado", "bloqueado"} or not record.change_id:
-            raise CommentError("el comentario no tiene un borrador aplicable")
+            raise CommentError("comment has no applicable draft")
         now = now_utc()
         attempts = _recent_attempts(data, account_id=client.account_id,
                                     window_seconds=window_seconds, at=now)
@@ -399,7 +399,7 @@ def apply_inbox_draft(client: MetaCommentsClient, comment_store: CommentStore,
             record.journal.append({"at": now.isoformat(), "event": "frequency_limit_blocked",
                 "max_replies": max_replies, "window_seconds": window_seconds, "observed_attempts": attempts})
             inbox_store.save(data)
-            raise CommentError("límite de frecuencia alcanzado; no se envió ningún POST")
+            raise CommentError("frequency limit reached; no POST was sent")
         if record.status != "aprobado":
             record.status = "aprobado"
             record.last_error = None
@@ -449,7 +449,7 @@ def reconcile_inbox_draft(client: MetaCommentsClient, comment_store: CommentStor
         data = inbox_store.load()
         record = _record(data, client, media_id, comment_id)
         if not record.change_id:
-            raise CommentError("el comentario no tiene un ChangeSet que reconciliar")
+            raise CommentError("comment has no ChangeSet to reconcile")
         change_id = record.change_id
     change = reconcile_comment(client, comment_store, change_id)
     with inbox_store.lock():

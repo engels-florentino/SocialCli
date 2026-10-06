@@ -1,22 +1,4 @@
-"""Publicación en YouTube (Data API v3, upload resumible).
-
-Ningún fallo de esta red puede abortar la publicación en las demás: por
-diseño, `YouTubeAdapter.publish()` jamás deja escapar una excepción. Todo
-fallo previsto (de red, de E/S del fichero de vídeo o de formato de la
-respuesta) se traduce en un `PostResult(status=PostStatus.ERROR, ...)` con un
-mensaje en español que explica, de forma accionable, qué ha pasado. Como
-resguardo de última instancia frente a cualquier fallo *no* previsto,
-`publish()` envuelve además todo el proceso en un `except Exception` genérico
-que también devuelve un `PostResult` de error, para que la regla se sostenga
-incluso ante un caso que nadie anticipó hoy.
-
-El token viaja SOLO en la cabecera `Authorization` (nunca en el cuerpo ni
-como parámetro de consulta), así que esta red no tiene la superficie de fuga
-que sí tienen Facebook e Instagram (ver `socialctl/adapters/errores.py`);
-aun así, `mensaje_de_error` recibe el token igual que en las otras tres
-redes, por si un intermediario llegara a reflejarlo por una vía que hoy no
-se ha previsto.
-"""
+'YouTube Data API v3 resumable video upload.\n\nThe adapter validates one user-supplied video, initializes a resumable upload,\nstreams the original bytes and records the returned resource ID. Upload success\nis distinct from visibility observations. Expected I/O, network and response\nfailures become PostResult errors rather than escaping the adapter boundary.\nKnown credentials are redacted from provider errors.'
 
 from __future__ import annotations
 
@@ -54,66 +36,32 @@ _TIPO_MIME_VIDEO = "video/*"
 
 
 class YouTubeAdapter(Adapter):
-    """Sube un vídeo a YouTube mediante el upload resumible de la Data API v3.
-
-    Flujo en dos pasos:
-    1. `POST` con los metadatos (título, descripción, tags, privacidad) →
-       YouTube devuelve la URL de subida en la cabecera `Location`.
-    2. `PUT` de los bytes del vídeo a esa URL → YouTube devuelve el `id` del
-       vídeo ya creado.
-
-    El vídeo se sube en streaming (un objeto de fichero abierto en binario
-    como `content`, nunca `path.read_bytes()`): los documentales que publica
-    este proyecto pueden pesar varios GB y cargarlos enteros en memoria no es
-    aceptable. Para que ese streaming no acabe usando
-    `Transfer-Encoding: chunked` (que el endpoint resumible de Google no
-    admite), la cabecera `Content-Length` se fija explícitamente con el
-    tamaño real del fichero: `httpx` ignora `Transfer-Encoding` en cuanto
-    `Content-Length` ya está presente en la petición (ver
-    `Request._prepare` en `httpx._models`), así que basta con fijarla para
-    garantizar el comportamiento sin importar si `httpx` habría podido
-    calcular el tamaño por su cuenta.
-
-    El paso 1 (POST) lleva además `X-Upload-Content-Length` y
-    `X-Upload-Content-Type`, y el paso 2 (PUT) lleva `Content-Type`: las
-    tres son cabeceras "Required" según la documentación del flujo
-    resumible (`using_resumable_upload_protocol`, pasos 1 y 3) que antes
-    faltaban.
-    """
+    'Upload one video through the YouTube Data API v3 resumable protocol.'
 
     platform = Platform.YOUTUBE
 
     def publish(self, post: PlatformPost, brand: Brand, client: httpx.Client) -> PostResult:
-        """Publica el post. Nunca lanza: cualquier fallo vuelve como `PostResult` de error.
-
-        Todos los pasos concretos viven en `_publicar()`, con manejo específico
-        para cada fallo previsto (de red, de E/S del fichero o de formato de la
-        respuesta). Este método es solo el resguardo de última instancia: si
-        `_publicar()` deja escapar una excepción que nadie previó —hoy, o el
-        día que alguien modifique este archivo y olvide mantener la regla—,
-        aquí se atrapa igualmente, para que un fallo de YouTube nunca pueda
-        abortar la publicación en las demás redes.
-        """
+        'Publish a validated post; convert every failure to an error PostResult.'
         spec = PLATFORM_SPECS[self.platform]
         if len(post.media) > spec.max_media:
             return self._error(
-                f"esta ruta admite como máximo {spec.max_media} archivo; "
-                "no publica carruseles"
+                f"this endpoint supports at most {spec.max_media} file; "
+                'it does not publish carousels'
             )
 
         try:
             return self._publicar(post, brand, client)
         except Exception as exc:
             return self._error(
-                f"ha ocurrido un error inesperado en YouTube "
+                f"an unexpected YouTube error occurred "
                 f"({type(exc).__name__}): {exc}"
             )
 
     def _publicar(self, post: PlatformPost, brand: Brand, client: httpx.Client) -> PostResult:
-        """Cuerpo real de la publicación, con manejo específico de cada fallo previsto."""
+        'Execute publication with explicit handling of expected failures.'
         if not post.media:
             return self._error(
-                "no hay ningún vídeo que subir: el post no tiene media adjunta"
+                'no video to upload: the post has no media attached'
             )
 
         video = post.media[0]
@@ -134,19 +82,19 @@ class YouTubeAdapter(Adapter):
             tamano = video.path.stat().st_size
         except FileNotFoundError:
             return self._error(
-                f"el archivo de vídeo ya no existe en disco: {video.path}"
+                f"the video file no longer exists on disk: {video.path}"
             )
         except IsADirectoryError:
             return self._error(
-                f"la ruta del vídeo apunta a un directorio, no a un archivo: {video.path}"
+                f"the video path points to a directory, not a file: {video.path}"
             )
         except PermissionError:
             return self._error(
-                f"no hay permisos de lectura sobre el archivo de vídeo: {video.path}"
+                f"the video file is not readable: {video.path}"
             )
         except OSError as exc:
             return self._error(
-                f"no se pudo leer el archivo de vídeo en disco ({video.path}): {exc}"
+                f"could not read the video file from disk ({video.path}): {exc}"
             )
 
         # privacidad_efectiva() (socialctl/formatter.py) ya resuelve el valor
@@ -182,12 +130,12 @@ class YouTubeAdapter(Adapter):
             )
         except httpx.TimeoutException:
             return self._error(
-                "se agotó el tiempo de espera al contactar con YouTube para "
-                "iniciar la subida"
+                'timed out contacting YouTube to '
+                'initialize the upload'
             )
         except httpx.HTTPError:
             return self._error(
-                "no se pudo conectar con YouTube para iniciar la subida"
+                'could not connect to YouTube to initialize the upload'
             )
 
         if inicio.status_code != 200:
@@ -195,7 +143,7 @@ class YouTubeAdapter(Adapter):
 
         destino = inicio.headers.get("Location")
         if not destino:
-            return self._error("YouTube no devolvió la URL de subida")
+            return self._error('YouTube did not return an upload URL')
 
         try:
             with video.path.open("rb") as fichero:
@@ -214,22 +162,22 @@ class YouTubeAdapter(Adapter):
                 )
         except FileNotFoundError:
             return self._error(
-                f"el archivo de vídeo ya no existe en disco: {video.path}"
+                f"the video file no longer exists on disk: {video.path}"
             )
         except IsADirectoryError:
             return self._error(
-                f"la ruta del vídeo apunta a un directorio, no a un archivo: {video.path}"
+                f"the video path points to a directory, not a file: {video.path}"
             )
         except PermissionError:
             return self._error(
-                f"no hay permisos de lectura sobre el archivo de vídeo: {video.path}"
+                f"the video file is not readable: {video.path}"
             )
         except OSError as exc:
             # Cualquier otro fallo de E/S al leer el fichero (disco dañado,
             # demasiados descriptores abiertos, etc.): no es ninguno de los
             # casos anteriores, pero tampoco debe escapar como excepción.
             return self._error(
-                f"no se pudo leer el archivo de vídeo en disco ({video.path}): {exc}"
+                f"could not read the video file from disk ({video.path}): {exc}"
             )
         except httpx.InvalidURL as exc:
             # La URL de subida (`destino`) la devuelve YouTube en la cabecera
@@ -238,15 +186,15 @@ class YouTubeAdapter(Adapter):
             # longitud desmesurada, etc.) y `httpx` la rechaza al construir la
             # petición, antes de llegar a la red.
             return self._error(
-                f"YouTube devolvió una URL de subida no válida: {exc}"
+                f"YouTube returned an invalid upload URL: {exc}"
             )
         except httpx.TimeoutException:
             return self._error(
-                "se agotó el tiempo de espera al subir el vídeo a YouTube"
+                'timed out uploading the video to YouTube'
             )
         except httpx.HTTPError:
             return self._error(
-                "no se pudo conectar con YouTube para subir el vídeo"
+                'could not connect to YouTube to upload the video'
             )
 
         if subida.status_code not in (200, 201):
@@ -257,16 +205,16 @@ class YouTubeAdapter(Adapter):
             video_id = recurso_subido["id"]
         except json.JSONDecodeError:
             return self._error(
-                "YouTube respondió con un cuerpo que no es JSON válido tras "
-                "subir el vídeo"
+                'YouTube returned an invalid JSON response after '
+                'uploading the video'
             )
         except KeyError:
             return self._error(
-                "YouTube respondió sin el id del vídeo tras la subida"
+                'YouTube returned no video ID after the upload'
             )
 
         if not isinstance(video_id, str) or not video_id:
-            return self._error("YouTube respondió con un id de vídeo no válido tras la subida")
+            return self._error('YouTube returned an invalid video ID after the upload')
 
         result = PostResult(
             platform=self.platform,
@@ -282,8 +230,8 @@ class YouTubeAdapter(Adapter):
             # response can be malformed, but can never turn that confirmed
             # upload back into a retryable error.
             result.warnings.append(
-                "La subida quedó confirmada, pero no se pudo interpretar su "
-                "estado inicial de visibilidad."
+                'The upload was confirmed, but its '
+                'initial visibility could not be interpreted.'
             )
         self._readback(result, token, client)
         return result
@@ -359,8 +307,8 @@ class YouTubeAdapter(Adapter):
             )
             if response.status_code != 200:
                 result.warnings.append(
-                    "La subida quedó confirmada, pero no se pudo verificar su "
-                    f"visibilidad (YouTube respondió HTTP {response.status_code})."
+                    'The upload was confirmed, but its '
+                    f"visibility could not be verified (YouTube returned HTTP {response.status_code})."
                 )
                 return
             payload = response.json()
@@ -368,12 +316,12 @@ class YouTubeAdapter(Adapter):
             resource = items[0] if isinstance(items, list) and items else None
             if resource is None or not self._apply_observation(result, resource):
                 result.warnings.append(
-                    "La subida quedó confirmada, pero YouTube no devolvió una "
-                    "observación de visibilidad utilizable."
+                    'The upload was confirmed, but YouTube did not return a '
+                    'usable visibility observation.'
                 )
         except Exception:
             result.warnings.append(
-                "La subida quedó confirmada, pero no se pudo verificar su visibilidad."
+                'The upload was confirmed, but its visibility could not be verified.'
             )
 
     def _error(self, mensaje: str) -> PostResult:

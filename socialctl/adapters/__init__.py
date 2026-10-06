@@ -1,4 +1,4 @@
-"""Importar este paquete registra los cuatro adaptadores en ADAPTADORES."""
+'Importing this package registers all four adapters in ADAPTADORES.'
 
 from __future__ import annotations
 

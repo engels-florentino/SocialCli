@@ -1,5 +1,5 @@
-# IDs de las cuentas de esta marca. Aqui NO van secretos:
-# los tokens viven en .secrets/ y nunca se versionan.
+# Account identifiers for this brand. Never put secrets here:
+# tokens belong in .secrets/ and must never be committed.
 
 youtube:
   channel_id: ""
@@ -8,25 +8,26 @@ facebook:
   page_id: ""
 
 instagram:
-  # Debe ser una cuenta Business vinculada a la Pagina de Facebook de arriba.
+  # Requires a professional account linked to the Facebook Page above.
   ig_user_id: ""
-  # Base HTTPS de media suministrada. Con `media transfer`, debe coincidir con
-  # media-policy.json del servidor; `media verify --remote --public` verifica
-  # los bytes completos (SHA-256, tamaño, MIME), no solo un HEAD 200.
-  # Consulta MEDIA-INGESTION.md. Transferir no aprueba ni publica un post.
+  # HTTPS base URL for supplied media. With `media transfer`, it must match
+  # the server's media-policy.json. `media verify --remote --public` checks
+  # all bytes (SHA-256, size, MIME), not merely a HEAD 200 response.
+  # See MEDIA-INGESTION.md. Transfer neither approves nor publishes a post.
   media_url_base: ""
 
 tiktok:
-  # Se rellena automáticamente al ejecutar `socialcli auth tiktok`: el
-  # comando pide el scope user.info.basic y toma el open_id de la propia
-  # respuesta del canje de token, sin llamadas adicionales. Si no pudiera
-  # obtenerlo (por ejemplo, con un token antiguo pedido sin ese scope), lo
-  # avisa por pantalla y hay que rellenarlo a mano -ver SETUP.md, sección
-  # TikTok- con GET https://open.tiktokapis.com/v2/user/info/?fields=open_id
-  # y la cabecera 'Authorization: Bearer <access_token>' (el que guarda
-  # `socialcli auth tiktok` en .secrets/tiktok.json).
+  # Filled automatically by `socialcli auth tiktok`, which requests
+  # user.info.basic and reads open_id from the token exchange response
+  # without additional calls. If unavailable (for example, with an older
+  # token lacking that scope), the command warns you to fill it manually.
+  # See SETUP.md, TikTok section. Request:
+  # GET https://open.tiktokapis.com/v2/user/info/?fields=open_id
+  # with 'Authorization: Bearer <access_token>' using the token stored
+  # by `socialcli auth tiktok` in .secrets/tiktok.json.
   open_id: ""
-  # inbox  -> sube al buzon y confirmas en la app (sin auditoria aprobada)
-  # direct -> publica solo (SOLO con la auditoria de TikTok aprobada)
+  # inbox  -> upload to inbox; you finish publishing in the app
+  # direct -> automatic publication ONLY after TikTok audit approval and
+  #           completion of required UX controls; see docs/tiktok-review.md
   mode: inbox
   auditada: false

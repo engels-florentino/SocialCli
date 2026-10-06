@@ -1,57 +1,57 @@
-# Configurar SocialCli con tus cuentas
+# Set up SocialCli with your accounts
 
-SocialCli es una aplicación de escritorio por línea de comandos. Esta versión no distribuye credenciales compartidas del desarrollador: cada operador configura sus aplicaciones de proveedor, con los permisos y revisiones que correspondan. No copies credenciales de otra persona ni las publiques en GitHub.
+SocialCli is a desktop command-line application. This release does not distribute shared developer credentials: each operator configures their own provider applications, including the required permissions and reviews. Do not copy another person's credentials or publish them on GitHub.
 
-## Carpeta de trabajo
+## Workspace
 
 ```bash
-mkdir mis-redes
-cd mis-redes
-socialcli brand new MiMarca
+mkdir my-social
+cd my-social
+socialcli brand new MyBrand
 ```
 
-Completa `MiMarca/accounts.yml` con los identificadores de **tus** cuentas. Los tokens y secretos van en `MiMarca/.secrets/`, creada con permisos restringidos. Para reutilizar esta carpeta desde otro lugar, establece `SOCIALCLI_ROOT` con su ruta absoluta o usa `--root RUTA`.
+Complete `MyBrand/accounts.yml` with **your** account identifiers. Tokens and secrets belong in `MyBrand/.secrets/`, created with restricted permissions. To use this folder from elsewhere, set `SOCIALCLI_ROOT` to its absolute path or use `--root PATH`.
 
 ## YouTube
 
-1. Crea tu proyecto en [Google Cloud](https://console.cloud.google.com/).
-2. Activa YouTube Data API v3 y, si usarás métricas, YouTube Analytics API.
-3. Configura la pantalla de consentimiento y añade tu cuenta a los usuarios de prueba si tu proyecto está en testing.
-4. Crea un cliente OAuth de escritorio.
-5. Ejecuta `socialcli auth youtube --brand MiMarca` y proporciona tu client ID y secreto cuando se soliciten.
+1. Create a project in [Google Cloud](https://console.cloud.google.com/).
+2. Enable YouTube Data API v3 and YouTube Analytics API if you need metrics.
+3. Configure the consent screen and add your account as a test user if the project is in testing.
+4. Create a desktop OAuth client.
+5. Run `socialcli auth youtube --brand MyBrand` and provide your client ID and secret when prompted.
 
-El callback local es `http://localhost:8723/callback`. Configura el canal en `accounts.yml`. Para gestión adicional de contenido consulta `socialcli auth youtube --help`: los permisos adicionales son opt-in. La renovación automática necesita un refresh token válido; una revocación o cambio de permisos puede requerir autorizar de nuevo.
+The local callback is `http://localhost:8723/callback`. Set the channel in `accounts.yml`. For additional content management, see `socialcli auth youtube --help`; extra permissions are opt-in. Automatic renewal requires a valid refresh token. Revocation or permission changes may require authorization again.
 
-## Facebook e Instagram
+## Facebook and Instagram
 
-Configura tu aplicación en [Meta for Developers](https://developers.facebook.com/), con los productos y permisos requeridos para tus cuentas. Facebook publica en Páginas. Instagram requiere una cuenta profesional vinculada a una Página para el flujo implementado. Las pruebas y el uso con usuarios externos pueden requerir revisión y acceso avanzado.
+Configure your application in [Meta for Developers](https://developers.facebook.com/) with the products and permissions required for your accounts. Facebook publishes to Pages. The implemented Instagram flow requires a professional account linked to a Page. Testing and external users may require review and advanced access.
 
 ```bash
-socialcli auth facebook --brand MiMarca
-socialcli auth instagram --brand MiMarca
+socialcli auth facebook --brand MyBrand
+socialcli auth instagram --brand MyBrand
 ```
 
-Configura `facebook.page_id` e `instagram.ig_user_id`. Para Instagram, los archivos de publicación deben tener URLs HTTPS accesibles al proveedor; configura tu alojamiento y `instagram.media_url_base`. Lee [MEDIA-INGESTION.md](MEDIA-INGESTION.md). La expiración de un token de Meta no equivale al flujo de refresh de YouTube o TikTok; sigue el diagnóstico del comando y las políticas del proveedor.
+Set `facebook.page_id` and `instagram.ig_user_id`. Instagram media must have HTTPS URLs accessible to the provider; configure your hosting and `instagram.media_url_base`. Read [MEDIA-INGESTION.md](MEDIA-INGESTION.md). Meta token expiration differs from YouTube or TikTok refresh flows; follow command diagnostics and provider policies.
 
 ## TikTok
 
-1. Crea tu aplicación de escritorio en [TikTok for Developers](https://developers.tiktok.com/).
-2. Configura Login Kit, Content Posting API y el redirect `http://localhost:8723/callback`.
-3. Para el flujo inbox solicita `user.info.basic` y `video.upload`. Habilita únicamente los permisos adicionales que realmente utilizarás.
-4. Si estás en sandbox, añade tu cuenta como target user.
-5. Ejecuta `socialcli auth tiktok --brand MiMarca` y proporciona las credenciales de **tu aplicación** localmente.
+1. Create your desktop application in [TikTok for Developers](https://developers.tiktok.com/).
+2. Configure Login Kit, Content Posting API and the redirect `http://localhost:8723/callback`.
+3. Request `user.info.basic` and `video.upload` for inbox. Enable only the extra permissions you actually need.
+4. In sandbox, add your account as a target user.
+5. Run `socialcli auth tiktok --brand MyBrand` and enter **your application's** credentials locally.
 
-El identificador `open_id` se guarda a partir de la autorización. La plantilla mantiene `mode: inbox` y `auditada: false`. El vídeo se sube al buzón; debes completar la publicación desde TikTok. No publiques dos veces el mismo archivo para probar el flujo.
+Authorization supplies the `open_id`. The template retains `mode: inbox` and `auditada: false`. The video uploads to your inbox; you must finish publishing in TikTok. Do not upload the same file twice to test the flow.
 
-La existencia de una autorización o una subida sandbox correcta no acredita aprobación de producción. Revisa [docs/tiktok-review.md](docs/tiktok-review.md) antes de preparar una solicitud. Nunca distribuyas el secreto de una aplicación compartida junto con el CLI.
+Successful authorization or a sandbox upload does not establish production approval. Review [docs/tiktok-review.md](docs/tiktok-review.md) before preparing an application. Never distribute a shared application's secret with the CLI.
 
-## Verificar
+## Verify
 
 ```bash
-socialcli auth status --brand MiMarca --platform tiktok --json
-socialcli doctor --brand MiMarca --json
-socialcli capabilities --brand MiMarca --json
-socialcli publish mi-video --brand MiMarca --only tiktok --dry-run
+socialcli auth status --brand MyBrand --platform tiktok --json
+socialcli doctor --brand MyBrand --json
+socialcli capabilities --brand MyBrand --json
+socialcli publish my-video --brand MyBrand --only tiktok --dry-run
 ```
 
-Usa `socialcli COMANDO --help` para ver las opciones efectivas. No publiques salidas privadas de diagnóstico completas en issues. Si eliminas una marca, guarda antes lo necesario y revoca por separado los permisos desde cada plataforma; borrar un fichero local no revoca permisos remotos.
+Use `socialcli COMMAND --help` for available options. Do not post complete private diagnostics in issues. Before deleting a brand, save anything you need and separately revoke platform permissions; deleting a local file does not revoke remote access.

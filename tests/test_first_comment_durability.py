@@ -161,7 +161,7 @@ def test_adapter_exception_secret_does_not_reach_any_durable_result(tmp_path, mo
     result = publicar(post, brand)[0]
     assert result.status is PostStatus.ERROR
     assert result.riesgo_duplicado is True
-    assert "incierto" in result.error
+    assert "uncertain" in result.error
     assert "SECRET" not in str(result)
     for path in (brand.raiz / ".socialctl").rglob("*.json"):
         assert "SECRET" not in path.read_text()
@@ -276,7 +276,7 @@ def test_actual_retry_checks_durable_history_before_new_upload(tmp_path, monkeyp
     result = CliRunner().invoke(app, ["retry", "clip", "--brand", "Example", "--root", str(tmp_path), "--yes"])
     assert result.exit_code != 0, result.output
     assert len(uploads) == 1
-    assert "diario" in result.output.lower()
+    assert 'journal' in result.output.lower()
     if state != "malformed_journal":
         assert first.publication_id in result.output
 
@@ -330,7 +330,7 @@ def test_actual_retry_fails_closed_if_publication_directory_is_unreadable(tmp_pa
     monkeypatch.setattr(steps.os, "scandir", unreadable)
     result = CliRunner().invoke(app, ["retry", "clip", "--brand", "Example", "--root", str(tmp_path), "--yes"])
     assert result.exit_code != 0
-    assert "ilegible" in result.output
+    assert "unreadable" in result.output
     assert "SECRET" not in result.output
     assert not uploads
 

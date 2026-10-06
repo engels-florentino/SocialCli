@@ -1,4 +1,4 @@
-"""ChangeSets locales, inmutables y verificables para metadatos de YouTube."""
+"""Local immutable, verifiable ChangeSets for YouTube metadata."""
 
 from __future__ import annotations
 
@@ -45,38 +45,38 @@ IMMUTABLE_FIELDS = (
 
 def _validate_patch_mapping(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ValueError("patch debe ser un mapping")
+        raise ValueError("patch must be a mapping")
     if not value:
-        raise ValueError("patch está vacío")
+        raise ValueError("patch is empty")
     unknown = set(value) - PATCH_FIELDS
     if unknown:
         raise ValueError(
-            f"campo de patch desconocido: {', '.join(sorted(str(x) for x in unknown))}"
+            f"unknown patch field: {', '.join(sorted(str(x) for x in unknown))}"
         )
     nulls = [key for key, item in value.items() if item is None]
     if nulls:
         raise ValueError(
-            f"patch no admite null ({', '.join(sorted(nulls))}); "
-            "omitir conserva el valor"
+            f"patch does not accept null ({', '.join(sorted(nulls))}); "
+            "omission preserves the value"
         )
     _validate_patch_types(value)
     return dict(value)
 
 
 class ChangeError(ValueError):
-    """Error legible de formato, persistencia o estado de un ChangeSet."""
+    """Readable ChangeSet format, persistence or state error."""
 
 
 class ApprovalMismatch(ChangeError):
-    """La aprobación no cubre la huella exacta de esta propuesta."""
+    """Approval does not cover this proposal's exact fingerprint."""
 
 
 class ChangeConflict(ChangeError):
-    """El contenido remoto cambió desde el preview o durante el PUT."""
+    """Remote content changed since preview or during PUT."""
 
 
 class ChangeLocked(ChangeError):
-    """Otro proceso está aplicando el mismo ChangeSet."""
+    """Another process is applying the same ChangeSet."""
 
 
 class EditFile(BaseModel):
@@ -118,65 +118,65 @@ def now_utc() -> datetime:
 
 
 def load_edit_file(path: Path) -> EditFile:
-    """Carga el esquema inicial de una propuesta y rechaza omisiones ambiguas."""
+    """Load initial proposal schema and reject ambiguous omissions."""
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
-        raise ChangeError(f"no se pudo leer el archivo de cambios {path}: {exc}") from exc
+        raise ChangeError(f"failed to read change file {path}: {exc}") from exc
     if not isinstance(raw, dict):
-        raise ChangeError("el archivo de cambios debe contener un mapping")
+        raise ChangeError("change file must contain a mapping")
     video_id = raw.get("video_id")
     if (
         not isinstance(video_id, str)
         or not video_id.strip()
         or video_id != video_id.strip()
     ):
-        raise ChangeError("video_id debe ser texto no vacío y sin espacios exteriores")
+        raise ChangeError("video_id must be nonempty text without surrounding whitespace")
     try:
         return EditFile.model_validate(raw)
     except ValidationError as exc:
-        raise ChangeError(f"archivo de cambios inválido (campo extra o tipo): {exc}") from exc
+        raise ChangeError(f"invalid change file (extra field or type): {exc}") from exc
 
 
 def _validate_patch_types(patch: dict[str, Any]) -> None:
     for field in PATCH_FIELDS - {"tags"}:
         if field in patch and not isinstance(patch[field], str):
-            raise ChangeError(f"patch.{field} debe ser texto")
+            raise ChangeError(f"patch.{field} must be text")
     if "tags" in patch:
         tags = patch["tags"]
         if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
-            raise ChangeError("patch.tags debe ser una lista de textos")
+            raise ChangeError("patch.tags must be a list of strings")
 
 
 def _validate_snippet(snippet: dict[str, Any]) -> None:
     title = snippet.get("title")
     category = snippet.get("categoryId")
     if not isinstance(title, str) or not title.strip():
-        raise ChangeError("YouTube exige un título no vacío")
+        raise ChangeError("YouTube requires a nonempty title")
     if len(title) > 100:
-        raise ChangeError(f"el título tiene {len(title)} caracteres y el máximo son 100")
+        raise ChangeError(f"title has {len(title)} characters; maximum is 100")
     if not isinstance(category, str) or not category.strip():
-        raise ChangeError("YouTube exige una categoría (categoryId) no vacía")
+        raise ChangeError("YouTube requires a nonempty category (categoryId)")
 
     description = snippet.get("description", "")
     if not isinstance(description, str):
-        raise ChangeError("description debe ser texto")
+        raise ChangeError("description must be text")
     size = len(description.encode("utf-8"))
     if size > 5000:
-        raise ChangeError(f"la descripción ocupa {size} bytes y el máximo son 5000 bytes")
+        raise ChangeError(f"description uses {size} bytes; maximum is 5000 bytes")
 
     tags = snippet.get("tags", [])
     if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
-        raise ChangeError("tags debe ser una lista de textos")
+        raise ChangeError("tags must be a list of strings")
     aggregate = len(",".join(f'"{tag}"' if " " in tag else tag for tag in tags))
     if aggregate > 500:
         raise ChangeError(
-            f"las etiquetas ocupan {aggregate} caracteres agregados y el máximo son 500"
+            f"tags use {aggregate} aggregate characters; maximum is 500"
         )
 
     for field in ("defaultLanguage", "defaultAudioLanguage"):
         if field in snippet and not isinstance(snippet[field], str):
-            raise ChangeError(f"{field} debe ser texto")
+            raise ChangeError(f"{field} must be text")
 
 
 def _immutable_payload(change: ChangeSet | dict[str, Any]) -> dict[str, Any]:
@@ -195,7 +195,7 @@ def _fingerprint(change: ChangeSet | dict[str, Any]) -> str:
 
 
 class ChangeStore:
-    """Persistencia JSON atómica y lock interproceso por ChangeSet."""
+    """Atomic JSON persistence and interprocess locking per ChangeSet."""
 
     model_type = ChangeSet
     fingerprint_for = staticmethod(_fingerprint)
@@ -207,10 +207,10 @@ class ChangeStore:
         try:
             parsed = uuid.UUID(change_id)
         except (ValueError, TypeError, AttributeError):
-            raise ChangeError(f"id de ChangeSet inválido: debe ser un UUID, no {change_id!r}") from None
+            raise ChangeError(f"invalid ChangeSet ID: must be a UUID, not {change_id!r}") from None
         canonical = str(parsed)
         if canonical != change_id:
-            raise ChangeError("id de ChangeSet inválido: el UUID debe estar en formato canónico")
+            raise ChangeError("invalid ChangeSet ID: UUID must be canonical")
         return canonical
 
     def path_for(self, change_id: str) -> Path:
@@ -222,25 +222,25 @@ class ChangeStore:
             raw = json.loads(path.read_text(encoding="utf-8"))
             change = self.model_type.model_validate(raw)
         except FileNotFoundError:
-            raise ChangeError(f"no existe el ChangeSet {change_id}") from None
+            raise ChangeError(f"ChangeSet does not exist: {change_id}") from None
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
-            raise ChangeError(f"no se pudo leer el ChangeSet {change_id}: {exc}") from exc
+            raise ChangeError(f"failed to read ChangeSet {change_id}: {exc}") from exc
         self._validate_id(change.id)
         if change.id != change_id:
             raise ChangeError(
-                f"el id interno del ChangeSet no coincide con el nombre {change_id}"
+                f"internal ChangeSet ID does not match filename {change_id}"
             )
         expected = self.fingerprint_for(change)
         if not hmac.compare_digest(change.fingerprint, expected):
             raise ChangeError(
-                f"la huella del ChangeSet {change_id} no coincide; la propuesta fue alterada"
+                f"ChangeSet {change_id} fingerprint mismatch; proposal was altered"
             )
         return change
 
     def save(self, change: ChangeSet) -> None:
         self._validate_id(change.id)
         if not hmac.compare_digest(change.fingerprint, self.fingerprint_for(change)):
-            raise ChangeError("no se guardó el ChangeSet: su huella inmutable no coincide")
+            raise ChangeError("ChangeSet was not saved: immutable fingerprint mismatch")
         temporary: str | None = None
         try:
             self._ensure_root()
@@ -269,15 +269,10 @@ class ChangeStore:
                     os.unlink(temporary)
                 except OSError:
                     pass
-            raise ChangeError(f"no se pudo guardar el ChangeSet {change.id}: {exc}") from exc
+            raise ChangeError(f"failed to save ChangeSet {change.id}: {exc}") from exc
 
     def _ensure_root(self) -> None:
-        """Crea y sincroniza la cadena de almacenamiento en cada intento.
-
-        No basta con sincronizar solo al crear: si ese fsync falla después del
-        mkdir, el directorio queda visible y el siguiente intento debe repetir
-        el fsync del padre aunque ya exista.
-        """
+        """Create and sync the storage chain on every attempt, including existing parents after a failed fsync."""
         for directory in (self.root.parent, self.root):
             directory.mkdir(exist_ok=True)
             self._sync_directory(directory.parent)
@@ -301,7 +296,7 @@ class ChangeStore:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise ChangeLocked(
-                    f"otro proceso está aplicando el ChangeSet {change_id}"
+                    f"another process is applying ChangeSet {change_id}"
                 ) from None
             yield
         finally:
@@ -320,7 +315,7 @@ def prepare_youtube_change(
     try:
         validated = EditFile.model_validate(edit.model_dump(mode="python"))
     except ValidationError as exc:
-        raise ChangeError(f"patch de la propuesta inválido: {exc}") from exc
+        raise ChangeError(f"invalid proposal patch: {exc}") from exc
 
     inspected = youtube.inspect(validated.video_id)
     before = youtube.editable_snippet(inspected)
@@ -367,21 +362,21 @@ def apply_youtube_change(
     change_id: str,
     approval_digest: str,
 ) -> ChangeSet:
-    """Aplica o reconcilia un ChangeSet; nunca repite un PUT incierto."""
+    """Apply or reconcile a ChangeSet; never repeat an uncertain PUT."""
     with store.apply_lock(change_id):
         change = store.load(change_id)
         if not hmac.compare_digest(approval_digest, change.fingerprint):
             raise ApprovalMismatch(
-                "la aprobación no coincide exactamente con la huella de la propuesta"
+                "approval does not exactly match proposal fingerprint"
             )
         if youtube.configured_channel_id != change.target_account:
-            raise ChangeError("la cuenta configurada ya no coincide con el ChangeSet")
+            raise ChangeError("configured account no longer matches ChangeSet")
 
         if change.status in {"applying", "uncertain"}:
             return _reconcile(youtube, store, change)
         if change.status != "proposed":
             raise ChangeError(
-                f"el ChangeSet está en estado {change.status}; no se repetirá el PUT"
+                f"ChangeSet status is {change.status}; PUT will not be repeated"
             )
 
         current = youtube.inspect(change.video_id)
@@ -391,7 +386,7 @@ def apply_youtube_change(
             _append(change, "pre_write_conflict")
             store.save(change)
             raise ChangeConflict(
-                "conflict: el snippet remoto cambió desde el preview; no se envió ningún PUT"
+                "conflict: remote snippet changed since preview; no PUT was sent"
             )
 
         change.status = "applying"
@@ -422,7 +417,7 @@ def apply_youtube_change(
             raise ChangeError(str(exc)) from None
         except Exception as exc:
             change.status = "uncertain"
-            safe = f"resultado incierto: fallo inesperado ({type(exc).__name__})"
+            safe = f"uncertain outcome: unexpected failure ({type(exc).__name__})"
             _append(change, "write_uncertain", error=safe)
             store.save(change)
             raise ChangeError(safe) from None
@@ -434,14 +429,14 @@ def apply_youtube_change(
             _append(change, "verification_uncertain", error=str(exc))
             store.save(change)
             raise ChangeError(
-                "resultado incierto: YouTube aceptó el PUT pero no se pudo verificar"
+                "uncertain outcome: YouTube accepted PUT but verification failed"
             ) from None
         if not _same_snippet(youtube.editable_snippet(verified), change.after):
             change.status = "uncertain"
             _append(change, "verification_mismatch")
             store.save(change)
             raise ChangeError(
-                "resultado incierto: el snippet releído no coincide con la propuesta"
+                "uncertain outcome: reread snippet does not match proposal"
             )
 
         change.status = "applied"
@@ -454,14 +449,14 @@ def apply_youtube_change(
 def _reconcile(
     youtube: YouTubeManagementClient, store: ChangeStore, change: ChangeSet
 ) -> ChangeSet:
-    """Solo relee: nunca llama a update al retomar un intento incierto."""
+    """Reread only; never call update when resuming an uncertain attempt."""
     try:
         current = youtube.inspect(change.video_id)
     except YouTubeManagementError as exc:
         _append(change, "reconciliation_failed", error=str(exc))
         store.save(change)
         raise ChangeError(
-            "el resultado sigue incierto: no se pudo reconciliar por lectura"
+            "outcome remains uncertain: read-only reconciliation failed"
         ) from None
 
     snippet = youtube.editable_snippet(current)
@@ -478,6 +473,6 @@ def _reconcile(
     _append(change, event)
     store.save(change)
     raise ChangeError(
-        "el PUT incierto requiere revisión manual; la reconciliación fue solo lectura "
-        "y no repitió la escritura"
+        "uncertain PUT requires manual review; reconciliation was read-only "
+        "and did not repeat the write"
     )
