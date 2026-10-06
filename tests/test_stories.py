@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.terminal import plain
+
 import shutil
 import subprocess
 from datetime import timedelta
@@ -587,7 +589,7 @@ def test_missing_permission_is_actionable_blocked_state(brand):
 def test_story_help_does_not_require_credentials():
     result = runner.invoke(app, ["story", "--help"])
     assert result.exit_code == 0
-    assert {"prepare", "apply", "status", "verify"} <= set(result.output.split())
+    assert {"prepare", "apply", "status", "verify"} <= set(plain(result.output).split())
 
 
 def test_story_status_is_local_and_does_not_require_credentials(brand, tmp_path):

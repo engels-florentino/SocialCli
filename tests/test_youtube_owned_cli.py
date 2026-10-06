@@ -1,3 +1,4 @@
+from tests.terminal import plain
 import json
 
 import httpx
@@ -30,7 +31,7 @@ def test_channel_show_default_cli_parts_match_documented_client_defaults(tmp_pat
 
 def test_owned_cli_requires_brand_and_has_no_approval_bypass():
     result = runner.invoke(app, ["content", "youtube-owned", "playlists-list"])
-    assert result.exit_code != 0 and "--brand" in result.output
+    assert result.exit_code != 0 and "--brand" in plain(result.output)
     result = runner.invoke(app, ["content", "youtube-owned", "apply", "uuid", "--yes"])
     assert result.exit_code != 0
 

@@ -1,3 +1,4 @@
+from tests.terminal import plain
 import json
 import subprocess
 
@@ -24,7 +25,7 @@ def test_comments_cli_registered_and_requires_brand():
     assert help_result.exit_code == 0, help_result.output
     result = runner.invoke(app, ["comments", "prepare", "789", "--platform", "facebook", "--text", "hello"])
     assert result.exit_code != 0
-    assert "--brand" in result.output
+    assert "--brand" in plain(result.output)
 
 
 def test_complete_preview_and_exact_cli_approval(tmp_path, monkeypatch):

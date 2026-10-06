@@ -1,3 +1,4 @@
+from tests.terminal import plain
 import httpx
 import json
 from typer.testing import CliRunner
@@ -31,7 +32,7 @@ def test_meta_cli_registered_and_requires_brand(tmp_path):
         ],
     )
     assert result.exit_code != 0
-    assert "--brand" in result.output
+    assert "--brand" in plain(result.output)
 
 
 def test_meta_cli_complete_preview_and_exact_approval(tmp_path, monkeypatch):

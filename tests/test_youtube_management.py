@@ -1,3 +1,4 @@
+from tests.terminal import plain
 import json
 from pathlib import Path
 
@@ -663,7 +664,7 @@ def test_top_level_and_nested_help_expose_management_commands():
 
     assert top.exit_code == auth.exit_code == content.exit_code == changes.exit_code == 0
     assert "content" in top.stdout and "changes" in top.stdout
-    assert "--management" in auth.stdout
+    assert "--management" in plain(auth.stdout)
     assert "show" in content.stdout and "edit" in content.stdout
     assert "apply" in changes.stdout and "status" in changes.stdout
 

@@ -1,3 +1,4 @@
+from tests.terminal import plain
 import httpx
 from typer.testing import CliRunner
 
@@ -23,7 +24,7 @@ def setup(tmp_path, monkeypatch):
 
 def test_resource_cli_requires_brand(tmp_path):
     result = runner.invoke(app, ["content", "youtube-assets", "captions-list", "video-1"])
-    assert result.exit_code != 0 and "--brand" in result.output
+    assert result.exit_code != 0 and "--brand" in plain(result.output)
 
 
 def test_resource_cli_preview_exact_approval_status_and_reconcile(tmp_path, monkeypatch):
