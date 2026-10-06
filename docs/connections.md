@@ -4,6 +4,10 @@ SocialCli supports a shared connection service so a creator can authorize an acc
 
 The hosted service origin is `https://social.florentino.pro`. Check `/healthz` for configured connectors. If a connector is disabled, `connect` fails clearly; use independent-app authentication or wait for the operator to configure it. No shared connector is announced as publicly approved before a real external-creator pilot and provider review.
 
+## Hosted access today
+
+The CLI is publicly installable; hosted provider access remains restricted. TikTok is in sandbox and permits only authorized target accounts. Google is in Testing for authorized test users. Meta is unpublished and limited to development access. Installing SocialCli does not add your account to those allowed users. If your account is not eligible, wait for production availability or use a service whose operator has the required provider access. Independent-app mode requires your own provider setup and remains subject to provider approval.
+
 ## Creator workflow
 
 Run inside your creator workspace. Explicitly name the brand:
@@ -13,6 +17,8 @@ socialcli brand new MyBrand
 socialcli connect youtube --brand MyBrand
 socialcli connections --brand MyBrand --json
 ```
+
+Complete your brand's `brand.md` first. The `connect` command saves selected account identifiers in `accounts.yml` automatically; you do not need to fill those identifiers manually or provide a client ID, client secret or provider token in shared mode.
 
 The command opens the provider's login page. Sign in there, grant the requested permissions, return to the terminal and confirm the displayed account. For Meta, select the Page you administer; Instagram requires a professional account linked to that Page in this integration. TikTok connects for inbox upload only. Connecting does not upload or publish content.
 

@@ -20,12 +20,20 @@ Install SocialCli where your agent can run shell commands, point it at your crea
 
 ## Install
 
-Requires Python 3.11 or later. Video checks also require `ffprobe`, included with FFmpeg. SocialCli inspects files; it does not generate, crop or reencode content.
+Use macOS or Linux with Python 3.11 or later, Git, and an available OS credential store. Video checks also require `ffprobe`, included with FFmpeg. If `python3 --version` reports an older version, install a supported Python first or replace `python3` below with your supported interpreter, such as `python3.12`. SocialCli inspects files; it does not generate, crop or reencode content.
 
 ```bash
+python3 --version  # Requires Python 3.11 or later
+mkdir my-social
+cd my-social
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install "git+https://github.com/engels-florentino/SocialCli.git"
 socialcli --help
+socialcli brand new MyBrand
 ```
+
+Keep this workspace outside the application repository. In a new terminal, run `cd my-social` and `source .venv/bin/activate` before using SocialCli.
 
 For development:
 
@@ -39,23 +47,26 @@ uv run pytest
 
 ## Your first brand
 
-Work in a data folder you control. The current folder is the default; set `SOCIALCLI_ROOT` or pass `--root` to choose another folder. Your account files belong outside the application repository.
+The installation steps create `MyBrand`. Replace that example name with your own brand and complete `MyBrand/brand.md` with its voice and identity. To connect through the hosted service, sign in on the provider's page and confirm your own account in the terminal:
 
 ```bash
-mkdir my-social
-cd my-social
-socialcli brand new MyBrand
+socialcli connect tiktok --brand MyBrand
+socialcli connections --brand MyBrand --json
 ```
 
-Complete `MyBrand/brand.md` and `MyBrand/accounts.yml`. Configure provider applications and authorize **your own accounts** as described in [SETUP.md](SETUP.md):
+`connect` saves the selected account identifiers in `MyBrand/accounts.yml` automatically. You do not need your own developer app, client ID, client secret or pasted provider token for shared mode. Your OS credential store must be available and unlocked. Connecting does not upload or publish content.
+
+**Hosted access today:** TikTok is in sandbox and accepts only authorized target accounts. Google is in Testing for authorized test users; Meta is unpublished and restricted to development access. Anyone can install the public CLI, but installation does not grant access to these hosted provider integrations. If your account is not eligible, wait for production availability or use a service whose operator has the required provider access. See the [connection guide](docs/connections.md).
+
+Other configured networks use the same browser workflow:
 
 ```bash
-socialcli auth youtube --brand MyBrand
-socialcli auth tiktok --brand MyBrand
-socialcli auth status --brand MyBrand --platform tiktok --json
+socialcli connect youtube --brand MyBrand
+socialcli connect facebook --brand MyBrand
+socialcli connect instagram --brand MyBrand
 ```
 
-Choose shared browser connections with `socialcli connect` when the service has configured your platform, or independent-app credentials with `socialcli auth`. Shared capabilities live in the OS keyring; independent credentials remain in `MyBrand/.secrets/`. No other creator’s credentials are included. See [account connections](docs/connections.md) for availability and provider-review status.
+Operators who deliberately use their own developer applications can instead follow [independent-app setup](SETUP.md) and use `socialcli auth PLATFORM --brand MyBrand`.
 
 ## Review and publish
 
