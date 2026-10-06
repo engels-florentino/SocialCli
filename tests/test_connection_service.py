@@ -182,3 +182,30 @@ def test_service_disables_api_docs_and_adds_security_headers(tmp_path):
     for _ in range(5):
         start(client)
     assert client.post('/v1/authorizations',json={'platform':'youtube','poll_challenge':hashlib.sha256(b's').hexdigest()}).status_code == 429
+
+
+def test_read_only_token_requests_never_refresh_an_expired_grant(tmp_path):
+    client,store=make_service(tmp_path)
+    value,headers=start(client)
+    authorize(client,value)
+    connected=complete(client,value,headers)
+    cid=connected['connection_id']
+    with store.transaction() as db:
+        record=store.get(db,'connection',cid)
+        record['payload']['grant']['expires_at']=1
+        store.put(db,'connection',cid,record['payload'],expires=record['expires'],credential_hash=record['credential_hash'])
+    result=client.post(f'/v1/connections/{cid}/token?refresh=false',headers=connection_headers(connected))
+    assert result.status_code==409
+    with store.transaction() as db:
+        assert store.get(db,'connection',cid)['payload']['grant']['expires_at']==1
+
+
+def test_uninstalled_connection_expires_within_pairing_window(tmp_path):
+    now=[time.time()]
+    client,store=make_service(tmp_path,clock=lambda:now[0])
+    value,headers=start(client)
+    authorize(client,value)
+    connected=complete(client,value,headers)
+    path=f"/v1/connections/{connected['connection_id']}"
+    now[0]+=601
+    assert client.get(path,headers=connection_headers(connected)).status_code==404

@@ -62,7 +62,11 @@ class AnalyticsClient(YouTubeOwnedClient):
             try:
                 secret = self.brand.leer_secreto(Platform.YOUTUBE)
                 self.credential_observation = credential_metadata(secret)
-                token = secret.get("access_token")
+                if secret.get("auth_mode") == "broker":
+                    from socialctl.connections.client import broker_access_token
+                    token = broker_access_token(self.brand, Platform.YOUTUBE, self.client, refresh=False)
+                else:
+                    token = secret.get("access_token")
             except Exception:
                 raise ResourceError("credentials unavailable") from None
             if self.credential_observation["expiry"]["expired"]:

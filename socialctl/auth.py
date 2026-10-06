@@ -115,6 +115,12 @@ def _refrescar(
 def obtener_token(brand: Brand, platform: Platform, client: httpx.Client) -> str:
     """Return a valid access token, refreshing it when necessary."""
     secreto = brand.leer_secreto(platform)
+    if secreto.get("auth_mode") == "broker":
+        from socialctl.connections.client import broker_access_token
+        try:
+            return broker_access_token(brand, platform, client)
+        except Exception:
+            raise AuthError("shared connection unavailable; run socialcli connections --brand <brand> and reconnect if needed") from None
     if not secreto.get("access_token"):
         raise _pedir_auth(
             platform, f"no credentials for {platform.value} for {brand.nombre}"

@@ -118,7 +118,9 @@ class YouTubeResourcesClient(YouTubeManagementClient):
         # Pin the credential for this client so ownership and effects use one token.
         if self._access_token is None:
             try:
-                self._access_token = obtener_token(self.brand, Platform.YOUTUBE, _FixedOAuth(self.client))
+                credential = self.brand.leer_secreto(Platform.YOUTUBE)
+                transport = self.client if credential.get("auth_mode") == "broker" else _FixedOAuth(self.client)
+                self._access_token = obtener_token(self.brand, Platform.YOUTUBE, transport)
             except Exception:
                 raise ResourceError("YouTube credentials unavailable; refresh unconfirmed") from None
         return self._access_token

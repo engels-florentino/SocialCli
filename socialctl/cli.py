@@ -102,6 +102,9 @@ app.add_typer(media_app, name="media")
 from socialctl.inventory_cli import register as register_inventory
 register_inventory(app, content_app)
 
+from socialctl.connections.cli import register as register_connections
+register_connections(app)
+
 from socialctl.workspace import default_root
 
 RAIZ_POR_DEFECTO = default_root()
@@ -535,6 +538,9 @@ def auth(
     except ValueError:
         validas = ", ".join(p.value for p in Platform)
         _fallar(f'unknown platform: {red!r}. Valid platforms: {validas}')
+
+    if brand.leer_secreto(platform).get("auth_mode") == "broker":
+        _fallar("a shared connection already exists; run socialcli disconnect for this platform before independent-app auth")
 
     if management and platform is not Platform.YOUTUBE:
         _fallar("--management is only available for YouTube")

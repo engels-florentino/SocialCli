@@ -45,7 +45,11 @@ class MetaClient:
         self.account_id = self.page_id if platform is Platform.FACEBOOK else meta_id((brand.cuentas.get("instagram") or {}).get("ig_user_id"))
         try:
             secret = brand.leer_secreto(platform)
-            self._token = secret.get("access_token")
+            if secret.get("auth_mode") == "broker":
+                from socialctl.connections.client import broker_access_token
+                self._token = broker_access_token(brand, platform, client, refresh=False)
+            else:
+                self._token = secret.get("access_token")
             self.token_mode = secret.get("token_mode", "facebook_page")
             self.actor_id = secret.get("actor_id")
             expired = credential_metadata(secret)["expiry"]["expired"]

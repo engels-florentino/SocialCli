@@ -73,7 +73,11 @@ class IdentityClient:
         try:
             secret = brand.leer_secreto(platform)
             self.metadata = credential_metadata(secret)
-            self._token = secret.get("access_token")
+            if secret.get("auth_mode") == "broker":
+                from socialctl.connections.client import broker_access_token
+                self._token = broker_access_token(brand, platform, client, refresh=False)
+            else:
+                self._token = secret.get("access_token")
         except Exception:
             raise ReadError("credentials_invalid") from None
         if not isinstance(self._token, str) or not self._token:

@@ -217,8 +217,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
             if account.get('access_token'):
                 grant['access_token'] = account['access_token']
             connection_id, connection_secret = secrets.token_urlsafe(24), secrets.token_urlsafe(32)
-            payload = {'platform':data['platform'],'account':safe_account(account),'grant':grant}
-            vault.put(db,'connection',connection_id,payload,expires=clock()+CONNECTION_SECONDS,credential_hash=digest(connection_secret))
+            payload = {'platform':data['platform'],'account':safe_account(account),'grant':grant,'activated':False}
+            vault.put(db,'connection',connection_id,payload,expires=clock()+SESSION_SECONDS,credential_hash=digest(connection_secret))
             vault.delete(db,'authorization',authorization_id)
         return {'version':1,'connection_id':connection_id,'connection_secret':connection_secret,
                 'platform':payload['platform'],'account':payload['account'],
@@ -235,7 +235,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
                 'connection_expires_at':record['expires'],'needs_reconnect':grant['expires_at']<=clock() and data['platform'] not in {'youtube','tiktok'}}
 
     @app.post('/v1/connections/{connection_id}/token')
-    def access_token(connection_id: str, request: Request):
+    def access_token(connection_id: str, request: Request, refresh: bool = True):
         with vault.transaction() as db:
             record = checked(db,'connection',connection_id,request)
             data = record['payload']
@@ -243,12 +243,17 @@ def create_app(settings: Settings, *, store: Store | None = None,
             if data['platform'] not in settings.providers:
                 raise HTTPException(503,'platform temporarily disabled')
             if grant['expires_at'] <= clock()+60:
+                if not refresh:
+                    raise HTTPException(409,'provider token expired; run an explicitly authorized operation to renew, or reconnect')
                 try:
                     grant = providers.refresh(data['platform'],grant)
                 except ValueError:
                     raise HTTPException(409,'authorization could not be renewed; reconnect your account') from None
                 data['grant'] = grant
                 vault.put(db,'connection',connection_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
+            if not data.get('activated') and refresh:
+                data['activated'] = True
+                vault.put(db,'connection',connection_id,data,expires=clock()+CONNECTION_SECONDS,credential_hash=record['credential_hash'])
         return {'version':1,'access_token':grant['access_token'],'expires_at':grant['expires_at'],
                 'granted_scopes':grant['granted_scopes'],'platform':data['platform'],'account':data['account']}
 
