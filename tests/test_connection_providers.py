@@ -194,3 +194,21 @@ def test_meta_pagination_never_uses_empty_edge_fallback(tmp_path, first_empty):
 
     accounts = setup(tmp_path, handler).exchange('facebook', 'code', 'verifier')['accounts']
     assert accounts == [{'id': '123', 'name': 'Example Page', 'page_id': '123', 'access_token': 'page-a'}]
+
+@pytest.mark.parametrize('platform,base,extra', [
+    ('facebook', {'pages_show_list','pages_read_engagement','pages_manage_posts'}, 'read_insights'),
+    ('instagram', {'pages_show_list','pages_read_engagement','instagram_basic','instagram_content_publish'}, 'instagram_manage_insights'),
+])
+def test_meta_analytics_consent_requests_only_its_read_permission(tmp_path, platform, base, extra):
+    p = setup(tmp_path, lambda r: httpx.Response(500))
+    ordinary = parse_qs(urlsplit(p.authorization_url(platform, 'state', 'verifier')).query)
+    analytics = parse_qs(urlsplit(p.authorization_url(platform, 'state', 'verifier', analytics=True)).query)
+    assert set(ordinary['scope'][0].split(',')) == base
+    assert set(analytics['scope'][0].split(',')) == base | {extra}
+
+
+def test_tiktok_rejects_analytics_and_meta_rejects_management(tmp_path):
+    p = setup(tmp_path, lambda r: httpx.Response(500))
+    for platform, options in [('tiktok', {'analytics':True}), ('facebook', {'management':True}), ('instagram', {'management':True})]:
+        with pytest.raises(ValueError):
+            p.authorization_url(platform, 'state', 'verifier', **options)

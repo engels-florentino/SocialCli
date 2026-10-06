@@ -48,8 +48,10 @@ class Providers:
         self.settings, self.client = settings, client
 
     def scopes(self, platform, *, management=False, analytics=False):
-        if platform != 'youtube' and (management or analytics):
-            raise ValueError('optional permissions are YouTube-only')
+        if management and platform != 'youtube':
+            raise ValueError('management permission is YouTube-only')
+        if analytics and platform not in {'youtube', 'facebook', 'instagram'}:
+            raise ValueError('analytics permission is available for YouTube, Facebook and Instagram')
         scopes = {
             'youtube': [GOOGLE_READ, GOOGLE_UPLOAD],
             'tiktok': ['user.info.basic', 'video.upload'],
@@ -58,7 +60,9 @@ class Providers:
         }.get(platform)
         if scopes is None:
             raise ValueError('unsupported platform')
-        return scopes + ([GOOGLE_MANAGEMENT] if management else []) + ([GOOGLE_ANALYTICS] if analytics else [])
+        analytics_scope = {'youtube': GOOGLE_ANALYTICS, 'facebook': 'read_insights',
+                           'instagram': 'instagram_manage_insights'}
+        return scopes + ([GOOGLE_MANAGEMENT] if management else []) + ([analytics_scope[platform]] if analytics else [])
 
     def authorization_url(self, platform, state, verifier, *, management=False, analytics=False):
         credentials = self.settings.providers[platform]

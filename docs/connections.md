@@ -26,7 +26,11 @@ YouTube requests upload and account discovery by default. Additional capabilitie
 
 ```sh
 socialcli connect youtube --brand MyBrand --management --analytics
+socialcli connect facebook --brand MyBrand --analytics
+socialcli connect instagram --brand MyBrand --analytics
 ```
+
+For Facebook, `--analytics` adds `read_insights`; for Instagram with Facebook Login it adds `instagram_manage_insights`. Existing discovery and publication permissions remain unchanged. The additional read permissions must be available in the operator app and granted during browser consent. TikTok analytics is not supported by this connection flow.
 
 Disconnect an existing shared connection before changing permissions or reconnecting. Initial Google authorization must return a refresh token; if Google returns an incomplete grant, retry consent and check provider configuration. Authorize one YouTube channel in Google's account/channel selection screen.
 

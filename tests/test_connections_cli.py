@@ -203,3 +203,21 @@ def test_all_credential_writers_share_the_brand_lock(tmp_path,monkeypatch,comman
         assert brand.leer_secreto(Platform.YOUTUBE)['connection_id']=='one'
     finally:
         os.close(fd)
+
+@pytest.mark.parametrize('platform', ['facebook', 'instagram'])
+def test_meta_analytics_flag_reaches_authorization_service(tmp_path, monkeypatch, platform):
+    from socialctl.connections import cli as cli_module, keychain
+    crear_brand(tmp_path, 'Example')
+    ring = MemoryKeyring()
+    monkeypatch.setattr(keychain, '_backend', lambda: ring)
+    requests = []
+    def transport(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(503, json={'detail':'unavailable'})
+    monkeypatch.setattr(cli_module, 'http_client', lambda: httpx.Client(transport=httpx.MockTransport(transport)))
+    result = runner.invoke(app, ['connect', platform, '--analytics', '--brand', 'Example', '--root', str(tmp_path), '--service', 'https://social.example'])
+    assert len(requests) == 1, result.output
+    assert requests[0]['platform'] == platform
+    assert requests[0]['analytics'] is True
+    assert requests[0]['management'] is False
+    assert not ring.values
