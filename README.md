@@ -1,8 +1,20 @@
 # SocialCli
 
-**Publish and manage your own content on YouTube, Facebook, Instagram and TikTok from the terminal.** SocialCli is a public project for creators and teams who want to review posts, keep brands separate and retain evidence of their actions.
+**A social media CLI for AI agents and the people who supervise them.** Use a terminal-enabled assistant to inspect your accounts, draft posts and prepare user-approved actions on YouTube, Facebook, Instagram and TikTok. SocialCli provides concrete commands, validation, previews and local records for creators and teams.
 
-[Website and documentation](https://engels-florentino.github.io/SocialCli/) · [Setup](SETUP.md) · [Security](SECURITY.md) · [TikTok limitations](docs/tiktok-review.md)
+[Website and documentation](https://engels-florentino.github.io/SocialCli/) · [AI agent guide](docs/ai-agents.md) · [Setup](SETUP.md) · [Security](SECURITY.md) · [TikTok limitations](docs/tiktok-review.md)
+
+## Work with your AI agent
+
+Install SocialCli where your agent can run shell commands, point it at your creator workspace and name the brand explicitly. Try:
+
+> Check MyBrand's TikTok connection and available capabilities. Summarize missing permissions without publishing.
+
+> Use MyBrand/media/my-video.mp4, draft a caption in our brand voice and show the complete TikTok dry-run preview. Wait for my approval before sending it.
+
+> Inspect my YouTube video and propose a description change. Show the proposal and fingerprint before applying anything.
+
+[The AI agent guide](docs/ai-agents.md) includes the commands behind these prompts, workspace instructions and the approval workflow. JSON is available on supported diagnostics and inventory commands. SocialCli runs through the agent's shell; it does not include an AI model or an MCP server. Your agent must keep credentials private and preserve the distinction between confirmed, pending and uncertain results.
 
 ## Install
 
