@@ -59,7 +59,9 @@ Each plan lists tests for its owned focus cases; other focus cases belong to the
 
 ## Final release acceptance
 
-- [ ] Run `uv run pytest -q`, `git diff --check` and `uv build --wheel`; verify clean default/headless installs and command discovery.
-- [ ] Publish capability/permission/limitation matrix, CLI JSON/exit contracts, provider review restrictions and agent examples. Check web pages against Markdown.
-- [ ] Record exact release/commit and compatible server version; preserve rollback image/database, verify docs/health and safe disposable pairing cleanup.
-- [ ] Report verified tests, untested live-provider behavior, deferred approval requirements and remaining issues separately. No claim of 100% coverage.
+- [x] Run `uv run pytest -q`, `git diff --check` and `uv build --wheel`; verify clean default/headless installs and command discovery.
+- [x] Publish capability/permission/limitation matrix, CLI JSON/exit contracts, provider review restrictions and agent examples. Check web pages against Markdown.
+- [x] Record exact release/commit and compatible server version; preserve rollback image/database, verify docs/health and safe disposable pairing cleanup.
+- [x] Report verified tests, untested live-provider behavior, deferred approval requirements and remaining issues separately. No claim of 100% coverage.
+
+Acceptance evidence: [release 0.2.3 verification](../../release-0.2.3.md). No live provider writes performed.
