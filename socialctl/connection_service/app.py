@@ -7,15 +7,19 @@ import hmac
 import secrets
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from socialctl.connection_service.landing import LandingTokens, landing_page
+from socialctl.connection_service.landing import LandingTokens, landing_page, result_page, error_page
 from socialctl.connection_service.providers import Providers
 from socialctl.connection_service.settings import Settings
 from socialctl.connection_service.store import Store
@@ -41,9 +45,9 @@ def safe_account(account: dict) -> dict:
     return {key: account[key] for key in ('id', 'name', 'page_id') if key in account}
 
 
-def browser_page(message: str, *, success=False):
+def browser_page(message: str, *, success=False, cancelled=False):
     # The copy is fixed; no provider errors, tokens or account-controlled HTML.
-    return HTMLResponse('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SocialCli connection</title><body><main><h1>SocialCli</h1><p>' + message + '</p><p>Return to SocialCli to ' + ('choose and confirm your account.' if success else 'try again or cancel.') + '</p><p><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></p></main></body></html>')
+    return HTMLResponse(result_page(message, success=success, cancelled=cancelled))
 
 
 class StartAuthorization(BaseModel):
@@ -75,16 +79,29 @@ def create_app(settings: Settings, *, store: Store | None = None,
     app = FastAPI(title='SocialCli connection service', docs_url=None, redoc_url=None,
                   openapi_url=None, lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=[urlsplit(settings.public_url).hostname])
+    app.mount('/connect/assets', StaticFiles(directory=Path(__file__).parent / 'assets'), name='connection-assets')
+
+    def is_browser_path(request):
+        return request.url.path.startswith('/connect/') or request.url.path.startswith('/oauth/')
+
+    @app.exception_handler(StarletteHTTPException)
+    async def connection_error(request, exc):
+        if is_browser_path(request):
+            return HTMLResponse('' if request.method == 'HEAD' else error_page(exc.status_code),
+                                status_code=exc.status_code, headers=exc.headers)
+        return await http_exception_handler(request, exc)
 
     @app.middleware('http')
     async def secure_headers(request: Request, call_next):
         try:
             if int(request.headers.get('content-length', '0')) > 16384:
-                response = JSONResponse({'detail':'request is too large'}, status_code=413)
+                response = (HTMLResponse(error_page(413), status_code=413) if is_browser_path(request) else
+                            JSONResponse({'detail':'request is too large'}, status_code=413))
             else:
                 response = await call_next(request)
         except Exception:
-            response = JSONResponse({'detail':'connection service unavailable'}, status_code=503)
+            response = (HTMLResponse(error_page(503), status_code=503) if is_browser_path(request) else
+                        JSONResponse({'detail':'connection service unavailable'}, status_code=503))
         response.headers.update({'Cache-Control':'no-store', 'Pragma':'no-cache',
                                  'X-Content-Type-Options':'nosniff'})
         response.headers.setdefault('Referrer-Policy', 'no-referrer')
@@ -144,7 +161,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
         if not 16 <= len(cookie) <= 512:
             cookie = secrets.token_urlsafe(32)
         token = landing_tokens.issue(authorization_id, cookie, record['expires'])
-        response = HTMLResponse('' if request.method == 'HEAD' else landing_page(authorization_id, token))
+        response = HTMLResponse('' if request.method == 'HEAD' else landing_page(authorization_id, token, platform=record['payload']['platform']))
         response.headers['X-Robots-Tag'] = 'noindex, nofollow'
         response.headers['Referrer-Policy'] = 'same-origin'
         provider_origin = {'youtube':'https://accounts.google.com', 'facebook':'https://www.facebook.com',
@@ -220,7 +237,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
             data['status'] = 'denied' if 'error' in query else 'exchanging'
             vault.put(db,'authorization',authorization_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
         if data['status'] == 'denied':
-            response = browser_page('Authorization was cancelled. No account was connected.')
+            response = browser_page('Authorization was cancelled. No account was connected.', cancelled=True)
         else:
             code = query.get('code','')
             try:

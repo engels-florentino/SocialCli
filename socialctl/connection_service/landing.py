@@ -9,22 +9,100 @@ from html import escape
 from cryptography.fernet import Fernet, MultiFernet
 
 
-def landing_page(authorization_id: str, form_token: str) -> str:
+ASSETS = '/connect/assets'
+
+PROVIDERS = {
+    'youtube': ('YouTube', 'Google', 'YT', 'Choose your channel and review access with Google.'),
+    'facebook': ('Facebook', 'Facebook', 'f', 'Choose the Page you want to connect with SocialCli.'),
+    'instagram': ('Instagram', 'Facebook', 'IG', 'Connect your professional account through Facebook Login.'),
+    'tiktok': ('TikTok', 'TikTok', 'tk', 'Sign in to TikTok and choose the access you want to share.'),
+}
+
+
+def _icon(name: str) -> str:
+    paths = {
+        'arrow': '<path d="M5 12h14m-6-6 6 6-6 6"/>',
+        'lock': '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+        'terminal': '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3m6 0h4"/>',
+        'check': '<path d="m5 12 4 4L19 6"/>',
+        'refresh': '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/>',
+        'close': '<path d="m6 6 12 12M6 18 18 6"/>',
+    }
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths[name] + '</svg>'
+
+
+def _page(title: str, content: str) -> str:
+    return f'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="light">
+<title>{escape(title)} · SocialCli</title>
+<link rel="icon" type="image/png" href="{ASSETS}/socialcli-logo.png">
+<link rel="stylesheet" href="{ASSETS}/connection.css">
+</head><body>
+<header class="site-header"><a class="wordmark" href="/" aria-label="SocialCli home">
+<img src="{ASSETS}/socialcli-logo.png" alt="SocialCli" width="42" height="42"><span>SocialCli</span></a>
+<span class="header-label">ACCOUNT CONNECTION</span></header>
+<main id="main-content"><section class="connection-card" aria-labelledby="page-title">{content}</section>
+<p class="trust-note">{_icon('lock')} Your account. Your permissions. Your choice.</p></main>
+<footer class="site-footer"><span>Social tools. Human control.</span>
+<nav aria-label="Legal and support"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/connections.html">Help</a></nav>
+</footer></body></html>'''
+
+
+def landing_page(authorization_id: str, form_token: str, *, platform='youtube') -> str:
     action = escape('/connect/' + authorization_id, quote=True)
     token = escape(form_token, quote=True)
-    return ('<!doctype html><html lang="en"><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '<meta name="robots" content="noindex,nofollow"><title>Connect · SocialCli</title>'
-            '<body><main><h1>Connect your account</h1>'
-            '<p>Continue to your provider to sign in and review permissions. '
-            'Connecting does not publish content. Keep SocialCli running.</p>'
-            f'<form method="post" action="{action}">'
-            f'<input type="hidden" name="form_token" value="{token}">'
-            '<button type="submit">Connect</button></form>'
-            '<p>This link expires in ten minutes. If it has expired or was already used, '
-            'restart connect in SocialCli to obtain a new link.</p>'
-            '<p><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></p>'
-            '</main></body></html>')
+    name, login, mark, description = PROVIDERS[platform]
+    content = f'''
+<div class="connection-symbols" aria-hidden="true"><img src="{ASSETS}/socialcli-logo.png" alt="" width="64" height="64">
+<span class="connection-line"></span><span class="provider-mark provider-{platform}">{mark}</span></div>
+<p class="eyebrow">LET'S GET CONNECTED</p>
+<h1 id="page-title">Connect your<br>{name} account</h1>
+<p class="description">{description}</p>
+<ol class="steps" aria-label="Connection steps"><li class="current"><span>1</span>Sign in</li><li><span>2</span>Review access</li><li><span>3</span>Confirm</li></ol>
+<form method="post" action="{action}">
+<input type="hidden" name="form_token" value="{token}">
+<button class="primary-button" type="submit"><span>Continue with {login}</span>{_icon('arrow')}</button></form>
+<p class="button-note">You'll continue to {login} to sign in.</p>
+<div class="connection-details"><div class="detail">{_icon('lock')}<div><h2>You're in control</h2><p>Review the requested access before you approve.</p></div></div>
+<div class="detail">{_icon('terminal')}<div><h2>Keep SocialCli open</h2><p>Return there to choose and confirm your account.</p></div></div></div>
+<p class="quiet-notice">Connecting does not publish content.</p>
+<p class="expiry-note">This link expires 10 minutes after it was created.</p>'''
+    return _page('Connect ' + name, content)
+
+
+def result_page(message: str, *, success=False, cancelled=False) -> str:
+    title = 'Authorization received' if success else 'Authorization cancelled' if cancelled else "We couldn't connect"
+    description = ('One more step: return to SocialCli to choose and confirm your account.' if success else
+                   'Nothing was connected. You can start again whenever you are ready.' if cancelled else
+                   'Return to SocialCli and request a new connection link to try again.')
+    icon = 'check' if success else 'close' if cancelled else 'refresh'
+    state = 'success' if success else 'neutral' if cancelled else 'warning'
+    content = f'''<div class="result-symbol {state}">{_icon(icon)}</div>
+<p class="eyebrow">{'READY FOR THE NEXT STEP' if success else 'ACCOUNT CONNECTION'}</p>
+<h1 id="page-title">{escape(title)}</h1><p class="description">{description}</p>
+<div class="return-panel">{_icon('terminal')}<div><h2>Return to SocialCli</h2><p>{'Choose and confirm your account to finish.' if success else 'Your assistant or terminal can help you start again.'}</p></div></div>
+<p class="quiet-notice">{escape(message)}</p>
+<a class="text-link" href="/connections.html">Connection help <span aria-hidden="true">↗</span></a>'''
+    return _page(title, content)
+
+
+def error_page(status_code: int) -> str:
+    title = ('This link is no longer available' if status_code == 404 else
+             'This connection has already started' if status_code == 409 else
+             "We couldn't verify this connection" if status_code == 403 else
+             "Let's try that again")
+    description = ('For your security, connection links expire and can only be used once.'
+                   if status_code in {404,409} else 'This connection could not be completed. Your account has not been connected by this request.')
+    content = f'''<div class="result-symbol warning">{_icon('refresh')}</div>
+<p class="eyebrow">ACCOUNT CONNECTION</p><h1 id="page-title">{escape(title)}</h1>
+<p class="description">{description}</p>
+<div class="return-panel">{_icon('terminal')}<div><h2>Return to SocialCli</h2><p>Ask your assistant or use your terminal to get a new connection link.</p></div></div>
+<a class="secondary-button" href="/connections.html">Connection help {_icon('arrow')}</a>
+<p class="expiry-note">No need to share your password or credentials.</p>'''
+    return _page(title, content)
 
 
 class LandingTokens:

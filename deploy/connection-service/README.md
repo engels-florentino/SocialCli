@@ -41,6 +41,20 @@ To roll back, retain the previous image/release and protected env/state. Disable
 
 Verify HTTPS health, disabled-connector errors, query-free logs and existing public media byte hashes. Complete one real browser connection using an authorized test creator; confirm account identity and status without publishing. Then test a second independent creator and permission revocation. Upload demos require an exact dry-run preview and explicit approval. The repository's mocked integration tests establish code behavior, not a completed live pilot or platform approval.
 
+### Branded connection screens (0.2.6)
+
+The service wheel includes the approved SocialCli logo and responsive connection
+stylesheet under `/connect/assets/`. The existing proxy route for `/connect/`
+serves these files; no external fonts, scripts or CDN access are required.
+Keep `style-src 'self'` and `img-src 'self'` in the Content Security Policy.
+Deploy the service to update browser screens; clients do not need an upgrade
+or account reconnection for this presentation change.
+
+Landing pages identify the provider and retain the browser-bound POST form.
+Authorization received, cancellation, expired links and connection errors share
+the same branding and recovery instructions. Authorization received still means
+the creator must return to SocialCli to choose and confirm the account.
+
 
 ### Agent connection release 0.2.1
 
