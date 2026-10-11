@@ -1228,7 +1228,13 @@ def _fusionar_snapshot_del_dia(marca: Brand, nuevo: Snapshot) -> Snapshot:
     return Snapshot(fecha=nuevo.fecha, marca=nuevo.marca, redes=fusionadas)
 
 
-def _guardar_lo_leido(marca: Brand, snapshot: Snapshot) -> Path:
+class MetricsPersistenceError(Exception):
+    def __init__(self, saved, not_saved, message, snapshot_path):
+        super().__init__(message)
+        self.saved, self.not_saved, self.snapshot_path = list(saved), list(not_saved), snapshot_path
+
+
+def _guardar_lo_leido(marca: Brand, snapshot: Snapshot, *, structured: bool = False) -> Path:
     """Write the day's snapshot, editorial inventory and report atomically, reporting any incomplete set of writes."""
     pasos = (
         ("today's snapshot", lambda: guardar_snapshot(marca, snapshot)),
@@ -1244,6 +1250,8 @@ def _guardar_lo_leido(marca: Brand, snapshot: Snapshot) -> Path:
         try:
             ruta = escribir()
         except PiezasIlegibles as exc:
+            if structured:
+                raise MetricsPersistenceError(escritos, pendientes, str(exc), ruta_del_snapshot) from None
             _fallar_guardando(
                 escritos, pendientes,
                 f"could not update piezas.yml: {exc}",
@@ -1251,6 +1259,8 @@ def _guardar_lo_leido(marca: Brand, snapshot: Snapshot) -> Path:
                 "cannot be retrieved again from an API.",
             )
         except OSError as exc:
+            if structured:
+                raise MetricsPersistenceError(escritos, pendientes, str(exc), ruta_del_snapshot) from None
             _fallar_guardando(
                 escritos, pendientes,
                 f"could not write {nombre}: {exc}",
@@ -1298,6 +1308,8 @@ def stats(
     desde: str = typer.Option(
         None, "--since", "--desde", help="Only content published since this date (YYYY-MM-DD)."
     ),
+    json_output: bool = typer.Option(False, "--json", help="Print a versioned report; progress goes to stderr."),
+    timeout: float = typer.Option(120, "--timeout", help="Total read time limit in seconds."),
 ) -> None:
     """Read platform metrics and save a brand snapshot. Selected-platform reads merge with today's data; old snapshots expire after one year."""
     marca = _cargar_marca(root, brand_nombre)
@@ -1322,12 +1334,42 @@ def stats(
     else:
         destinos = list(LECTORES)
 
+    from socialctl.read_budget import ReadBudget, ReadDeadlineExceeded, read_client
+    from socialctl.metricas.modelos import LecturaRed
+    try:
+        budget = ReadBudget(timeout)
+    except ValueError as exc:
+        _fallar(str(exc))
     redes = {}
-    with httpx.Client(timeout=60.0) as client:
+    request_number = 0
+    def progress():
+        nonlocal request_number
+        request_number += 1
+        typer.echo(f"Reading {platform.value}: request {request_number}...", err=True)
+    interrupted = False
+    with read_client(budget, progress=progress) as client:
         for platform in destinos:
-            typer.echo(f"Reading {platform.value}...")
-            redes[platform] = leer_red(platform, marca, client, fecha_desde)
+            if interrupted:
+                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; platform not started')
+                continue
+            try:
+                budget.check()
+                typer.echo(f"Reading {platform.value}...", err=True)
+                redes[platform] = leer_red(platform, marca, client, fecha_desde)
+                redes[platform].observed_at = datetime.now(timezone.utc)
+            except KeyboardInterrupt:
+                interrupted = True
+                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; results may be incomplete')
+            except ReadDeadlineExceeded as exc:
+                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error=str(exc))
 
+    from socialctl.read_reports import safe_error
+    for lectura in redes.values():
+        if lectura.error:
+            lectura.error = safe_error(lectura.error)
+        for piece in lectura.piezas:
+            if 'enriquecimiento_fallido' in piece.especificas:
+                piece.especificas['enriquecimiento_fallido'] = safe_error(str(piece.especificas['enriquecimiento_fallido']))
     snapshot = Snapshot(fecha=date.today(), marca=marca.nombre, redes=redes)
 
     # Con `--only`, fusiona con el snapshot que ya hubiera hoy en vez de
@@ -1336,14 +1378,55 @@ def stats(
     # siempre. `redes` (usado más abajo para el resumen por pantalla y el
     # código de salida) sigue siendo la lectura de HOY, sin fusionar: lo que
     # se cuenta ahí es lo que ha pasado en ESTA ejecución.
+    reused = set()
     if only:
+        previous = cargar_snapshot(marca, snapshot.fecha)
+        if previous:
+            reused = {p for p, r in previous.redes.items() if p not in redes or
+                      (r.estado is EstadoLectura.OK and redes[p].estado is not EstadoLectura.OK)}
         snapshot = _fusionar_snapshot_del_dia(marca, snapshot)
 
     # ANTES de guardar y de actualizar `piezas.yml`: el slug enlaza cada
     # pieza con el post que la publicó, y tiene que llegar a los dos ficheros.
     asignar_slugs(marca, snapshot)
 
-    ruta = _guardar_lo_leido(marca, snapshot)
+    persistence_error = None
+    try:
+        ruta = _guardar_lo_leido(marca, snapshot, structured=json_output)
+    except MetricsPersistenceError as exc:
+        persistence_error = exc
+        ruta = exc.snapshot_path
+
+    if json_output:
+        from contextlib import redirect_stdout
+        import sys
+        from socialctl.read_reports import ReadReport, emit_report, safe_error
+        with redirect_stdout(sys.stderr):
+            _limpiar_snapshots_y_avisar(marca)
+            _avisar_de_fallos_persistentes(marca, snapshot)
+        coverage, errors = [], []
+        for p, r in redes.items():
+            warnings = [piece.especificas['enriquecimiento_fallido'] for piece in r.piezas
+                        if 'enriquecimiento_fallido' in piece.especificas]
+            complete = r.estado is EstadoLectura.OK and not warnings
+            observed = snapshot.redes[p].observed_at
+            coverage.append({'platform':p.value, 'complete':complete, 'state':r.estado.value,
+                             'fresh':p not in reused and r.estado is EstadoLectura.OK,
+                             'observed_at':observed.isoformat() if observed else None,
+                             'source':'previous_snapshot' if p in reused else 'current_read'})
+            if not complete:
+                errors.append({'platform':p.value, 'message':safe_error(r.error or '; '.join(warnings) or r.estado.value)})
+        if persistence_error:
+            errors.append({'operation':'persistence', 'message':safe_error(str(persistence_error))})
+        successes = sum(r.estado is EstadoLectura.OK for r in redes.values())
+        status = 'ok' if not errors else ('partial' if successes else 'error')
+        data = {'brand':marca.nombre, 'snapshot_path':str(ruta) if ruta else None,
+                'snapshot':snapshot.model_dump(mode='json'),
+                'merged_existing_platforms':sorted(p.value for p in reused)}
+        if persistence_error:
+            data['persistence'] = {'saved':persistence_error.saved, 'not_saved':persistence_error.not_saved}
+        report = ReadReport(status=status, coverage=coverage, errors=errors, data=data)
+        raise typer.Exit(emit_report(report))
 
     typer.echo("")
     for platform, lectura in redes.items():
@@ -1364,6 +1447,8 @@ def stats(
     # red para que lo último que se lea sea lo que hay que hacer.
     _avisar_de_fallos_persistentes(marca, snapshot)
 
+    if interrupted:
+        raise typer.Exit(130)
     if all(l.estado is not EstadoLectura.OK for l in redes.values()):
         raise typer.Exit(1)
 

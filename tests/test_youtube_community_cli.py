@@ -96,3 +96,26 @@ def test_independent_youtube_first_comment_durable_media_and_no_reupload(tmp_pat
     assert len(api.writes) == (2 if failure == "forbidden" else 1)
     second = publicar(post, brand, occurrence_ids={Platform.YOUTUBE: occurrence})[0]
     assert second.platform_id == "video-1" and len(uploads) == 1
+
+
+def test_explicit_json_preserves_community_read_schema(tmp_path, monkeypatch):
+    brand, api, _, _ = service(tmp_path)
+    monkeypatch.setattr('socialctl.management.community_cli.make_http_client', lambda:httpx.Client(transport=httpx.MockTransport(api.handler)))
+    args=['content','youtube-community','threads-list','video-1','--brand',brand.nombre,'--root',str(tmp_path)]
+    baseline=runner.invoke(app,args)
+    explicit=runner.invoke(app,[*args,'--json','--timeout','5'])
+    assert explicit.exit_code==baseline.exit_code==0,explicit.output
+    a,b=json.loads(explicit.stdout),json.loads(baseline.stdout)
+    from datetime import datetime
+    assert datetime.fromisoformat(a.pop('observed_at')).tzinfo is not None
+    assert datetime.fromisoformat(b.pop('observed_at')).tzinfo is not None
+    assert a==b
+    assert not api.writes
+
+
+def test_explicit_json_read_error_is_structured(tmp_path, monkeypatch):
+    brand, api, _, _ = service(tmp_path)
+    monkeypatch.setattr('socialctl.management.community_cli.make_http_client', lambda:httpx.Client(transport=httpx.MockTransport(api.handler)))
+    result = runner.invoke(app, ['content','youtube-community','threads-list','video-1','--brand',brand.nombre,'--root',str(tmp_path),'--json','--timeout','0'])
+    assert result.exit_code == 2
+    assert json.loads(result.stdout)['status'] == 'error'

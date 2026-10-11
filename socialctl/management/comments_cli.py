@@ -7,6 +7,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from socialctl.read_budget import active_read_budget, bounded_read, read_client
+
 from socialctl.management.cli import DEFAULT_ROOT, _brand, _fail
 from socialctl.management.changes import ChangeError
 from socialctl.management.meta_comments import (
@@ -27,6 +29,9 @@ comments_app = typer.Typer(help="Durable Facebook/Instagram comments on owned me
 
 
 def make_http_client():
+    budget = active_read_budget.get()
+    if budget is not None:
+        return read_client(budget, progress=lambda: typer.echo('Reading provider data...', err=True))
     return httpx.Client(timeout=30.0, follow_redirects=False)
 
 
@@ -94,53 +99,62 @@ def render_draft_preview(record, change):
 def list_comments(media_id: str, platform: Platform = typer.Option(..., "--platform"),
                   brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                   parent_id: str | None = typer.Option(None, "--parent-id"),
-                  include_moderation: bool = typer.Option(False, "--include-moderation", help="Include hidden status when exposed by provider.")):
+                  include_moderation: bool = typer.Option(False, "--include-moderation", help="Include hidden status when exposed by provider."), timeout: float = typer.Option(120, "--timeout"), json_output: bool = typer.Option(False, "--json", help="Explicit JSON mode (already the default).")):
     """Read paginated comments with account and ownership checks; does not prove absence."""
     selected = _brand(root, brand)
     try:
-        with make_http_client() as http:
+        with bounded_read(timeout), make_http_client() as http:
             result = MetaCommentsClient(selected, platform, http).list_comments(
                 media_id, parent_id=parent_id, include_moderation=include_moderation)
-    except (ChangeError, OSError) as exc:
-        _fail(str(exc))
+    except (ChangeError, OSError, ValueError, httpx.HTTPError) as exc:
+        from socialctl.read_reports import fail_read
+        fail_read(exc, json_output=json_output)
     typer.echo(_json(result))
+    if json_output and result.get("complete") is False:
+        raise typer.Exit(1)
 
 
 @comments_app.command("show")
 def show_comment(media_id: str, comment_id: str, platform: Platform = typer.Option(..., "--platform"),
                  brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-                 parent_id: str | None = typer.Option(None, "--parent-id")):
+                 parent_id: str | None = typer.Option(None, "--parent-id"), timeout: float = typer.Option(120, "--timeout"), json_output: bool = typer.Option(False, "--json", help="Explicit JSON mode (already the default).")):
     """Verify comment ID and membership in owned media or parent."""
     selected = _brand(root, brand)
     try:
-        with make_http_client() as http:
+        with bounded_read(timeout), make_http_client() as http:
             result = MetaCommentsClient(selected, platform, http).find_comment(media_id, comment_id, parent_id=parent_id)
-    except (ChangeError, OSError) as exc:
-        _fail(str(exc))
+    except (ChangeError, OSError, ValueError, httpx.HTTPError) as exc:
+        from socialctl.read_reports import fail_read
+        fail_read(exc, json_output=json_output)
     typer.echo(_json(result))
+    if json_output and result.get("complete") is False:
+        raise typer.Exit(1)
 
 
 @comments_app.command("sync")
 def sync(media_id: str, platform: Platform = typer.Option(..., "--platform"),
          brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
          since: str | None = typer.Option(None, "--since", help="Initial RFC3339 timestamp; subsequent reads reuse durable time cursor."),
-         max_pages: int = typer.Option(100, "--max-pages", min=1, max=100)):
+         max_pages: int = typer.Option(100, "--max-pages", min=1, max=100), timeout: float = typer.Option(120, "--timeout"), json_output: bool = typer.Option(False, "--json", help="Explicit JSON mode (already the default).")):
     """Read new comments, deduplicate IDs and update inbox without replying."""
     selected = _brand(root, brand)
     try:
-        with make_http_client() as http:
+        with bounded_read(timeout), make_http_client() as http:
             result = sync_inbox(MetaCommentsClient(selected, platform, http),
                 CommentInboxStore(selected.raiz), media_id=media_id, since=since,
                 max_pages=max_pages)
-    except (ChangeError, OSError) as exc:
-        _fail(str(exc))
+    except (ChangeError, OSError, ValueError, httpx.HTTPError) as exc:
+        from socialctl.read_reports import fail_read
+        fail_read(exc, json_output=json_output)
     typer.echo(_json(result))
+    if json_output and result.get("complete") is False:
+        raise typer.Exit(1)
 
 
 @comments_app.command("inbox")
 def inbox(brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
           platform: Platform | None = typer.Option(None, "--platform"),
-          media_id: str | None = typer.Option(None, "--media-id")):
+          media_id: str | None = typer.Option(None, "--media-id"), json_output: bool = typer.Option(False, "--json", help="Explicit JSON mode (already the default).")):
     """Display inbox grouped by item, author, language and type without accessing Meta."""
     selected = _brand(root, brand)
     if platform not in {None, Platform.FACEBOOK, Platform.INSTAGRAM}:
@@ -245,7 +259,7 @@ def prepare(media_id: str, platform: Platform = typer.Option(..., "--platform"),
 
 @comments_app.command("status")
 def status(change_id: str, brand: str = typer.Option(..., "--brand"),
-           root: Path = typer.Option(DEFAULT_ROOT, "--root")):
+           root: Path = typer.Option(DEFAULT_ROOT, "--root"), json_output: bool = typer.Option(False, "--json", help="Explicit JSON mode (already the default).")):
     """Display complete ChangeSet and journal without accessing Meta."""
     selected = _brand(root, brand)
     try:
@@ -297,7 +311,7 @@ def reconcile(change_id: str, brand: str = typer.Option(..., "--brand"),
 
 @comments_app.command("publication-status")
 def publication_status(publication_id: str, brand: str = typer.Option(..., "--brand"),
-                       root: Path = typer.Option(DEFAULT_ROOT, "--root")):
+                       root: Path = typer.Option(DEFAULT_ROOT, "--root"), json_output: bool = typer.Option(False, "--json", help="Explicit JSON mode (already the default).")):
     """Read durable attempt containing confirmed media, approved text and comment ChangeSet."""
     selected = _brand(root, brand)
     try:

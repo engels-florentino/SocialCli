@@ -92,3 +92,10 @@ def test_scheduled_first_comment_has_queue_media_id_before_post(tmp_path, monkey
     assert saved["resultados"][0]["first_comment_status"] == "uncertain"
     assert "uncertain" in result.output
     assert saved["resultados"][0]["publication_id"] in result.output
+
+
+def test_explicit_json_comments_error_is_structured(tmp_path, monkeypatch):
+    mod, brand, graph, client, store = service(tmp_path)
+    result = runner.invoke(app, ['comments','list','789','--platform','facebook','--brand',brand.nombre,'--root',str(tmp_path),'--json','--timeout','0'])
+    assert result.exit_code == 2
+    assert json.loads(result.stdout)['status'] == 'error'

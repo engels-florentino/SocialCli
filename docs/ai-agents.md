@@ -134,3 +134,18 @@ Agents do not expand platform permissions or remove provider review requirements
 
 
 For an agent without interactive stdin, obtain the user’s explicit authorization for the exact account ID and brand first, then use `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. `--yes` confirms this account connection only; it does not authorize publication. Never guess an ID or use its position in a returned list. Replacing independent credentials additionally requires `--replace-independent`. Without these explicit arguments, noninteractive execution stops before creating an authorization link.
+
+## Bounded machine-readable reads
+
+Use `socialcli stats --brand Example --json --timeout 120` for a version 1 report.
+Progress goes to stderr. Exit 0 means complete success; exit 1 means partial or
+failed observations. Coverage records completeness, observation time and whether
+values came from this read or a previous snapshot. A missing metric remains null.
+Interruptions preserve completed platforms. Persistence failures include observations
+and the saved/unsaved file list; inspect them before retrying local persistence.
+
+Existing `comments list/show/sync` and `content youtube-community` read commands
+accept `--json --timeout 120` without replacing their successful legacy schemas.
+Explicit JSON errors are structured. Never interpret an incomplete list as absence.
+The total network budget includes credential retrieval, response bodies and bounded
+GET retry waits. Writes are never automatically retried by the read transport.

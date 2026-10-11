@@ -1,6 +1,6 @@
 [project]
 name = "socialcli"
-version = "0.2.1"
+version = "0.2.2"
 description = "SocialCli: publish and manage creator-owned social content from the terminal."
 readme = "README.md"
 license = "MIT"

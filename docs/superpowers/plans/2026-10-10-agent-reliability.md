@@ -58,4 +58,4 @@ Each plan lists tests for its owned focus cases; other focus cases belong to the
 
 Recommended execution method: native implementation in this session, component by component. Maintain one application folder as requested. Review task diffs and test evidence before each commit; do not create agents unless the chosen execution/review workflow explicitly authorizes them. Each stage requires its own verification; previous passing tests do not prove subsequent work.
 
-Plan status: prepared for user review. No implementation has started. After approval and execution-method selection, read the approved specification and the selected execution skill, start plan 1, and mark checkboxes only with observed evidence.
+Plan status: approved and executing inline. Components 1 and 2 implemented and verified; component 1 deployed. Components 3–6 remain in progress.

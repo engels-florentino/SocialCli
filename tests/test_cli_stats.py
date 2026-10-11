@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from datetime import date
 
 import pytest
@@ -495,3 +496,95 @@ def test_stats_avisa_si_un_borrado_falla_y_no_aborta(raiz, monkeypatch):
     assert fecha_vieja.isoformat() in resultado.output
     # El snapshot de HOY, que ya ha costado cuota de API, se guarda igual.
     assert (marca.raiz / "metricas" / f"{date.today().isoformat()}.json").is_file()
+
+
+def test_stats_total_deadline_preserves_completed_platforms(raiz, monkeypatch):
+    import time
+    seen = []
+    def read(platform, brand, client, since):
+        seen.append(platform)
+        time.sleep(.03)
+        return _lectura_ok()
+    monkeypatch.setattr('socialctl.cli.leer_red', read)
+    result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz),
+                                '--only', 'youtube', '--only', 'facebook', '--timeout', '.01'])
+    assert seen == [Platform.YOUTUBE], result.output
+    snapshot = json.loads((raiz/'Histopast'/'metricas'/f'{date.today().isoformat()}.json').read_text())
+    assert snapshot['redes']['youtube']['estado'] == 'ok'
+    assert snapshot['redes']['facebook']['estado'] == 'error'
+    assert 'time limit' in snapshot['redes']['facebook']['error']
+    assert 'Reading youtube' in result.stderr
+
+
+@pytest.mark.parametrize('failed', [False, True])
+def test_stats_json_is_clean_and_reports_coverage(raiz, monkeypatch, failed):
+    _falsear(monkeypatch, {Platform.YOUTUBE:_lectura_ok(),
+                          Platform.FACEBOOK:LecturaRed(estado=EstadoLectura.ERROR,error='permission missing') if failed else _lectura_ok()})
+    result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz),
+                                '--only','youtube','--only','facebook','--json'])
+    value = json.loads(result.stdout)
+    assert result.exit_code == (1 if failed else 0)
+    assert value['version'] == 1 and value['status'] == ('partial' if failed else 'ok')
+    assert value['data']['snapshot_path']
+    assert value['data']['snapshot']['redes']['youtube']['cuenta']['seguidores'] == 4950
+    assert 'Reading youtube' in result.stderr
+    assert {row['platform'] for row in value['coverage']} == {'youtube','facebook'}
+
+
+def test_stats_json_redacts_errors_in_snapshot_and_envelope(raiz, monkeypatch):
+    _falsear(monkeypatch,{Platform.FACEBOOK:LecturaRed(estado=EstadoLectura.ERROR,error='HTTP 400 access_token=private-credential')})
+    result=runner.invoke(app,['stats','--brand','Histopast','--root',str(raiz),'--only','facebook','--json'])
+    assert 'private-credential' not in result.stdout
+    assert 'private-credential' not in (raiz/'Histopast'/'metricas'/f'{date.today().isoformat()}.json').read_text()
+    assert json.loads(result.stdout)['status']=='error'
+
+
+def test_stats_json_partial_enrichment_is_not_complete(raiz, monkeypatch):
+    reading = _lectura_ok()
+    reading.piezas[0].especificas['enriquecimiento_fallido'] = 'partial read: page 2 time limit'
+    _falsear(monkeypatch, {Platform.TIKTOK: reading})
+    result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz), '--only', 'tiktok', '--json'])
+    report = json.loads(result.stdout)
+    assert result.exit_code == 1
+    assert report['status'] == 'partial'
+    assert report['coverage'][0]['complete'] is False
+    assert report['errors'] and report['data']['snapshot']['redes']['tiktok']['piezas']
+
+
+def test_stats_json_persistence_failure_retains_observations(raiz, monkeypatch):
+    _falsear(monkeypatch, {Platform.YOUTUBE: _lectura_ok()})
+    def broken(*args):
+        raise OSError('disk unavailable')
+    monkeypatch.setattr('socialctl.cli.actualizar_piezas', broken)
+    result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz), '--only', 'youtube', '--json'])
+    report = json.loads(result.stdout)
+    assert result.exit_code == 1 and report['status'] == 'partial'
+    assert report['data']['snapshot']['redes']['youtube']['cuenta']['seguidores'] == 4950
+    assert report['data']['persistence']['saved']
+    assert 'piezas.yml' in report['data']['persistence']['not_saved']
+
+
+def test_stats_json_interrupt_saves_completed_observations(raiz, monkeypatch):
+    def read(platform, *args):
+        if platform is Platform.FACEBOOK:
+            raise KeyboardInterrupt()
+        return _lectura_ok()
+    monkeypatch.setattr('socialctl.cli.leer_red', read)
+    result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz), '--only', 'youtube', '--only', 'facebook', '--json'])
+    report = json.loads(result.stdout)
+    assert result.exit_code != 0 and report['status'] == 'partial'
+    assert report['data']['snapshot']['redes']['youtube']['cuenta']['seguidores'] == 4950
+    assert Path(report['data']['snapshot_path']).exists()
+    assert 'interrupt' in str(report['errors']).lower()
+
+
+def test_stats_json_reused_selected_platform_is_not_fresh(raiz, monkeypatch):
+    _falsear(monkeypatch, {Platform.YOUTUBE: _lectura_ok()})
+    args = ['stats', '--brand', 'Histopast', '--root', str(raiz), '--only', 'youtube', '--json']
+    first = json.loads(runner.invoke(app, args).stdout)
+    _falsear(monkeypatch, {Platform.YOUTUBE: LecturaRed(estado=EstadoLectura.ERROR, error='unavailable')})
+    result = runner.invoke(app, args)
+    report = json.loads(result.stdout)
+    assert report['coverage'][0]['fresh'] is False
+    assert report['coverage'][0]['observed_at'] == first['coverage'][0]['observed_at']
+    assert 'youtube' in report['data']['merged_existing_platforms']
