@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import hmac
 import secrets
 import time
 from contextlib import asynccontextmanager
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -14,6 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from socialctl.connection_service.landing import LandingTokens, landing_page
 from socialctl.connection_service.providers import Providers
 from socialctl.connection_service.settings import Settings
 from socialctl.connection_service.store import Store
@@ -62,6 +64,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
     vault = store or Store(settings.database, settings.encryption_keys)
     client = provider_client or httpx.Client(timeout=20, follow_redirects=False)
     providers = Providers(settings, client)
+    landing_tokens = LandingTokens(settings.encryption_keys)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -122,22 +125,62 @@ def create_app(settings: Settings, *, store: Store | None = None,
         return {'version':1, 'authorization_id':record_id, 'browser_url':f'{settings.public_url}/connect/{record_id}',
                 'expires_in':SESSION_SECONDS, 'poll_interval':2}
 
-    @app.get('/connect/{authorization_id}')
-    def browser_start(authorization_id: str):
+    def pending_authorization(db, authorization_id):
+        record = vault.get(db, 'authorization', authorization_id)
+        if record is None or record['expires'] <= clock():
+            raise HTTPException(404, 'authorization expired or unavailable; restart connect in SocialCli')
+        if record['payload']['status'] != 'pending' or 'state' in record['payload']:
+            raise HTTPException(409, 'this authorization has already started; restart connect in SocialCli')
+        return record
+
+    @app.api_route('/connect/{authorization_id}', methods=['GET', 'HEAD'])
+    def browser_landing(authorization_id: str, request: Request):
+        with vault.transaction() as db:
+            record = pending_authorization(db, authorization_id)
+        cookie_name = 'socialcli-form-' + authorization_id
+        cookie = request.cookies.get(cookie_name, '')
+        if not 16 <= len(cookie) <= 512:
+            cookie = secrets.token_urlsafe(32)
+        token = landing_tokens.issue(authorization_id, cookie, record['expires'])
+        response = HTMLResponse('' if request.method == 'HEAD' else landing_page(authorization_id, token))
+        response.headers['X-Robots-Tag'] = 'noindex, nofollow'
+        response.set_cookie(cookie_name, cookie, httponly=True, secure=not settings.allow_http_local,
+                            samesite='lax', max_age=SESSION_SECONDS, path='/connect/' + authorization_id)
+        return response
+
+    @app.post('/connect/{authorization_id}')
+    async def browser_start(authorization_id: str, request: Request):
+        if request.headers.get('origin', settings.public_url) != settings.public_url:
+            raise HTTPException(403, 'invalid connection form; reload the login page')
+        if request.headers.get('content-type', '').split(';')[0].strip() != 'application/x-www-form-urlencoded':
+            raise HTTPException(403, 'invalid connection form; reload the login page')
+        body = bytearray()
+        try:
+            async with asyncio.timeout(5):
+                async for chunk in request.stream():
+                    body.extend(chunk)
+                    if len(body) > 8192:
+                        raise HTTPException(413, 'connection form is too large')
+            values = parse_qs(body.decode('ascii'), strict_parsing=True, max_num_fields=2)
+            tokens = values.get('form_token', [])
+        except (ValueError, UnicodeError, TimeoutError):
+            raise HTTPException(403, 'invalid connection form; reload the login page') from None
+        cookie_name = 'socialcli-form-' + authorization_id
+        if (len(tokens) != 1 or not landing_tokens.valid(tokens[0], authorization_id,
+                request.cookies.get(cookie_name, ''), clock())):
+            raise HTTPException(403, 'invalid or expired connection form; restart connect in SocialCli')
         browser_secret = secrets.token_urlsafe(32)
         with vault.transaction() as db:
-            record = vault.get(db, 'authorization', authorization_id)
-            if record is None or record['expires'] <= clock():
-                raise HTTPException(404, 'authorization not found')
+            record = pending_authorization(db, authorization_id)
             data = record['payload']
-            if data['status'] != 'pending' or 'state' in data:
-                raise HTTPException(409, 'this authorization has already started; restart from SocialCli')
             data.update(state=authorization_id+'.'+secrets.token_urlsafe(32),
                         browser_hash=digest(browser_secret), verifier=secrets.token_urlsafe(64))
             vault.put(db,'authorization',authorization_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
             url = providers.authorization_url(data['platform'], data['state'], data['verifier'],
                                               management=data['management'], analytics=data['analytics'])
         response = RedirectResponse(url, status_code=303)
+        response.delete_cookie(cookie_name, path='/connect/' + authorization_id,
+                               secure=not settings.allow_http_local, httponly=True, samesite='lax')
         response.set_cookie('socialcli-'+authorization_id,browser_secret,httponly=True,
                             secure=not settings.allow_http_local,samesite='lax',max_age=SESSION_SECONDS,path='/')
         return response

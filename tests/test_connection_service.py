@@ -1,5 +1,6 @@
 """Exercise the real service protocol with a fictional Google HTTP provider."""
 import hashlib
+import re
 import importlib.util
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -37,8 +38,15 @@ def start(client, secret='poll-secret-one-12345678901234567890'):
     return value, {'Authorization':f'Bearer {secret}'}
 
 
+def begin_browser(client, url):
+    page = client.get(url, follow_redirects=False)
+    assert page.status_code == 200
+    token = re.search(r'name="form_token" value="([^"]+)"', page.text).group(1)
+    return client.post(url, data={'form_token':token}, follow_redirects=False)
+
+
 def authorize(client, value, *, error=False):
-    response = client.get(value['browser_url'], follow_redirects=False)
+    response = begin_browser(client, value['browser_url'])
     assert response.status_code == 303
     state = parse_qs(urlsplit(response.headers['location']).query)['state'][0]
     callback = '/oauth/youtube/callback'
@@ -97,7 +105,7 @@ def test_another_creator_cannot_poll_complete_or_read_connection(tmp_path):
 def test_callback_requires_bound_browser_and_state_and_is_single_use(tmp_path):
     client, _ = make_service(tmp_path)
     value, headers = start(client)
-    response = client.get(value['browser_url'], follow_redirects=False)
+    response = begin_browser(client, value['browser_url'])
     state = parse_qs(urlsplit(response.headers['location']).query)['state'][0]
     cookies = dict(client.cookies)
     client.cookies.clear()
@@ -228,7 +236,7 @@ def test_meta_optional_scopes_survive_service_authorization_roundtrip(tmp_path, 
         'poll_challenge':hashlib.sha256(secret.encode()).hexdigest(), 'management':True, 'analytics':True})
     assert response.status_code == 201
     value = response.json()
-    redirect = client.get(value['browser_url'], follow_redirects=False)
+    redirect = begin_browser(client, value['browser_url'])
     assert redirect.status_code == 303
     scopes = set(parse_qs(urlsplit(redirect.headers['location']).query)['scope'][0].split(','))
     assert expected <= scopes

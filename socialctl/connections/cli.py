@@ -152,7 +152,7 @@ def register(app):
                     raise ValueError('invalid authorization browser URL')
                 if no_browser:
                     typer.echo(f'Give this single-use link directly to the user to connect {platform.value}: {expected_url}')
-                    typer.echo('Do not open, fetch or preview this link. Its first visit starts authorization. It expires in 10 minutes.')
+                    typer.echo('Do not open, fetch or preview this link. The user must open it and press Connect if shown. It expires in 10 minutes.')
                     typer.echo('Waiting for the user to authorize. Keep this command running. No content will be published.')
                 else:
                     typer.echo(f'Opening your browser to connect {platform.value}. No content will be published.')

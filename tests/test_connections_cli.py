@@ -26,7 +26,7 @@ def wire(tmp_path,monkeypatch):
     assert importlib.util.find_spec('socialctl.connections.client') is not None, 'CLI browser connection is missing'
     from socialctl.connections import client as client_module,keychain,cli as cli_module
     monkeypatch.setattr(cli_module, 'interactive_terminal', lambda: True)
-    from tests.test_connection_service import make_service
+    from tests.test_connection_service import make_service, begin_browser
     server,store=make_service(tmp_path/'server')
     ring=MemoryKeyring()
     monkeypatch.setattr(keychain,'_backend',lambda:ring)
@@ -35,7 +35,7 @@ def wire(tmp_path,monkeypatch):
         return httpx.Response(response.status_code,headers=dict(response.headers),content=response.content)
     monkeypatch.setattr(cli_module,'http_client',lambda:httpx.Client(transport=httpx.MockTransport(transport)))
     def browser(url):
-        response=server.get(url,follow_redirects=False)
+        response=begin_browser(server,url)
         state=parse_qs(urlsplit(response.headers['location']).query)['state'][0]
         assert server.get('/oauth/youtube/callback',params={'state':state,'code':'code'}).status_code==200
         return True

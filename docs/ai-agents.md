@@ -15,7 +15,7 @@ Use socialcli --help and command-specific --help to discover supported options.
 Use JSON output where the command supports it; other commands return text.
 Do not expose credentials or read .env/.secrets files into the conversation.
 For account connection, use --no-browser and hand the login link to me.
-Never open, fetch or preview it; the first visit consumes the link.
+Never open, fetch or preview it; only the user should start its single-use authorization.
 Keep the command running while I complete login.
 Use only the produced media I identify. Do not generate, crop or reencode it.
 Show the complete dry-run preview and wait for my explicit approval before
@@ -30,7 +30,7 @@ Replace the path and brand with your own values. Use `--root /path/to/my-social`
 
 ## Hand the login link to the user without opening it
 
-AI agents must use `socialcli connect PLATFORM --brand MyBrand --no-browser` and give the printed link directly to the user. Never open, fetch, validate, preview or follow that link with a browser, HTTP client or link-unfurl tool: its first visit starts a single-use authorization bound to that browser. Keep the CLI process running while the user signs in and confirms the account. The link expires after ten minutes. If it was already visited, expired or cancelled, restart `connect --no-browser` to generate a fresh link; do not reuse it. Account confirmation still requires the user’s explicit approval.
+AI agents must use `socialcli connect PLATFORM --brand MyBrand --no-browser` and give the printed link directly to the user. Never open, fetch, validate, preview or follow that link with a browser, HTTP client or link-unfurl tool: the user must open it and press Connect on the landing page to start a single-use authorization bound to their browser. Keep the CLI process running while the user signs in and confirms the account. The link expires after ten minutes. If it was already visited, expired or cancelled, restart `connect --no-browser` to generate a fresh link; do not reuse it. Account confirmation still requires the user’s explicit approval.
 
 ```bash
 socialcli connect youtube --brand MyBrand --no-browser
