@@ -67,7 +67,15 @@ def baseline(client, edit):
             if thread["snippet"]["topLevelComment"]["id"] != edit.parent_id or thread["snippet"].get("canReply") is not True:
                 raise ResourceError("parent mismatch or thread does not accept replies")
             before["parent"] = thread["snippet"]["topLevelComment"]
-            rows = complete(client.list_replies(edit.video_id, edit.thread_id, edit.parent_id))
+            report = client.list_replies(edit.video_id, edit.thread_id, edit.parent_id)
+            if not report['complete']:
+                # Only the missing-envelope case permits preparation. Invalid identities,
+                # contradictory metadata and uncertain pagination still block a write.
+                if not str(report.get('error', '')).startswith('pagination metadata missing'):
+                    complete(report)
+                before['reply_coverage'] = {'complete':False, 'absence_proven':False,
+                    'limitation':'Reply enumeration lacks metadata; existing remote duplicates cannot be ruled out.'}
+            rows = report['items']
         else:
             rows = []
             for state in FILTERS:

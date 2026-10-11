@@ -371,7 +371,7 @@ def test_capacity_smaller_than_multiple_returned_rows_is_partial(tmp_path):
         "pageInfo": {"totalResults": 2, "resultsPerPage": 1}}) if r.url.path.endswith("/comments") else None
     result = client.list_replies("video-1", "UgxThread", "UgxTop")
     assert not result["complete"] and not result["absence_proven"]
-    assert result["items"] == [] and result["error"]
+    assert result["items"] == api.replies and result["error"]
 
 
 def test_contradictory_capacity_cannot_verify_subscription_membership(tmp_path):
@@ -449,4 +449,28 @@ def test_catalog_nonempty_ids_snippets_and_exact_unpaginated_parameters(tmp_path
     assert result["complete"] and result["pages"] == 1 and result["items"] == [row]
     assert result["scope"] == {"resource": resource, **expected}
     assert result["source"] == "https://www.googleapis.com/youtube/v3/" + resource and result["observed_at"]
+    assert not api.writes
+
+
+def test_missing_pagination_metadata_preserves_verified_rows(tmp_path):
+    _, api, client, _ = service(tmp_path)
+    api.on_read = lambda r: httpx.Response(200, json={'items': api.replies}) if r.url.path.endswith('/comments') else None
+    report = client.list_replies('video-1', 'UgxThread', 'UgxTop')
+    assert report['items'] == api.replies
+    assert report['complete'] is False and report['absence_proven'] is False
+    assert 'metadata' in report['error']
+
+
+def test_reply_preparation_with_missing_list_metadata_keeps_limitation_and_blocks_uncertain(tmp_path):
+    _, api, client, store = service(tmp_path)
+    api.on_read = lambda r: httpx.Response(200, json={'items': api.replies}) if r.url.path.endswith('/comments') else None
+    edit = {'action':'reply', 'video_id':'video-1', 'thread_id':'UgxThread', 'parent_id':'UgxTop', 'text':'Exact partial-list reply'}
+    change = prepare_community(client, store, edit)
+    assert change.before['reply_coverage']['complete'] is False
+    assert change.before['reply_coverage']['absence_proven'] is False
+    change.status = 'uncertain'
+    store.save(change)
+    another = prepare_community(client, store, edit)
+    with pytest.raises(ResourceError, match='uncertain'):
+        apply_community(client, store, another.id, another.fingerprint)
     assert not api.writes

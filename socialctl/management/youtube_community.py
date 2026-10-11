@@ -52,21 +52,6 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                 rows = payload.get("items", [])
                 if not isinstance(rows, list) or len(rows) > (50 if paginated else 5000):
                     raise ResourceError("invalid items or limit exceeded")
-                next_token = payload.get("nextPageToken")
-                if "nextPageToken" in payload and (not isinstance(next_token, str) or not 0 < len(next_token) <= 2048 or next_token in tokens):
-                    raise ResourceError("invalid or repeated pagination")
-                if not paginated and any(k in payload for k in ("nextPageToken", "prevPageToken")):
-                    raise ResourceError("undocumented catalog pagination")
-                if paginated:
-                    page = payload.get("pageInfo")
-                    if not isinstance(page, dict) or type(page.get("totalResults")) is not int or page["totalResults"] < 0 or type(page.get("resultsPerPage")) is not int or not len(rows) <= page["resultsPerPage"] <= 50:
-                        raise ResourceError("pagination lacks verifiable metadata")
-                    if not rows and (next_token or page["totalResults"] != 0):
-                        raise ResourceError("contradictory empty page")
-                    if resource != "search":  # Search documents approximate totals.
-                        if expected_total is not None and page["totalResults"] != expected_total:
-                            raise ResourceError("total changed during pagination")
-                        expected_total = page["totalResults"]
                 accepted = []
                 for row in rows:
                     key = validate(row)
@@ -76,6 +61,23 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                     accepted.append(row)
                 result["items"].extend(accepted)
                 result["pages"] += 1
+                next_token = payload.get("nextPageToken")
+                if "nextPageToken" in payload and (not isinstance(next_token, str) or not 0 < len(next_token) <= 2048 or next_token in tokens):
+                    raise ResourceError("invalid or repeated pagination")
+                if not paginated and any(k in payload for k in ("nextPageToken", "prevPageToken")):
+                    raise ResourceError("undocumented catalog pagination")
+                if paginated:
+                    page = payload.get("pageInfo")
+                    if page is None:
+                        raise ResourceError("pagination metadata missing; verified items retained")
+                    if not isinstance(page, dict) or type(page.get("totalResults")) is not int or page["totalResults"] < 0 or type(page.get("resultsPerPage")) is not int or not len(rows) <= page["resultsPerPage"] <= 50:
+                        raise ResourceError("pagination lacks verifiable metadata")
+                    if not rows and (next_token or page["totalResults"] != 0):
+                        raise ResourceError("contradictory empty page")
+                    if resource != "search":  # Search documents approximate totals.
+                        if expected_total is not None and page["totalResults"] != expected_total:
+                            raise ResourceError("total changed during pagination")
+                        expected_total = page["totalResults"]
                 if next_token is None:
                     if expected_total is not None and expected_total != len(result["items"]):
                         raise ResourceError("total does not match received list; partial read")
@@ -88,6 +90,8 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                 break
         if not result["complete"] and result["error"] is None:
             result["error"] = "page limit reached"
+        if not result["complete"] and token and result["error"] == "page limit reached":
+            result["cursor"] = token
         return result
 
     @staticmethod
@@ -150,7 +154,7 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
         if parent_id is not None:
             key = (video_id, thread_id, parent_id)
             if key not in cache:
-                cache[key] = complete(self.list_replies(video_id, thread_id, parent_id))
+                cache[key] = self.list_replies(video_id, thread_id, parent_id)["items"]
             rows = cache[key]
         elif moderation:
             rows = []

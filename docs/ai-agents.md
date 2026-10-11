@@ -149,3 +149,9 @@ accept `--json --timeout 120` without replacing their successful legacy schemas.
 Explicit JSON errors are structured. Never interpret an incomplete list as absence.
 The total network budget includes credential retrieval, response bodies and bounded
 GET retry waits. Writes are never automatically retried by the read transport.
+
+YouTube community lists retain verified rows when pagination metadata fails and
+mark the result incomplete. Exact reply lookup may use a positively observed ID
+without asserting that other comments are absent. Reply preparation can proceed
+when only list metadata is missing, with that limitation in the approved preview;
+contradictory pagination and unresolved prior writes still block submission.
