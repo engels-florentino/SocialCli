@@ -116,6 +116,39 @@ def test_only_limita_las_redes(raiz, monkeypatch):
     assert set(crudo["redes"]) == {"youtube"}
 
 
+@pytest.mark.parametrize('structured', [False, True])
+def test_stats_surfaces_optional_read_failure_with_account_data(raiz, monkeypatch, structured):
+    lectura = _lectura_ok().model_copy(update={'warnings':['Audience read exceeded total time limit']})
+    _falsear(monkeypatch, {Platform.YOUTUBE: lectura})
+    args = ['stats', '--brand', 'Histopast', '--only', 'youtube', '--root', str(raiz)]
+    result = runner.invoke(app, args + (['--json'] if structured else []))
+    if structured:
+        report = json.loads(result.stdout)
+        assert result.exit_code == 1 and report['status'] == 'partial'
+        assert report['data']['snapshot']['redes']['youtube']['cuenta']['seguidores'] == 4950
+        assert not report['coverage'][0]['complete']
+    else:
+        assert 'partial' in result.stdout and 'Audience read' in result.stdout
+    assert 'Audience read' in (raiz / 'Histopast' / 'metricas' / 'resumen.md').read_text()
+
+
+def test_stats_timeout_in_first_provider_leaves_time_for_next(raiz, monkeypatch):
+    import socialctl.read_budget as reads
+    now = [0.0]
+    budget = reads.ReadBudget(60, clock=lambda: now[0])
+    monkeypatch.setattr(reads, 'ReadBudget', lambda *a, **k: budget)
+    def reader(platform, *args):
+        if platform is Platform.YOUTUBE:
+            now[0] = budget.deadline
+            raise reads.ReadDeadlineExceeded()
+        return _lectura_ok()
+    monkeypatch.setattr('socialctl.cli.leer_red', reader)
+    result = runner.invoke(app, ['stats','--brand','Histopast','--only','youtube','--only','facebook','--root',str(raiz),'--json'])
+    report = json.loads(result.stdout)
+    assert report['data']['snapshot']['redes']['facebook']['cuenta']['seguidores'] == 4950
+    assert report['status'] == 'partial' and result.exit_code == 1
+
+
 def test_dos_ejecuciones_el_mismo_dia_no_duplican(raiz, monkeypatch):
     _falsear(monkeypatch, {p: _lectura_ok() for p in Platform})
 
@@ -499,11 +532,14 @@ def test_stats_avisa_si_un_borrado_falla_y_no_aborta(raiz, monkeypatch):
 
 
 def test_stats_total_deadline_preserves_completed_platforms(raiz, monkeypatch):
-    import time
+    import socialctl.read_budget as reads
+    now = [0.0]
+    budget = reads.ReadBudget(.01, clock=lambda: now[0])
+    monkeypatch.setattr(reads, 'ReadBudget', lambda *a, **k: budget)
     seen = []
     def read(platform, brand, client, since):
         seen.append(platform)
-        time.sleep(.03)
+        now[0] += .03
         return _lectura_ok()
     monkeypatch.setattr('socialctl.cli.leer_red', read)
     result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz),

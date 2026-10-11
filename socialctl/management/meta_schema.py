@@ -87,7 +87,8 @@ class MetaEdit(Strict):
                     "schedule-reprogram": {"scheduled_publish_time"},
                     "mention-reply": {"comment_id", "media_id", "message"}}
         required = {"action", "target_id"} | ({"patch"} if action in PATCHES else optional.get(action, set()))
-        if required - set(raw) or set(raw) - required - {"version"} or any(raw[k] is None for k in raw):
+        allowed = required | {"version"} | ({"comment_id"} if action in {"like", "unlike"} else set())
+        if required - set(raw) or set(raw) - allowed or any(raw[k] is None for k in raw):
             raise MetaError("missing/extra/null action fields; omission preserves values")
         meta_id(raw["target_id"], composite=True)
         if "comment_id" in raw:

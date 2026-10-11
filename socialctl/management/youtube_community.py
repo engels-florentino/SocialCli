@@ -66,18 +66,30 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                     raise ResourceError("invalid or repeated pagination")
                 if not paginated and any(k in payload for k in ("nextPageToken", "prevPageToken")):
                     raise ResourceError("undocumented catalog pagination")
+                if not rows and next_token:
+                    raise ResourceError("contradictory empty page")
+                if next_token is None and expected_total is not None and expected_total != len(result['items']):
+                    raise ResourceError("total does not match received list; partial read")
                 if paginated:
                     page = payload.get("pageInfo")
                     if page is None:
                         raise ResourceError("pagination metadata missing; verified items retained")
-                    if not isinstance(page, dict) or type(page.get("totalResults")) is not int or page["totalResults"] < 0 or type(page.get("resultsPerPage")) is not int or not len(rows) <= page["resultsPerPage"] <= 50:
+                    if not isinstance(page, dict):
                         raise ResourceError("pagination lacks verifiable metadata")
-                    if not rows and (next_token or page["totalResults"] != 0):
+                    # Missing fields permit supervised replies with verified
+                    # rows. Invalid or contradictory supplied fields do not.
+                    if ('totalResults' in page and (type(page['totalResults']) is not int or page['totalResults'] < 0 or (resource != 'search' and page['totalResults'] < len(result['items'])))) or ('resultsPerPage' in page and (type(page['resultsPerPage']) is not int or not len(rows) <= page['resultsPerPage'] <= 50)):
+                        raise ResourceError("pagination lacks verifiable metadata")
+                    if not rows and 'totalResults' in page and page['totalResults'] != 0:
                         raise ResourceError("contradictory empty page")
-                    if resource != "search":  # Search documents approximate totals.
+                    if resource != "search" and 'totalResults' in page:  # Search documents approximate totals.
                         if expected_total is not None and page["totalResults"] != expected_total:
                             raise ResourceError("total changed during pagination")
                         expected_total = page["totalResults"]
+                    if next_token is None and expected_total is not None and expected_total != len(result['items']):
+                        raise ResourceError("total does not match received list; partial read")
+                    if {'totalResults', 'resultsPerPage'} - page.keys():
+                        raise ResourceError("pagination metadata missing; verified items retained")
                 if next_token is None:
                     if expected_total is not None and expected_total != len(result["items"]):
                         raise ResourceError("total does not match received list; partial read")

@@ -132,6 +132,7 @@ def sync_brand_inbox(brand,*,since,budget):
     store=UnifiedInboxStore(brand.raiz);coverage=[];errors=[];edited=set();observed_keys=set()
     observed=now_utc().isoformat()
     fields={'youtube':'channel_id','facebook':'page_id','instagram':'ig_user_id','tiktok':'open_id'}
+    pending_providers=sum(bool((brand.cuentas.get(p.value) or {}).get(fields[p.value])) for p in Platform if p is not Platform.TIKTOK)
     with read_client(budget,progress=lambda:__import__('typer').echo('Reading inbox provider page...',err=True)) as http:
         for platform in Platform:
             account=(brand.cuentas.get(platform.value) or {}).get(fields[platform.value])
@@ -142,78 +143,83 @@ def sync_brand_inbox(brand,*,since,budget):
             if not account:
                 row['state']='unavailable';errors.append({'platform':platform.value,'message':'No account configured'});continue
             try:
-                budget.check()
-                if platform is Platform.YOUTUBE:
-                    inventory_store=InventoryStore(brand,platform,account)
-                    prior=inventory_store.load().get('sync') or {}
-                    resume=not prior.get('complete',True) and prior.get('resumable',False)
-                    inventory=sync_content(brand,platform,http,resume=resume)
-                    if resume and inventory['failure_class'] in {'invalid_cursor','provider_error'}:
-                        budget.check()
-                        inventory=sync_content(brand,platform,http,resume=False)
-                    media=[v['remote_id'] for v in InventoryStore(brand,platform,account).list_items() if v.get('last_sync_id')==inventory['sync_id']]
-                    complete=inventory['complete'] and inventory['details_complete']
-                    client=YouTubeCommunityClient(brand,http)
-                    for ident in media:
-                        budget.check()
-                        try:items,ok,problems=_youtube_rows(client,ident)
-                        except InboxInterrupted as exc:
-                            store.observe(exc.rows,observed_at=observed)
-                            observed_keys.update(store.key(i) for i in exc.rows)
-                            row['scopes'].append({'media_id':ident,'filter':'published','complete':False})
-                            raise KeyboardInterrupt() from None
-                        except Exception as exc:
-                            items,ok,problems=[],False,[safe_error(str(exc))]
-                        scope=json.dumps([platform.value,account,ident,'published'])
-                        edited.update(store.observe(items,observed_at=observed,scope=scope,complete=ok))
-                        observed_keys.update(store.key(i) for i in items)
-                        row['scopes'].append({'media_id':ident,'filter':'published','complete':ok})
-                        complete=complete and ok
-                        errors.extend({'platform':platform.value,'media_id':ident,'message':safe_error(str(e))} for e in problems)
-                else:
-                    meta=MetaClient(brand,platform,http)
-                    listing=meta.content_list('feed' if platform is Platform.FACEBOOK else 'media')
-                    complete=listing['complete'];client=MetaCommentsClient(brand,platform,http)
-                    inbox=CommentInboxStore(brand.raiz)
-                    for media in listing['data']:
-                        budget.check();ident=media['id']
-                        try:
-                            result=sync_inbox(client,inbox,media_id=ident,since=since.isoformat(),resume=True)
-                            results=[result]; problems=[];items=[]
-                            def collect(observation):
-                                records=[r for r in inbox.load().comments if r.platform==platform.value and r.account_id==account and r.media_id==ident and r.last_observed_at==observation['observed_at']]
-                                fresh=[{'platform':r.platform,'account_id':r.account_id,'media_id':r.media_id,'parent_id':r.parent_id,
-                                    'comment_id':r.comment_id,'author_id':r.author_id,'text':r.text,'created_time':r.created_time,
-                                    'provider_updated_at':r.provider_updated_at,'status':r.status,'draft_change_id':r.change_id} for r in records]
-                                edited.update(store.observe(fresh,observed_at=observed))
-                                observed_keys.update(store.key(i) for i in fresh)
-                                items.extend(fresh)
-                            collect(result)
-                            if result.get('interrupted'):
-                                row['scopes'].append({'media_id':ident,'filter':'top_level_and_direct_replies','complete':False})
-                                raise KeyboardInterrupt()
-                            for parent_id in result['parent_ids']:
-                                try:
-                                    reply_result=sync_inbox(client,inbox,media_id=ident,parent_id=parent_id,since=since.isoformat(),resume=True)
-                                    results.append(reply_result);collect(reply_result)
-                                    if reply_result.get('interrupted'):raise KeyboardInterrupt()
-                                except Exception as exc:
-                                    problems.append(safe_error(str(exc)))
-                                except KeyboardInterrupt:
+                share_count=pending_providers
+                pending_providers-=1
+                with budget.share(share_count):
+                    budget.check()
+                    if platform is Platform.YOUTUBE:
+                        inventory_store=InventoryStore(brand,platform,account)
+                        prior=inventory_store.load().get('sync') or {}
+                        resume=not prior.get('complete',True) and prior.get('resumable',False)
+                        inventory=sync_content(brand,platform,http,resume=resume)
+                        if resume and inventory['failure_class'] in {'invalid_cursor','provider_error'}:
+                            budget.check()
+                            inventory=sync_content(brand,platform,http,resume=False)
+                        media=[v['remote_id'] for v in InventoryStore(brand,platform,account).list_items() if v.get('last_sync_id')==inventory['sync_id']]
+                        complete=inventory['complete'] and inventory['details_complete']
+                        client=YouTubeCommunityClient(brand,http)
+                        for ident in media:
+                            budget.check()
+                            try:items,ok,problems=_youtube_rows(client,ident)
+                            except InboxInterrupted as exc:
+                                store.observe(exc.rows,observed_at=observed)
+                                observed_keys.update(store.key(i) for i in exc.rows)
+                                row['scopes'].append({'media_id':ident,'filter':'published','complete':False})
+                                raise KeyboardInterrupt() from None
+                            except Exception as exc:
+                                items,ok,problems=[],False,[safe_error(str(exc))]
+                            scope=json.dumps([platform.value,account,ident,'published'])
+                            edited.update(store.observe(items,observed_at=observed,scope=scope,complete=ok))
+                            observed_keys.update(store.key(i) for i in items)
+                            row['scopes'].append({'media_id':ident,'filter':'published','complete':ok})
+                            complete=complete and ok
+                            errors.extend({'platform':platform.value,'media_id':ident,'message':safe_error(str(e))} for e in problems)
+                    else:
+                        meta=MetaClient(brand,platform,http)
+                        listing=meta.content_list('posts' if platform is Platform.FACEBOOK else 'media',for_comments=True)
+                        if listing.get('error'):
+                            errors.append({'platform':platform.value,'message':safe_error(listing['error'])})
+                        complete=listing['complete'];client=MetaCommentsClient(brand,platform,http)
+                        inbox=CommentInboxStore(brand.raiz)
+                        for media in listing['data']:
+                            budget.check();ident=media['id']
+                            try:
+                                result=sync_inbox(client,inbox,media_id=ident,since=since.isoformat(),resume=True)
+                                results=[result]; problems=[];items=[]
+                                def collect(observation):
+                                    records=[r for r in inbox.load().comments if r.platform==platform.value and r.account_id==account and r.media_id==ident and r.last_observed_at==observation['observed_at']]
+                                    fresh=[{'platform':r.platform,'account_id':r.account_id,'media_id':r.media_id,'parent_id':r.parent_id,
+                                        'comment_id':r.comment_id,'author_id':r.author_id,'text':r.text,'created_time':r.created_time,
+                                        'provider_updated_at':r.provider_updated_at,'status':r.status,'draft_change_id':r.change_id} for r in records]
+                                    edited.update(store.observe(fresh,observed_at=observed))
+                                    observed_keys.update(store.key(i) for i in fresh)
+                                    items.extend(fresh)
+                                collect(result)
+                                if result.get('interrupted'):
                                     row['scopes'].append({'media_id':ident,'filter':'top_level_and_direct_replies','complete':False})
-                                    raise
-                            ok=not problems and all(r['complete'] for r in results)
-                            problems.extend(r.get('error') or 'Meta traversal incomplete' for r in results if not r['complete'])
-                            row['scopes'].append({'media_id':ident,'filter':'top_level_and_direct_replies','complete':ok})
-                        except Exception as exc:
-                            items,ok,problems=[],False,[safe_error(str(exc))]
-                        scope=json.dumps([platform.value,account,ident,'top_level_and_direct_replies'])
-                        edited.update(store.observe(items,observed_at=observed,scope=scope,complete=ok))
-                        observed_keys.update(store.key(i) for i in items)
-                        complete=complete and ok
-                        errors.extend({'platform':platform.value,'media_id':ident,'message':safe_error(str(e))} for e in problems)
-                row['complete']=complete;row['state']='ok' if complete else 'partial'
-                if not complete and not any(e.get('platform')==platform.value for e in errors):errors.append({'platform':platform.value,'message':'Owned content enumeration incomplete'})
+                                    raise KeyboardInterrupt()
+                                for parent_id in result['parent_ids']:
+                                    try:
+                                        reply_result=sync_inbox(client,inbox,media_id=ident,parent_id=parent_id,since=since.isoformat(),resume=True)
+                                        results.append(reply_result);collect(reply_result)
+                                        if reply_result.get('interrupted'):raise KeyboardInterrupt()
+                                    except Exception as exc:
+                                        problems.append(safe_error(str(exc)))
+                                    except KeyboardInterrupt:
+                                        row['scopes'].append({'media_id':ident,'filter':'top_level_and_direct_replies','complete':False})
+                                        raise
+                                ok=not problems and all(r['complete'] for r in results)
+                                problems.extend(r.get('error') or 'Meta traversal incomplete' for r in results if not r['complete'])
+                                row['scopes'].append({'media_id':ident,'filter':'top_level_and_direct_replies','complete':ok})
+                            except Exception as exc:
+                                items,ok,problems=[],False,[safe_error(str(exc))]
+                            scope=json.dumps([platform.value,account,ident,'top_level_and_direct_replies'])
+                            edited.update(store.observe(items,observed_at=observed,scope=scope,complete=ok))
+                            observed_keys.update(store.key(i) for i in items)
+                            complete=complete and ok
+                            errors.extend({'platform':platform.value,'media_id':ident,'message':safe_error(str(e))} for e in problems)
+                    row['complete']=complete;row['state']='ok' if complete else 'partial'
+                    if not complete and not any(e.get('platform')==platform.value for e in errors):errors.append({'platform':platform.value,'message':'Owned content enumeration incomplete'})
             except (Exception,KeyboardInterrupt) as exc:
                 row['state']='partial' if row['scopes'] else 'error'
                 errors.append({'platform':platform.value,'message':'Read interrupted' if isinstance(exc,KeyboardInterrupt) else safe_error(str(exc))})

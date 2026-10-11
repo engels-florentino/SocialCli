@@ -1,6 +1,6 @@
 # Capabilities, permissions and limits
 
-SocialCli 0.2.3 · verified implementation scope, October 10, 2026.
+SocialCli 0.2.4 · verified implementation scope, October 11, 2026.
 
 A supported command is not proof of access. Provider app eligibility/review,
 creator consent, token grants, actor role and object eligibility all matter.
@@ -12,11 +12,11 @@ reconnect with the requested optional access and have the creator consent.
 |---|---|---|---|
 | Connect accounts | YouTube, Facebook, Instagram, TikTok through configured service | Creator OAuth consent; exact account binding; provider app eligible for this creator | Sandbox/Testing/development restrictions still apply. Agent hands off link, never opens it. |
 | Account/content metrics | Provider-specific `stats`; YouTube Analytics optional | YouTube read/Analytics grants; Facebook `read_insights` and Page read access; Instagram `instagram_manage_insights` plus basic/Page access; TikTok authorized user/video read grants | Metrics vary by account/content and date. Unsupported metrics are null, not zero. Partial coverage exits 1. |
-| Unified comment inbox | Owned YouTube uploads, Facebook feed, Instagram media | YouTube authenticated channel/read access; Facebook Page read/user-content grants; Instagram basic/comment grants and linked Page/professional account | Published YouTube threads/replies; Meta top-level/direct replies only. Provider visibility, page limits and budgets apply. TikTok inbox comments unsupported. |
+| Unified comment inbox | Owned YouTube uploads, Facebook Page posts, Instagram media | YouTube authenticated channel/read access; Facebook Page read/user-content grants; Instagram basic/comment grants and linked Page/professional account | Published YouTube threads/replies; Meta top-level/direct replies only. Provider visibility, page limits and budgets apply. TikTok inbox comments unsupported. |
 | Add/reply to comments | YouTube and Meta exact supervised proposals | YouTube `youtube.force-ssl`; Facebook Page identity with `pages_manage_engagement` and applicable read grants; Instagram `instagram_manage_comments`, basic/Page grants | Exact actor and media/parent verification required. Missing pagination metadata never proves absence. Unknown previous writes block repeats. |
-| Facebook like/unlike | Owned Page posts/videos through Meta management | Connected Page token, `pages_manage_engagement`, applicable Page task and read access | Current CLI verifies owned content and full relevant likes traversal. It does not expose a general comment-like command or arbitrary-profile actions. HTTP 400 alone does not identify a missing permission. |
+| Facebook like/unlike | Owned Page posts and their top-level comments through Meta management | Connected Page token, `pages_manage_engagement`, applicable Page task and read access | For comment likes, target_id identifies the owned post and comment_id identifies its top-level comment. Exact membership and Page viewer like state are required. Post likes retain the existing owned-content traversal. Arbitrary-profile actions and nested comment likes are not exposed. HTTP 400 alone does not identify a missing permission. |
 | YouTube video rating | Like/dislike/none through community proposal | Authenticated channel with `youtube.force-ssl`; eligible video | A video rating is distinct from a comment like/heart. |
-| Comment likes/hearts | Not exposed for YouTube, Instagram or TikTok; Facebook general comment-like command not exposed | Additional permissions cannot create an unimplemented endpoint | Do not substitute video ratings, comment replies or a guessed endpoint. |
+| Comment likes/hearts | Not exposed for YouTube, Instagram or TikTok; Facebook top-level comment likes supported as above | Additional permissions cannot create an unimplemented endpoint | Do not substitute video ratings, comment replies or a guessed endpoint. |
 | Publish content | Existing provider adapters with full preview and explicit approval | YouTube upload grants; Facebook `pages_manage_posts` plus Page access; Instagram `instagram_content_publish` plus basic/Page access; TikTok `video.upload` for inbox | Creator-supplied media only. Instagram downloads require accessible media URLs. TikTok inbox handoff is not public publication. Direct Post production UX/review remains separate. |
 | Exact source link | Explicit version 1 post-slug map, included in preview | Same publication/comment grants as its placement | YouTube/Meta follow-up comment; TikTok caption. No automatic pinning; Instagram/TikTok clickability not promised. Changed maps invalidate pending mapped intent. |
 | Community batch | YouTube reply/rating, Meta add/reply, Facebook owned-content like/unlike | One exact batch digest approved by creator; each child still verifies grants/actor/target | Ordered immutable list, sequential stop on failure/uncertainty; no transaction or rollback. Reconcile never starts pending children. |
@@ -60,3 +60,31 @@ Contracts were checked using current official documentation during implementatio
 [TikTok app review](https://developers.tiktok.com/doc/app-review-guidelines/).
 Provider policy and availability can change; these references do not certify a
 particular app or account.
+
+## Facebook comment likes
+
+Use explicit quoted IDs in a Meta proposal. Do not pass a comment ID as
+`target_id`: that field is the owned Page post; `comment_id` selects its comment.
+
+```yaml
+action: like
+target_id: "123_789"
+comment_id: "789_800"
+```
+
+```bash
+socialcli meta prepare --file like-comment.yaml --platform facebook --brand MyBrand --dry-run
+```
+
+Review the full saved proposal and obtain approval before applying. The preview
+includes the comment text, media ID and observed Page like state. An unavailable
+`has_liked` state or unverified target stops preparation. Use `action: unlike`
+for a separately approved removal. Distinct comments on the same post can be
+children of one community batch; duplicate targets are rejected.
+
+`inbox` shares its total timeout among configured supported platforms so one
+slow provider cannot consume the entire budget. Meta enumeration requests only
+IDs and ownership; later request failures retain earlier verified media.
+A partial report with zero observed comments does not establish an empty inbox.
+YouTube `stats` retains fetched account/video metrics when optional enrichment
+or audience reads fail, records warnings, and reports partial JSON coverage.

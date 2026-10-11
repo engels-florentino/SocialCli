@@ -141,6 +141,8 @@ def render_resumen(
     for platform, lectura in snapshot.redes.items():
         lineas.append(f"## {platform.value}")
         lineas.append("")
+        for warning in lectura.warnings:
+            lineas += [f"**Partial read:** {warning}", ""]
         if lectura.estado is not EstadoLectura.OK:
             lineas += [
                 f"**Status:** `{lectura.estado.value}` — {lectura.error or 'no details'}",

@@ -281,6 +281,60 @@ def test_page_like_unlike_separate_approved_changes(tmp_path):
         assert graph.writes[-1][:2] == (method, "123_789/likes")
 
 
+def test_comment_like_unlike_binds_owned_media_and_reads_viewer_state(tmp_path):
+    mod, _, graph, client, store = service(tmp_path)
+    original = client.client
+    def provider(request):
+        if request.method == 'GET' and request.url.path.endswith('/800/likes'):
+            return httpx.Response(200, json={'data': [], 'summary': {'has_liked': graph.liked, 'can_like': True}})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    for action, method, liked in [('like', 'POST', True), ('unlike', 'DELETE', False)]:
+        change = mod.prepare_meta(client, store, {'action': action, 'target_id': '123_789', 'comment_id': '800'})
+        assert change.before['id'] == '800' and change.before['media_id'] == '123_789'
+        result = mod.apply_meta(client, store, change.id, change.fingerprint)
+        assert result.status == 'verified'
+        assert result.result_id == '800' and result.before['comment_text'] == 'Comment'
+        assert graph.liked is liked and graph.writes[-1][:2] == (method, '800/likes')
+    client.client.close()
+    original.close()
+
+
+@pytest.mark.parametrize('failure', ['foreign_media', 'wrong_comment', 'missing_viewer_state', 'ineligible', 'user_token'])
+def test_comment_like_never_guesses_binding_or_viewer_state(tmp_path, failure):
+    mod, _, graph, client, store = service(tmp_path)
+    if failure == 'foreign_media': graph.state['from']['id'] = '999'
+    if failure == 'user_token': client.token_mode = 'facebook_user'; client.actor_id = '123'
+    def provider(request):
+        if request.method == 'GET' and request.url.path.endswith('/800/likes'):
+            summary = {} if failure == 'missing_viewer_state' else {'has_liked': False, 'can_like': failure != 'ineligible'}
+            return httpx.Response(200, json={'data': [], 'summary': summary})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    from socialctl.management.meta_schema import MetaError
+    with pytest.raises(MetaError):
+        mod.prepare_meta(client, store, {'action': 'like', 'target_id': '123_789', 'comment_id': '801' if failure == 'wrong_comment' else '800'})
+    assert not graph.writes
+
+
+def test_comment_likes_on_distinct_comments_share_media_in_one_batch(tmp_path):
+    from socialctl.management.community_batches import prepare_community_batch
+    from socialctl.management.changes import ChangeError
+    mod, brand, graph, client, store = service(tmp_path)
+    def provider(request):
+        if request.method == 'GET' and request.url.path.endswith('/123_789/comments'):
+            return httpx.Response(200, json={'data':[{'id':'800', 'message':'First'}, {'id':'801', 'message':'Second'}]})
+        if request.method == 'GET' and request.url.path.endswith('/likes'):
+            return httpx.Response(200, json={'summary': {'has_liked': False, 'can_like': True}})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    changes = [mod.prepare_meta(client, store, {'action':'like', 'target_id':'123_789', 'comment_id':cid}) for cid in ('800','801')]
+    refs = [{'provider':'meta-management', 'change_id':c.id} for c in changes]
+    assert len(prepare_community_batch(brand, refs).children) == 2
+    with pytest.raises(ChangeError):
+        prepare_community_batch(brand, [refs[0], refs[0]])
+
+
 def test_subscriptions_require_exact_page_and_current_app_id(tmp_path):
     mod, brand, graph, client, store = service(tmp_path)
     brand.cuentas["facebook"]["app_id"] = "999"

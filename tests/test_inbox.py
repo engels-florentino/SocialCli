@@ -41,6 +41,62 @@ def test_youtube_reply_failure_retains_top_comment():
     assert not complete and errors
 
 
+@pytest.mark.parametrize('platform', ['facebook', 'instagram'])
+@pytest.mark.parametrize('late_failure', [False, True])
+def test_unified_meta_enumerates_minimal_fields_and_retains_media_before_failure(tmp_path, monkeypatch, platform, late_failure):
+    import httpx
+    from tests.test_meta_comments import service
+    from tests.test_meta_comment_inbox import remote_row
+    from socialctl import inbox as mod
+    from socialctl.read_budget import ReadBudget
+    _, brand, graph, _, _ = service(tmp_path, platform)
+    comment = remote_row(graph, '800', 'A recent viewer comment', created='2026-10-10T10:00:00Z')
+    graph.pages = lambda request: {'data': [] if '/800/' in request.url.path else [comment]}
+    def provider(request):
+        if request.url.path.endswith('/123/posts') or request.url.path.endswith('/123/feed') or request.url.path.endswith('/456/media'):
+            fields = request.url.params['fields']
+            if fields not in {'id,from', 'id,owner'}:
+                return httpx.Response(400, json={'error': {'code': 100, 'message': 'A requested optional content field is unavailable'}})
+            if request.url.params.get('after'):
+                return httpx.Response(503, json={'error': {'message': 'Later enumeration unavailable'}})
+            data = {'data': [{'id': '789', 'from' if platform == 'facebook' else 'owner': {'id': graph.owner}}]}
+            if late_failure:
+                data['paging'] = {'next': 'https://ignored.invalid', 'cursors': {'after': 'next'}}
+            return httpx.Response(200, json=data)
+        return graph(request)
+    monkeypatch.setattr(mod, 'read_client', lambda *a, **k: httpx.Client(transport=httpx.MockTransport(provider)))
+    report = mod.sync_brand_inbox(brand, since=datetime(2026,10,10,tzinfo=timezone.utc), budget=ReadBudget(10))
+    assert [row['comment_id'] for row in report.data['items']] == ['800']
+    coverage = next(row for row in report.coverage if row['platform'] == platform)
+    assert coverage['complete'] is (not late_failure)
+    assert not graph.writes
+
+
+def test_youtube_timeout_does_not_starve_facebook_inbox(tmp_path, monkeypatch):
+    import httpx
+    from tests.test_meta_comments import service
+    from tests.test_meta_comment_inbox import remote_row
+    from socialctl import inbox as mod
+    from socialctl.management.meta_client import MetaClient
+    from socialctl.read_budget import ReadBudget, ReadDeadlineExceeded
+    _, brand, graph, _, _ = service(tmp_path)
+    brand.cuentas['youtube'] = {'channel_id': 'fictional-channel'}
+    now = [0.0]
+    budget = ReadBudget(60, clock=lambda: now[0])
+    def youtube(*args, **kwargs):
+        now[0] = budget.deadline
+        raise ReadDeadlineExceeded()
+    monkeypatch.setattr('socialctl.inventory.sync_content', youtube)
+    top = remote_row(graph, '800', 'Viewer comment', created='2026-10-10T10:00:00Z')
+    graph.pages = lambda request: {'data': [] if '/800/' in request.url.path else [top]}
+    monkeypatch.setattr(MetaClient, 'content_list', lambda *a, **k: {'data':[{'id':'789'}], 'complete':True})
+    monkeypatch.setattr(mod, 'read_client', lambda *a, **k: httpx.Client(transport=httpx.MockTransport(graph)))
+    report = mod.sync_brand_inbox(brand, since=datetime(2026,10,10,tzinfo=timezone.utc), budget=budget)
+    assert [row['comment_id'] for row in report.data['items']] == ['800']
+    assert next(row for row in report.coverage if row['platform'] == 'facebook')['complete']
+    assert budget.remaining() == 40
+
+
 def test_meta_direct_reply_has_separate_parent_cursor(tmp_path):
     from tests.test_meta_comments import service
     from tests.test_meta_comment_inbox import remote_row

@@ -157,7 +157,7 @@ def apply_meta(client, store, change_id, approval_digest):
                     "remote_id": edit.target_id,
                     "planner_visibility": "not_verifiable",
                 }
-            change.result_id = change.receipt.get("id", edit.target_id)
+            change.result_id = change.receipt.get("id", change.receipt.get('target_id', edit.target_id))
             event(change, "write_receipt_saved")
         store.save(change)
         return readback(client, store, change)

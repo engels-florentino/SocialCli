@@ -1375,15 +1375,16 @@ def stats(
         typer.echo(f"Reading {platform.value}: request {request_number}...", err=True)
     interrupted = False
     with read_client(budget, progress=progress) as client:
-        for platform in destinos:
+        for index, platform in enumerate(destinos):
             if interrupted:
                 redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; platform not started')
                 continue
             try:
-                budget.check()
-                typer.echo(f"Reading {platform.value}...", err=True)
-                redes[platform] = leer_red(platform, marca, client, fecha_desde)
-                redes[platform].observed_at = datetime.now(timezone.utc)
+                with budget.share(len(destinos) - index):
+                    budget.check()
+                    typer.echo(f"Reading {platform.value}...", err=True)
+                    redes[platform] = leer_red(platform, marca, client, fecha_desde)
+                    redes[platform].observed_at = datetime.now(timezone.utc)
             except KeyboardInterrupt:
                 interrupted = True
                 redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; results may be incomplete')
@@ -1392,6 +1393,7 @@ def stats(
 
     from socialctl.read_reports import safe_error
     for lectura in redes.values():
+        lectura.warnings = [safe_error(warning) for warning in lectura.warnings]
         if lectura.error:
             lectura.error = safe_error(lectura.error)
         for piece in lectura.piezas:
@@ -1433,7 +1435,7 @@ def stats(
             _avisar_de_fallos_persistentes(marca, snapshot)
         coverage, errors = [], []
         for p, r in redes.items():
-            warnings = [piece.especificas['enriquecimiento_fallido'] for piece in r.piezas
+            warnings = r.warnings + [piece.especificas['enriquecimiento_fallido'] for piece in r.piezas
                         if 'enriquecimiento_fallido' in piece.especificas]
             complete = r.estado is EstadoLectura.OK and not warnings
             observed = snapshot.redes[p].observed_at
@@ -1459,6 +1461,8 @@ def stats(
     for platform, lectura in redes.items():
         if lectura.estado is EstadoLectura.OK:
             typer.echo(f"{platform.value}: ok, {len(lectura.piezas)} content items")
+            for warning in lectura.warnings:
+                typer.echo(f"{platform.value}: partial — {warning}")
         else:
             typer.echo(f"{platform.value}: {_metric_read_label(lectura.estado.value)} — {lectura.error}")
 

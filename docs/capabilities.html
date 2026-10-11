@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Capabilities and limits · SocialCli</title><meta name="description" content="SocialCli: social media tools for terminal-enabled AI agents, with previews and user approval."><link rel="stylesheet" href="style.css"><link rel="icon" type="image/png" href="assets/socialcli-logo.png"><link rel="apple-touch-icon" href="assets/socialcli-logo.png"><meta property="og:type" content="website"><meta property="og:site_name" content="SocialCli"><meta property="og:title" content="Capabilities and limits · SocialCli"><meta property="og:description" content="Social media tools for AI agents, with previews and user approval."><meta property="og:url" content="https://engels-florentino.github.io/SocialCli/capabilities.html"><meta property="og:image" content="https://engels-florentino.github.io/SocialCli/assets/socialcli-logo.png"><meta property="og:image:width" content="1254"><meta property="og:image:height" content="1254"><meta property="og:image:alt" content="SocialCli logo: S and terminal prompt >_"><meta name="twitter:card" content="summary"><meta name="twitter:image" content="https://engels-florentino.github.io/SocialCli/assets/socialcli-logo.png"></head><body><header><a class="logo" href="index.html"><img src="assets/socialcli-logo.png" width="44" height="44" alt=""><span>SocialCli</span></a><nav><a href="ai-agents.html">AI agents</a><a href="installation.html">Install</a><a href="guide.html">Guide</a><a href="platforms.html">Platforms</a><a href="connections.html">Connect</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli">GitHub</a></nav></header><main><h1 id="capabilities-permissions-and-limits">Capabilities, permissions and limits</h1>
-<p>SocialCli 0.2.3 · verified implementation scope, October 10, 2026.</p>
+<p>SocialCli 0.2.4 · verified implementation scope, October 11, 2026.</p>
 <p>A supported command is not proof of access. Provider app eligibility/review,
 creator consent, token grants, actor role and object eligibility all matter.
 Adding permissions in a developer dashboard does not add them to existing tokens;
@@ -29,7 +29,7 @@ reconnect with the requested optional access and have the creator consent.
 </tr>
 <tr>
 <td>Unified comment inbox</td>
-<td>Owned YouTube uploads, Facebook feed, Instagram media</td>
+<td>Owned YouTube uploads, Facebook Page posts, Instagram media</td>
 <td>YouTube authenticated channel/read access; Facebook Page read/user-content grants; Instagram basic/comment grants and linked Page/professional account</td>
 <td>Published YouTube threads/replies; Meta top-level/direct replies only. Provider visibility, page limits and budgets apply. TikTok inbox comments unsupported.</td>
 </tr>
@@ -41,9 +41,9 @@ reconnect with the requested optional access and have the creator consent.
 </tr>
 <tr>
 <td>Facebook like/unlike</td>
-<td>Owned Page posts/videos through Meta management</td>
+<td>Owned Page posts and verified top-level comments through Meta management</td>
 <td>Connected Page token, <code>pages_manage_engagement</code>, applicable Page task and read access</td>
-<td>Current CLI verifies owned content and full relevant likes traversal. It does not expose a general comment-like command or arbitrary-profile actions. HTTP 400 alone does not identify a missing permission.</td>
+<td>Current CLI verifies owned content and full relevant likes traversal. Comment likes require the owned post as target_id and its top-level comment as comment_id, plus exact membership and Page viewer state. Arbitrary-profile actions and nested comment likes are not exposed. HTTP 400 alone does not identify a missing permission.</td>
 </tr>
 <tr>
 <td>YouTube video rating</td>
@@ -53,7 +53,7 @@ reconnect with the requested optional access and have the creator consent.
 </tr>
 <tr>
 <td>Comment likes/hearts</td>
-<td>Not exposed for YouTube, Instagram or TikTok; Facebook general comment-like command not exposed</td>
+<td>Not exposed for YouTube, Instagram or TikTok; Facebook verified top-level comment likes supported</td>
 <td>Additional permissions cannot create an unimplemented endpoint</td>
 <td>Do not substitute video ratings, comment replies or a guessed endpoint.</td>
 </tr>
@@ -114,4 +114,4 @@ Provider application secrets and refresh tokens stay on the shared service.</p>
 <a href="https://developers.google.com/youtube/v3/docs/videos/rate">YouTube video ratings</a>,
 <a href="https://developers.tiktok.com/doc/app-review-guidelines/">TikTok app review</a>.
 Provider policy and availability can change; these references do not certify a
-particular app or account.</p></main><footer><p>SocialCli · Engels Florentino · Public MIT project</p><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli/issues">Support</a></footer></body></html>
+particular app or account.</p><p>Version 0.2.4 shares inbox time among supported accounts, retains verified data on partial reads, and preserves YouTube base metrics when optional enrichment times out. Read <a href="https://github.com/engels-florentino/SocialCli/blob/main/docs/capabilities.md#facebook-comment-likes">Facebook comment-like proposal examples</a>.</p></main><footer><p>SocialCli · Engels Florentino · Public MIT project</p><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli/issues">Support</a></footer></body></html>

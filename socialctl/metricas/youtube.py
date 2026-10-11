@@ -21,6 +21,7 @@ from socialctl.metricas.modelos import (
     TipoPieza,
 )
 from socialctl.models import Platform
+from socialctl.read_budget import ReadDeadlineExceeded
 
 ANALYTICS = "https://youtubeanalytics.googleapis.com/v2/reports"
 CANALES = "https://www.googleapis.com/youtube/v3/channels"
@@ -77,26 +78,10 @@ MAX_VIDEOS = 200
 #: nuevo. Ninguna pieza se pierde; solo se queda sin las dos métricas que
 #: no se pudieron pagar.
 #:
-#: **Cómo se entera el usuario de que la lectura fue parcial.**
-#: `LecturaRed.estado` se queda en `ok` -de verdad se leyeron la cuenta y
-#: todas las piezas, con sus métricas base intactas- y por eso
-#: `LecturaRed.error` NO es el sitio: ese campo solo se muestra cuando el
-#: estado no es `ok` (ver el resumen legible de una tarea posterior), así
-#: que colgar aquí el aviso con `estado: ok` lo dejaría invisible. La señal
-#: vive en la propia pieza afectada: `especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO]`
-#: aparece **solo** en las piezas cuyo enriquecimiento falló o se saltó por
-#: cuota, con el motivo -ya redactado, vía `mensaje_de_error`- como valor;
-#: una pieza sana ni siquiera tiene esa clave, así que su sola presencia ya
-#: es la señal de que la lectura no fue completa. Queda en el JSON del
-#: snapshot del día para quien lo inspeccione a mano, y es la clave con la
-#: que una tarea futura (`resumen.md`, `piezas.yml`) puede saber cuántas
-#: piezas se quedaron sin retención sin tener que asumir que una curva
-#: vacía siempre significa "sin datos": aquí puede significar "no se pudo
-#: pedir". (Lo que este arreglo no cubre: si la cuota se agota justo en la
-#: llamada de audiencia, que ocurre después del bucle y es una única
-#: petición sin piezas parciales que salvar, esa sí tumba la lectura
-#: entera -no es el patrón de "una petición por pieza" que motiva este
-#: arreglo-.)
+# Optional enrichment failures are recorded on affected pieces. Channel-level
+# audience failures are recorded in LecturaRed.warnings. Both are visible in
+# structured coverage and reports; neither discards validated base metrics.
+# Once a read deadline expires, remaining enrichment and audience requests stop.
 CLAVE_ENRIQUECIMIENTO_FALLIDO = "enriquecimiento_fallido"
 
 _DURACION = re.compile(
@@ -171,6 +156,8 @@ class YouTubeLector(Lector):
         # para el resto de piezas pendientes, que se conservan igual con sus
         # métricas base. Ver el bloque de MAX_VIDEOS para el porqué.
         cuota_agotada = False
+        deadline_error = None
+        warnings = []
         for fila in _filas(por_video):
             pieza = self._pieza(fila, catalogo)
             if pieza is None:
@@ -178,10 +165,11 @@ class YouTubeLector(Lector):
             if desde is not None and pieza.publicado_el.date() < desde:
                 continue
 
-            if cuota_agotada:
+            if cuota_agotada or deadline_error:
                 pieza.especificas["curva_retencion"] = []
                 pieza.especificas["fuentes_trafico"] = {}
                 pieza.especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO] = (
+                    str(deadline_error) if deadline_error else
                     "not requested: Analytics quota was already exhausted while "
                     "enriching an earlier item"
                 )
@@ -190,6 +178,8 @@ class YouTubeLector(Lector):
                     self._enriquecer(client, cabeceras, hoy, pieza)
                 except _CuotaAgotada:
                     cuota_agotada = True
+                except ReadDeadlineExceeded as exc:
+                    deadline_error = exc
 
             piezas.append(pieza)
 
@@ -211,11 +201,22 @@ class YouTubeLector(Lector):
                     pieza.especificas['thumbnail_reach_error'] = (
                         'imported reach report unreadable; impressions/CTR unknown')
 
+        audiencia = None
+        if deadline_error:
+            warnings.append(f"Audience not requested: {deadline_error}")
+        else:
+            try:
+                audiencia = self._audiencia(client, cabeceras, hoy)
+            except Exception as exc:
+                from socialctl.read_reports import safe_error
+                warnings.append('Audience unavailable: ' + safe_error(str(exc)))
+
         return LecturaRed(
             estado=EstadoLectura.OK,
             cuenta=cuenta,
             piezas=piezas,
-            audiencia=self._audiencia(client, cabeceras, hoy),
+            audiencia=audiencia,
+            warnings=warnings,
         )
 
     # --- peticiones -----------------------------------------------------
@@ -375,7 +376,7 @@ class YouTubeLector(Lector):
             pieza.especificas["curva_retencion"] = []
             pieza.especificas["fuentes_trafico"] = {}
             pieza.especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO] = str(e)
-            if isinstance(e, _CuotaAgotada):
+            if isinstance(e, (_CuotaAgotada, ReadDeadlineExceeded)):
                 raise
 
     def _audiencia(self, client: httpx.Client, cabeceras: dict, hoy: date) -> Audiencia:

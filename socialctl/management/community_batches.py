@@ -86,7 +86,7 @@ def child_details(brand,provider,child):
         if child.platform!='facebook' or child.edit['action'] not in {'like','unlike'}: raise ChangeError('batch supports Facebook like/unlike only')
         name,root,account=child.brand,child.brand_root,child.identity['account_id']
         expected=(brand.cuentas.get('facebook') or {}).get('page_id')
-        operation=[provider,account,child.edit['target_id']]
+        operation=[provider,account,child.edit.get('comment_id') or child.edit['target_id']]
         limitations=['Facebook Page token, pages_manage_engagement and eligible object/Page task required. No rollback or cross-provider transaction.']
     if (name,root,account)!=(brand.nombre,str(brand.raiz.resolve()),expected):
         raise ChangeError('child brand/account binding differs from current brand')

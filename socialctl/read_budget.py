@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Callable
+from contextlib import contextmanager
 
 import httpx
 
@@ -35,6 +36,19 @@ class ReadBudget:
     def check(self) -> None:
         if self.remaining() <= 0:
             raise ReadDeadlineExceeded()
+
+    @contextmanager
+    def share(self, remaining_providers: int):
+        """Reserve equal remaining time for sequential providers, within the total."""
+        if type(remaining_providers) is not int or remaining_providers < 1:
+            raise ValueError('remaining providers must be a positive integer')
+        self.check()
+        original = self.deadline
+        self.deadline = min(original, self.clock() + self.remaining() / remaining_providers)
+        try:
+            yield self
+        finally:
+            self.deadline = original
 
 
 def retry_delay(response: httpx.Response, attempt: int) -> float:
@@ -139,7 +153,6 @@ def read_client(budget: ReadBudget, *, progress=None) -> httpx.Client:
 
 
 # Context is opt-in for command-level reads; apply/publication paths keep their transports.
-from contextlib import contextmanager
 from contextvars import ContextVar
 
 active_read_budget: ContextVar[ReadBudget | None] = ContextVar('socialcli_read_budget', default=None)

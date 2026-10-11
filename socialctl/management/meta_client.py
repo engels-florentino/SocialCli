@@ -98,7 +98,12 @@ class MetaClient:
     def _pages(self, path, params, maximum=10):
         rows, seen, ids = [], set(), set()
         for _ in range(maximum):
-            result = self.request("GET", path, params=params)
+            try:
+                result = self.request("GET", path, params=params)
+            except MetaError as exc:
+                if not rows:
+                    raise
+                return {"data": rows, "complete": False, "absence_proven": False, "error": str(exc)}
             data = result.get("data")
             if not isinstance(data, list) or len(data) > 100 or any(not isinstance(row, dict) for row in data):
                 raise MetaError("invalid/excessive Meta list")
@@ -169,15 +174,18 @@ class MetaClient:
             raise MetaError("exact content owner was not verified")
         return {k: result[k] for k in CONTENT_FIELDS[kind].split(",") if k in result}
 
-    def content_list(self, edge=None, max_pages=10):
+    def content_list(self, edge=None, max_pages=10, *, for_comments=False):
         self.identity()
         edge = edge or ("media" if self.platform is Platform.INSTAGRAM else "posts")
         valid = {"media", "stories"} if self.platform is Platform.INSTAGRAM else {"feed", "photos", "posts", "videos", "video_reels", "stories", "scheduled_posts"}
         if edge not in valid:
             raise MetaError("listing unsupported for platform")
         kind = "media" if self.platform is Platform.INSTAGRAM else ("video" if edge in {"videos", "video_reels"} else "post")
-        result = self.listing(self.account_id, edge, fields=CONTENT_FIELDS[kind], max_pages=max_pages)
         owner = "owner" if kind == "media" else "from"
+        # Comment traversal needs only IDs and exact ownership. Optional edit,
+        # disclosure or scheduling fields must not block an otherwise readable inbox.
+        fields = f'id,{owner}' if for_comments else CONTENT_FIELDS[kind]
+        result = self.listing(self.account_id, edge, fields=fields, max_pages=max_pages)
         for row in result["data"]:
             meta_id(row.get("id"), composite=kind == "post")
             if (row.get(owner) or {}).get("id") != self.account_id:
@@ -336,6 +344,19 @@ class MetaClient:
         if edit.action in {"like", "unlike"}:
             if self.token_mode != 'facebook_page':
                 raise MetaError('Facebook likes require the connected Page token; a user token is not substituted')
+            if edit.comment_id is not None:
+                comments = self.comments(edit.target_id)
+                matches = [row for row in comments['data'] if row.get('id') == edit.comment_id]
+                if len(matches) != 1:
+                    raise MetaError('exact comment was not verified on owned media; pass target_id for the media and comment_id for its top-level comment')
+                result = self.request('GET', f'{edit.comment_id}/likes', params={'summary':'has_liked,can_like', 'limit':'0'})
+                summary = result.get('summary')
+                if not isinstance(summary, dict) or type(summary.get('has_liked')) is not bool:
+                    raise MetaError('Page like state unavailable; absence is not inferred from a profile list')
+                if edit.action == 'like' and not summary['has_liked'] and summary.get('can_like') is not True:
+                    raise MetaError('Facebook did not confirm that the connected Page can like this comment')
+                return {'id': edit.comment_id, 'media_id': edit.target_id,
+                        'comment_text': matches[0].get('message'), 'liked_by_page': summary['has_liked']}
             result = self.listing(edit.target_id, "likes", fields="id")
             if not result["complete"]:
                 raise MetaError("incomplete likes; absence not inferred")
@@ -372,7 +393,7 @@ class MetaClient:
             field = "is_hidden" if self.platform is Platform.FACEBOOK else "hide"
             result = self.request("POST", edit.comment_id, data={field: str(edit.hide).lower()})
         elif edit.action in {"like", "unlike"}:
-            result = self.request("POST" if edit.action == "like" else "DELETE", f"{edit.target_id}/likes")
+            result = self.request("POST" if edit.action == "like" else "DELETE", f"{edit.comment_id or edit.target_id}/likes")
         elif edit.action.startswith("subscription-"):
             result = self.request("POST" if edit.action == "subscription-set" else "DELETE", f"{edit.target_id}/subscribed_apps",
                                   data={"subscribed_fields": ",".join(edit.subscribed_fields)} if edit.subscribed_fields else None)
@@ -386,4 +407,4 @@ class MetaClient:
             raise MetaError("handler not yet implemented")
         if result.get("success") is not True:
             raise MetaUncertain("Meta did not confirm success=true; write will not be repeated")
-        return {"success": True, "target_id": edit.target_id}
+        return {"success": True, "target_id": edit.comment_id or edit.target_id}

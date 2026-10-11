@@ -31,6 +31,20 @@ def test_budget_accounts_for_elapsed_time_and_expires():
         budget.check()
 
 
+def test_provider_share_leaves_time_for_remaining_providers_after_timeout():
+    module = budget_module()
+    now = [0.0]
+    budget = module.ReadBudget(60, clock=lambda: now[0])
+    with pytest.raises(module.ReadDeadlineExceeded):
+        with budget.share(3):
+            now[0] = 20
+            budget.check()
+    assert budget.remaining() == 40
+    with budget.share(2):
+        assert budget.remaining() == 20
+    assert budget.remaining() == 40
+
+
 def test_deadline_interrupts_slow_response_headers():
     module = budget_module()
     async def handler(request):

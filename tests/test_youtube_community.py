@@ -181,6 +181,68 @@ def test_pagination_preserves_partial_and_never_infers_absence(tmp_path):
     assert not api.writes
 
 
+@pytest.mark.parametrize('page_info', [{'resultsPerPage': 50}, {'totalResults': 1}, {}])
+def test_reply_with_missing_nested_pagination_metadata_is_supervised_partial(tmp_path, page_info):
+    _, api, client, store = service(tmp_path)
+    def replies(request):
+        if request.url.path.endswith('/comments'):
+            current_page = {**page_info, **({'totalResults': len(api.replies)} if 'totalResults' in page_info else {})}
+            return httpx.Response(200, json={'items': api.replies, 'pageInfo': current_page})
+    api.on_read = replies
+    report = client.list_replies('video-1', 'UgxThread', 'UgxTop')
+    assert not report['complete'] and not report['absence_proven']
+    assert len(report['items']) == 1
+    change = prepare_community(client, store, {'action':'reply', 'video_id':'video-1', 'thread_id':'UgxThread', 'parent_id':'UgxTop', 'text':'Supervised reply'})
+    assert change.before['reply_coverage']['complete'] is False
+    assert apply_community(client, store, change.id, change.fingerprint).status == 'verified'
+    assert len(api.writes) == 1
+
+
+@pytest.mark.parametrize('page_info', [{'totalResults': -1}, {'resultsPerPage': '50'}, {'totalResults': 0}, {'resultsPerPage': 0}])
+def test_malformed_present_metadata_never_authorizes_partial_reply(tmp_path, page_info):
+    _, api, client, store = service(tmp_path)
+    api.on_read = lambda r: httpx.Response(200, json={'items': api.replies, 'pageInfo': page_info}) if r.url.path.endswith('/comments') else None
+    with pytest.raises(ResourceError):
+        prepare_community(client, store, {'action':'reply', 'video_id':'video-1', 'thread_id':'UgxThread', 'parent_id':'UgxTop', 'text':'Blocked reply'})
+    assert not api.writes
+
+
+@pytest.mark.parametrize('empty_second_page', [False, True])
+def test_missing_nested_field_does_not_override_known_pagination_contradiction(tmp_path, empty_second_page):
+    _, api, client, store = service(tmp_path)
+    def pages(request):
+        if not request.url.path.endswith('/comments'):
+            return None
+        if request.url.params.get('pageToken'):
+            rows = [] if empty_second_page else [comment('UgxTop.second', parent='UgxTop')]
+            return httpx.Response(200, json={'items':rows, 'pageInfo':{'totalResults':3}})
+        return httpx.Response(200, json={'items':api.replies, 'nextPageToken':'next', 'pageInfo':{'totalResults':2,'resultsPerPage':50}})
+    api.on_read = pages
+    with pytest.raises(ResourceError):
+        prepare_community(client, store, {'action':'reply','video_id':'video-1','thread_id':'UgxThread','parent_id':'UgxTop','text':'Must remain blocked'})
+    assert not api.writes
+
+
+@pytest.mark.parametrize('missing_field', ['resultsPerPage', 'totalResults', 'pageInfo'])
+def test_partial_metadata_does_not_authorize_known_truncated_terminal_list(tmp_path, missing_field):
+    _, api, client, store = service(tmp_path)
+    def pages(request):
+        if not request.url.path.endswith('/comments'):
+            return None
+        if missing_field == 'resultsPerPage':
+            return httpx.Response(200, json={'items':api.replies, 'pageInfo':{'totalResults':5}})
+        if not request.url.params.get('pageToken'):
+            return httpx.Response(200, json={'items':api.replies, 'nextPageToken':'next', 'pageInfo':{'totalResults':5,'resultsPerPage':50}})
+        payload = {'items':[comment('UgxTop.second', parent='UgxTop')]}
+        if missing_field != 'pageInfo':
+            payload['pageInfo'] = {'resultsPerPage':50}
+        return httpx.Response(200, json=payload)
+    api.on_read = pages
+    with pytest.raises(ResourceError):
+        prepare_community(client, store, {'action':'reply','video_id':'video-1','thread_id':'UgxThread','parent_id':'UgxTop','text':'Truncation blocks this reply'})
+    assert not api.writes
+
+
 def test_terminal_truncated_total_is_not_complete(tmp_path):
     _, api, client, _ = service(tmp_path)
     api.on_read = lambda r: httpx.Response(200, json={"items": api.replies,
@@ -393,7 +455,8 @@ def test_contradictory_capacity_cannot_verify_subscription_membership(tmp_path):
 
 
 @pytest.mark.parametrize("kind", ["video", "channel", "playlist"])
-def test_search_nonempty_explicit_parameters_and_distinct_resource_ids(tmp_path, kind):
+@pytest.mark.parametrize('approximate_total', [0, 900])
+def test_search_nonempty_explicit_parameters_and_distinct_resource_ids(tmp_path, kind, approximate_total):
     _, api, client, _ = service(tmp_path)
     row = {"kind": "youtube#searchResult", "etag": "search-etag",
         "id": {"kind": "youtube#" + kind, kind + "Id": "result-" + kind},
@@ -403,7 +466,7 @@ def test_search_nonempty_explicit_parameters_and_distinct_resource_ids(tmp_path,
         if request.url.path.endswith("/search"):
             assert dict(request.url.params) == expected
             return httpx.Response(200, json={"kind": "youtube#searchListResponse", "etag": "list-etag", "items": [row],
-                "pageInfo": {"totalResults": 900, "resultsPerPage": 5}})
+                "pageInfo": {"totalResults": approximate_total, "resultsPerPage": 5}})
     api.on_read = search
     result = client.search("historia & música", kind=kind, order="date", channel_id="external-channel")
     assert result["complete"] and result["pages"] == 1

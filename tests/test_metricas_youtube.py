@@ -101,6 +101,28 @@ def _monta_respuestas():
     respx.get(ANALYTICS).mock(side_effect=_respuesta_analytics)
 
 
+@pytest.mark.parametrize('dimension', ['elapsedVideoTimeRatio', 'country', 'ageGroup'])
+@respx.mock
+def test_deadline_in_optional_metrics_preserves_base_data(brand, dimension):
+    from socialctl.read_budget import ReadDeadlineExceeded
+    _monta_respuestas()
+    attempted = []
+    def analytics(request):
+        dims = request.url.params['dimensions']
+        attempted.append(dims)
+        if dims == dimension:
+            raise ReadDeadlineExceeded()
+        return _respuesta_analytics(request)
+    respx.get(ANALYTICS).mock(side_effect=analytics)
+    with httpx.Client() as client:
+        lectura = leer_red(Platform.YOUTUBE, brand, client, None)
+    assert lectura.estado is EstadoLectura.OK
+    assert lectura.cuenta.seguidores == 4950
+    assert [(p.id, p.acumulado.vistas) for p in lectura.piezas] == [('vid1', 254)]
+    assert lectura.warnings and lectura.audiencia is None
+    assert attempted[-1] == dimension
+
+
 @respx.mock
 def test_lee_la_cuenta_y_las_piezas(brand):
     with httpx.Client() as client:

@@ -72,6 +72,7 @@ class Pieza(BaseModel):
 class LecturaRed(BaseModel):
     estado: EstadoLectura
     error: str | None = None
+    warnings: list[str] = Field(default_factory=list)
     observed_at: datetime | None = None
     cuenta: Cuenta | None = None
     piezas: list[Pieza] = Field(default_factory=list)
