@@ -25,7 +25,10 @@ from socialctl.workspace import default_root
 
 
 def interactive_terminal():
-    return bool(sys.stdin.isatty())
+    try:
+        return bool(sys.stdin.isatty())
+    except (AttributeError, ValueError, OSError):
+        return False
 
 
 def http_client():
@@ -131,7 +134,7 @@ def register(app):
             previous=brand.leer_secreto(platform)
             if previous.get('auth_mode')=='broker':
                 raise ValueError('this platform already has a connection; disconnect it before reconnecting')
-            if yes and not account_id or not interactive_terminal() and not (yes and account_id):
+            if (yes and not account_id) or (not (yes and account_id) and not interactive_terminal()):
                 raise ValueError('Noninteractive connection requires --account-id ID and --yes after explicit user authorization')
             if account_id is not None:
                 opaque(account_id)

@@ -40,3 +40,12 @@ To roll back, retain the previous image/release and protected env/state. Disable
 ## Acceptance
 
 Verify HTTPS health, disabled-connector errors, query-free logs and existing public media byte hashes. Complete one real browser connection using an authorized test creator; confirm account identity and status without publishing. Then test a second independent creator and permission revocation. Upload demos require an exact dry-run preview and explicit approval. The repository's mocked integration tests establish code behavior, not a completed live pilot or platform approval.
+
+
+### Agent connection release 0.2.1
+
+Deploy the preview-resistant connection server before rolling out the client. Existing clients can open its landing page and the creator presses Connect; client 0.2.1 also accepts older servers that redirect immediately. Neither behavior approves publication. Build with exactly one SocialCli wheel in the Docker build context.
+
+For noninteractive account binding, first obtain the creator’s approval for the exact account and brand, then run `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. Keep the process running while handing the link directly to the creator. The CLI checks its secure credential store before OAuth. Missing confirmation arguments fail before a link is issued. Independent-credential replacement additionally requires `--replace-independent`.
+
+Catchable interruption restores previous local credentials and binding. Forced termination or power loss can interrupt installation between durable file writes; check `socialcli connections --brand MyBrand --json` and restore the affected account metadata from a private backup before retrying if it is inconsistent. Do not repeat an uncertain installation blindly. Provisional server connections expire if activation was not completed; cleanup failure is reported explicitly.

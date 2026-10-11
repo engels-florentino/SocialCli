@@ -92,3 +92,12 @@ Permission consent does not subscribe webhooks or approve comments, moderation o
 
 
 For an agent without interactive stdin, obtain the user’s explicit authorization for the exact account ID and brand first, then use `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. `--yes` confirms this account connection only; it does not authorize publication. Never guess an ID or use its position in a returned list. Replacing independent credentials additionally requires `--replace-independent`. Without these explicit arguments, noninteractive execution stops before creating an authorization link.
+
+
+### Agent connection release 0.2.1
+
+Deploy the preview-resistant connection server before rolling out the client. Existing clients can open its landing page and the creator presses Connect; client 0.2.1 also accepts older servers that redirect immediately. Neither behavior approves publication. Build with exactly one SocialCli wheel in the Docker build context.
+
+For noninteractive account binding, first obtain the creator’s approval for the exact account and brand, then run `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. Keep the process running while handing the link directly to the creator. The CLI checks its secure credential store before OAuth. Missing confirmation arguments fail before a link is issued. Independent-credential replacement additionally requires `--replace-independent`.
+
+Catchable interruption restores previous local credentials and binding. Forced termination or power loss can interrupt installation between durable file writes; check `socialcli connections --brand MyBrand --json` and restore the affected account metadata from a private backup before retrying if it is inconsistent. Do not repeat an uncertain installation blindly. Provisional server connections expire if activation was not completed; cleanup failure is reported explicitly.

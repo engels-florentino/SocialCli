@@ -336,3 +336,16 @@ def test_account_id_selection_ignores_provider_order(tmp_path, monkeypatch):
                                 '--service', 'https://social.example', '--account-id', 'UC-one', '--yes'])
     assert result.exit_code == 0, result.output
     assert cargar_brand(tmp_path, 'Example').cuentas['youtube']['channel_id'] == 'UC-one'
+
+
+def test_exact_binding_does_not_probe_closed_stdin(tmp_path, monkeypatch):
+    server, store, ring = wire(tmp_path, monkeypatch)
+    from socialctl.connections import cli as cli_module
+    crear_brand(tmp_path, 'Example')
+    def closed_stdin():
+        raise ValueError('I/O operation on closed file')
+    monkeypatch.setattr(cli_module, 'interactive_terminal', closed_stdin)
+    result = runner.invoke(app, ['connect', 'youtube', '--brand', 'Example', '--root', str(tmp_path),
+                                '--service', 'https://social.example', '--account-id', 'UC-one', '--yes'])
+    assert result.exit_code == 0, result.output
+    assert len(ring.values) == 1

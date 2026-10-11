@@ -29,7 +29,7 @@ def test_preview_get_head_and_other_browser_do_not_consume(tmp_path):
     assert response.status_code == 303
     assert client.get(url).status_code == 409
     assert 'no-store' in preview.headers['cache-control']
-    assert preview.headers['referrer-policy'] == 'no-referrer'
+    assert preview.headers['referrer-policy'] == 'same-origin'
     assert 'noindex' in preview.headers['x-robots-tag']
 
 
@@ -80,3 +80,45 @@ def test_concurrent_posts_start_only_once(tmp_path):
             return browser.post(url, data={'form_token':token}, headers={'Cookie':cookie}, follow_redirects=False).status_code
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert sorted(pool.map(submit, range(2))) == [303,409]
+
+
+def test_landing_csp_allows_only_its_provider_redirect(tmp_path):
+    client, store = make_service(tmp_path)
+    value, headers = start(client)
+    policy = client.get(value['browser_url']).headers['content-security-policy']
+    form_action = next(part.strip() for part in policy.split(';') if part.strip().startswith('form-action '))
+    assert form_action.split() == ['form-action', "'self'", 'https://accounts.google.com']
+    assert 'https://www.facebook.com' not in form_action
+    assert '*' not in form_action
+
+
+def test_start_does_not_block_event_loop_while_vault_is_locked(tmp_path):
+    import asyncio
+    import threading
+    import time
+    import httpx
+    client, store = make_service(tmp_path)
+    value, headers = start(client)
+    url = value['browser_url']
+    token = form_token(client.get(url))
+    cookie = '; '.join(f'{k}={v}' for k,v in client.cookies.items())
+    locked = threading.Event()
+    def hold_lock():
+        with store.transaction():
+            locked.set()
+            time.sleep(.3)
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url='https://social.example') as browser:
+            started = time.monotonic()
+            task = asyncio.create_task(browser.post(url, data={'form_token':token}, headers={'Cookie':cookie}, follow_redirects=False))
+            await asyncio.sleep(.03)
+            elapsed = time.monotonic() - started
+            assert (await task).status_code == 303
+            return elapsed
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert locked.wait(1)
+    try:
+        assert asyncio.run(exercise()) < .15
+    finally:
+        holder.join()

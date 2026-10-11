@@ -86,8 +86,10 @@ def create_app(settings: Settings, *, store: Store | None = None,
         except Exception:
             response = JSONResponse({'detail':'connection service unavailable'}, status_code=503)
         response.headers.update({'Cache-Control':'no-store', 'Pragma':'no-cache',
-                                 'Referrer-Policy':'no-referrer', 'X-Content-Type-Options':'nosniff',
-                                 'Content-Security-Policy':"default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"})
+                                 'X-Content-Type-Options':'nosniff'})
+        response.headers.setdefault('Referrer-Policy', 'no-referrer')
+        response.headers.setdefault('Content-Security-Policy',
+            "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         return response
 
     def checked(db, kind, record_id, request):
@@ -144,6 +146,12 @@ def create_app(settings: Settings, *, store: Store | None = None,
         token = landing_tokens.issue(authorization_id, cookie, record['expires'])
         response = HTMLResponse('' if request.method == 'HEAD' else landing_page(authorization_id, token))
         response.headers['X-Robots-Tag'] = 'noindex, nofollow'
+        response.headers['Referrer-Policy'] = 'same-origin'
+        provider_origin = {'youtube':'https://accounts.google.com', 'facebook':'https://www.facebook.com',
+                           'instagram':'https://www.facebook.com', 'tiktok':'https://www.tiktok.com'}[record['payload']['platform']]
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self' " + provider_origin
+            + "; frame-ancestors 'none'; base-uri 'none'")
         response.set_cookie(cookie_name, cookie, httponly=True, secure=not settings.allow_http_local,
                             samesite='lax', max_age=SESSION_SECONDS, path='/connect/' + authorization_id)
         return response
@@ -170,14 +178,17 @@ def create_app(settings: Settings, *, store: Store | None = None,
                 request.cookies.get(cookie_name, ''), clock())):
             raise HTTPException(403, 'invalid or expired connection form; restart connect in SocialCli')
         browser_secret = secrets.token_urlsafe(32)
-        with vault.transaction() as db:
-            record = pending_authorization(db, authorization_id)
-            data = record['payload']
-            data.update(state=authorization_id+'.'+secrets.token_urlsafe(32),
-                        browser_hash=digest(browser_secret), verifier=secrets.token_urlsafe(64))
-            vault.put(db,'authorization',authorization_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
-            url = providers.authorization_url(data['platform'], data['state'], data['verifier'],
-                                              management=data['management'], analytics=data['analytics'])
+        def consume_authorization():
+            with vault.transaction() as db:
+                record = pending_authorization(db, authorization_id)
+                data = record['payload']
+                data.update(state=authorization_id+'.'+secrets.token_urlsafe(32),
+                            browser_hash=digest(browser_secret), verifier=secrets.token_urlsafe(64))
+                vault.put(db,'authorization',authorization_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
+                url = providers.authorization_url(data['platform'], data['state'], data['verifier'],
+                                                  management=data['management'], analytics=data['analytics'])
+            return url
+        url = await asyncio.to_thread(consume_authorization)
         response = RedirectResponse(url, status_code=303)
         response.delete_cookie(cookie_name, path='/connect/' + authorization_id,
                                secure=not settings.allow_http_local, httponly=True, samesite='lax')
