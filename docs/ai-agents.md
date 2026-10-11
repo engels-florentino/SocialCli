@@ -13,6 +13,14 @@ Use SocialCli in /path/to/my-social for brand MyBrand.
 Read MyBrand/brand.md and MyBrand/estrategia.md before drafting copy.
 Use socialcli --help and command-specific --help to discover supported options.
 Use JSON output where the command supports it; other commands return text.
+For stats/inbox, set SocialCli's --timeout and allow a longer runner timeout.
+Keep JSON stdout separate from progress stderr; do not capture it with tail.
+Read status, coverage and errors even after exit 1. Keep verified partial data.
+An empty partial inbox does not prove that there are no new comments.
+Full YouTube stats can make two enrichment requests per video plus audience reads.
+Check installed --help before using a proposed option such as --basic.
+Handle routine read limits internally and record sanitized technical warnings.
+Tell me the findings and meaningful missing coverage; ask only when my input is needed.
 Do not expose credentials or read .env/.secrets files into the conversation.
 For account connection, use --no-browser and hand the login link to me.
 Never open, fetch or preview it; only the user should start its single-use authorization.

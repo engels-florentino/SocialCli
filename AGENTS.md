@@ -11,6 +11,32 @@ Public Python CLI for creator-owned social accounts. Run `uv run pytest` and
 - Do not claim platform approval based on sandbox success or this public repo.
 - New tests must use fictional accounts and avoid live publication.
 
+## Metrics and inbox operating rules
+
+- Verify the installed version with the active workspace interpreter. An updated
+  checkout does not update another workspace's virtual environment.
+- Use supported `--json` output and SocialCli's own `--timeout`. Keep stdout as
+  one JSON document and progress on stderr; do not merge streams or use `tail`
+  to capture the result. Any runner timeout must exceed SocialCli's limit with
+  enough grace for local persistence and final output.
+- Exit 1 can contain useful verified observations. Read `status`, `coverage`
+  and `errors`; retain those observations and never interpret a partial empty
+  inbox as proof that no new comments exist. Inspect Meta `skipped_comments`
+  counts and respect unknown creation times and incomplete pagination.
+- Full YouTube stats requests retention and traffic per selected video, plus
+  audience data. Advancing request progress does not prove a hang. `--since`
+  filters publication dates, not the metrics period. Check installed `--help`
+  before using options; do not assume a proposed `--basic` flag exists.
+- Distinguish deadline expiry from connection/proxy/read failures. Bounded reads
+  honor environment proxies, `NO_PROXY` and custom CA settings. Preserve that
+  configuration and report only sanitized diagnostics; never reveal secrets.
+- Handle routine read budgets and partial-result bookkeeping yourself. Give the
+  user concise findings and meaningful coverage limits. Keep technical warnings
+  in the operation record unless they block the task or require user input.
+  Read failures do not authorize reconnecting accounts or repeating writes.
+
+See [the AI agent guide](docs/ai-agents.md) for read examples and limitations.
+
 ## Account connection handoff
 
 AI agents must use `socialcli connect PLATFORM --brand MyBrand --no-browser` and give the printed link directly to the user. Never open, fetch, validate, preview or follow that link with a browser, HTTP client or link-unfurl tool: the user must open it and press Connect on the landing page to start a single-use authorization bound to their browser. Keep the CLI process running while the user signs in and confirms the account. The link expires after ten minutes. If it was already visited, expired or cancelled, restart `connect --no-browser` to generate a fresh link; do not reuse it. Account confirmation still requires the user’s explicit approval.
