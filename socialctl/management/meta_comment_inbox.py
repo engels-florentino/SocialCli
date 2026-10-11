@@ -43,6 +43,10 @@ class InboxComment(BaseModel):
     author_name: str | None = None
     text: str
     created_time: str | None = None
+    parent_id: str | None = None
+    original_text: str | None = None
+    provider_updated_at: str | None = None
+    last_observed_at: str | None = None
     observed_at: str
     updated_at: str
     language: Literal["es", "en", "und"]
@@ -64,6 +68,8 @@ class InboxCursor(BaseModel):
     platform: Literal["facebook", "instagram"]
     account_id: str
     media_id: str
+    parent_id: str | None = None
+    requested_since: str | None = None
     since: str | None = None
     provider_cursor: str | None = None
     last_sync_at: str
@@ -176,9 +182,9 @@ class CommentInboxStore:
             os.close(descriptor)
 
 
-def _cursor(data: InboxData, client: MetaCommentsClient, media_id: str) -> InboxCursor | None:
-    rows = [row for row in data.cursors if (row.platform, row.account_id, row.media_id) ==
-            (client.platform.value, client.account_id, media_id)]
+def _cursor(data: InboxData, client: MetaCommentsClient, media_id: str, parent_id=None) -> InboxCursor | None:
+    rows = [row for row in data.cursors if (row.platform, row.account_id, row.media_id, row.parent_id) ==
+            (client.platform.value, client.account_id, media_id, parent_id)]
     if len(rows) > 1:
         raise CommentError("ambiguous durable state for media cursor")
     return rows[0] if rows else None
@@ -210,21 +216,22 @@ def grouped_inbox(data: InboxData, *, platform: str | None = None, media_id: str
 
 
 def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id: str,
-               since: str | None = None, max_pages: int = 100) -> dict:
+               since: str | None = None, max_pages: int = 100, parent_id: str | None = None, resume: bool = False) -> dict:
     if not 1 <= max_pages <= 100:
         raise CommentError("max_pages must be between 1 and 100")
     media_id = str(media_id)
     current = store.load()
-    prior_cursor = _cursor(current, client, media_id)
+    prior_cursor = _cursor(current, client, media_id, parent_id)
     explicit_since = _canonical_time(since) if since is not None else None
     effective_since = explicit_since or (prior_cursor.since if prior_cursor else None)
     # An explicit cut-off starts a fresh traversal. A cursor belongs to the
     # older traversal and must never override the caller's requested boundary.
-    resume_cursor = (prior_cursor.provider_cursor if since is None and prior_cursor
-                     and not prior_cursor.complete else None)
+    resume_cursor = (prior_cursor.provider_cursor if prior_cursor and not prior_cursor.complete
+                     and (since is None or (resume and explicit_since == prior_cursor.requested_since)) else None)
     cursor_recovered = False
     try:
-        listing = client.list_comments(media_id, max_pages=max_pages, after=resume_cursor)
+        listing = client.list_comments(media_id, max_pages=max_pages, after=resume_cursor,
+            **({"parent_id":parent_id} if parent_id else {}))
     except CommentCursorRejected:
         if resume_cursor is None:
             raise
@@ -235,7 +242,8 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             anchor = _parse_time(prior_cursor.last_sync_at, "cursor timestamp")
             effective_since = (anchor - CURSOR_FALLBACK_WINDOW).isoformat().replace(
                 "+00:00", "Z")
-        listing = client.list_comments(media_id, max_pages=max_pages, after=None)
+        listing = client.list_comments(media_id, max_pages=max_pages, after=None,
+            **({"parent_id":parent_id} if parent_id else {}))
         cursor_recovered = True
     now = now_utc().isoformat()
     remote: dict[str, dict] = {}
@@ -274,36 +282,40 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
                 observed_times.append(created)
             language, kind = classify_comment(text)
             if previous:
-                if previous.media_id != media_id:
+                previous.last_observed_at = now
+                previous.provider_updated_at = raw.get('updated_time')
+                if previous.original_text is None: previous.original_text = previous.text
+                if (previous.media_id, previous.parent_id) != (media_id, parent_id):
                     raise CommentError("remote ID already belongs to another inbox item")
                 if previous.text != text:
                     previous.text, previous.language, previous.kind = text, language, kind
                     previous.updated_at = now
-                    previous.journal.append({"at": now, "event": "remote_text_changed"})
+                    previous.journal.append({"at": now, "event": "remote_text_changed", "text":text})
                     updated += 1
                 else:
                     unchanged += 1
                 continue
             name = author.get("name") or author.get("username")
             record = InboxComment(platform=client.platform.value, account_id=client.account_id,
-                media_id=media_id, comment_id=ident, author_id=author_id,
+                media_id=media_id, parent_id=parent_id, comment_id=ident, author_id=author_id,
                 author_name=name if isinstance(name, str) else None, text=text,
-                created_time=created, observed_at=now, updated_at=now,
+                created_time=created, original_text=text, last_observed_at=now,
+                provider_updated_at=raw.get('updated_time'), observed_at=now, updated_at=now,
                 language=language, kind=kind,
                 journal=[{"at": now, "event": "observed_by_incremental_get"}])
             data.comments.append(record)
             existing[key] = record
             added += 1
-        cursor = _cursor(data, client, media_id)
+        cursor = _cursor(data, client, media_id, parent_id)
         all_times = [row.created_time for row in data.comments
-            if (row.platform, row.account_id, row.media_id) ==
-               (client.platform.value, client.account_id, media_id) and row.created_time]
+            if (row.platform, row.account_id, row.media_id, row.parent_id) ==
+               (client.platform.value, client.account_id, media_id, parent_id) and row.created_time]
         completed_cutoffs = [*all_times, *observed_times]
         if effective_since is not None:
             completed_cutoffs.append(effective_since)
         next_since = max(completed_cutoffs) if listing["complete"] and completed_cutoffs else effective_since
         new_cursor = InboxCursor(platform=client.platform.value, account_id=client.account_id,
-            media_id=media_id, since=next_since, provider_cursor=listing.get("next_cursor"),
+            media_id=media_id, parent_id=parent_id, requested_since=explicit_since, since=next_since, provider_cursor=listing.get("next_cursor"),
             last_sync_at=now, complete=listing["complete"])
         if cursor:
             data.cursors[data.cursors.index(cursor)] = new_cursor
@@ -311,9 +323,9 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             data.cursors.append(new_cursor)
         store.save(data)
     return {"platform": client.platform.value, "account_id": client.account_id,
-        "media_id": media_id, "since_used": effective_since, "next_since": next_since,
+        "media_id": media_id, "observed_at": now, "since_used": effective_since, "next_since": next_since,
         "provider_cursor": listing.get("next_cursor"), "complete": listing["complete"],
-        "cursor_recovered": cursor_recovered,
+        "cursor_recovered": cursor_recovered, "interrupted":listing.get("interrupted",False), "parent_ids": list(remote), "error": listing.get("error"),
         "new": added, "updated": updated,
         "deduplicated": unchanged + len(listing["data"]) - len(remote),
         "skipped_own": skipped_own, "skipped_before_since": skipped_before_since,

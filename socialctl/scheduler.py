@@ -504,6 +504,8 @@ def approval_hash(post: Post, brand: Brand, platform: Platform) -> str:
         value = getattr(platform_post, field)
         if value is not None:
             approved["payload"][field] = value
+    if post.source_mapping_digest is not None:
+        approved["payload"]["source_mapping_digest"] = post.source_mapping_digest
     digest = hashlib.sha256(_canonical_json(approved))
     for asset in platform_post.media:
         digest.update(b"\0media-bytes\0")

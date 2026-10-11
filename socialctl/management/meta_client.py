@@ -71,7 +71,8 @@ class MetaClient:
                 if not response.is_success:
                     error = (MetaUncertain if response.status_code >= 500 or response.is_redirect or response.status_code in {408, 429}
                              else MetaRejected) if writing else MetaError
-                    raise error(f"Meta HTTP {response.status_code}; check permissions/eligibility")
+                    from socialctl.management.meta_errors import graph_error
+                    raise error(graph_error(response, method, path, self._token))
                 raw = bytearray()
                 for chunk in response.iter_bytes():
                     raw.extend(chunk)
@@ -333,6 +334,8 @@ class MetaClient:
                 raise MetaError("comment/moderation status not verified on owned media")
             return {"id": edit.comment_id, "hidden": rows[0][hidden]}
         if edit.action in {"like", "unlike"}:
+            if self.token_mode != 'facebook_page':
+                raise MetaError('Facebook likes require the connected Page token; a user token is not substituted')
             result = self.listing(edit.target_id, "likes", fields="id")
             if not result["complete"]:
                 raise MetaError("incomplete likes; absence not inferred")

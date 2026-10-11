@@ -105,6 +105,7 @@ class PlatformPost(BaseModel):
 
 
 class Post(BaseModel):
+    source_mapping_digest: str | None = Field(default=None, exclude_if=lambda value: value is None)
     slug: str
     brand: str
     campaign: CampaignType

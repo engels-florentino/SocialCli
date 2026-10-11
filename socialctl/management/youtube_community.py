@@ -85,6 +85,10 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                     break
                 tokens.add(next_token)
                 token = next_token
+            except KeyboardInterrupt:
+                result["error"] = "Read interrupted; verified items retained"
+                result["interrupted"] = True
+                break
             except ResourceError as exc:
                 result["error"] = str(exc)
                 break
@@ -148,13 +152,16 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
         return self._pages("comments", {"part": "snippet", "parentId": parent_id, "textFormat": "plainText"},
             lambda row: self._comment(row, parent=parent_id), max_pages=max_pages)
 
-    def find_comment(self, video_id, thread_id, comment_id, parent_id=None, *, moderation=False, cache=None):
+    def find_comment(self, video_id, thread_id, comment_id, parent_id=None, *, moderation=False, cache=None, allow_partial=False):
         opaque_id(comment_id)
         cache = {} if cache is None else cache
         if parent_id is not None:
             key = (video_id, thread_id, parent_id)
             if key not in cache:
-                cache[key] = self.list_replies(video_id, thread_id, parent_id)["items"]
+                report = self.list_replies(video_id, thread_id, parent_id)
+                if not report['complete'] and not (allow_partial and str(report.get('error', '')).startswith('pagination metadata missing')):
+                    complete(report)
+                cache[key] = report['items']
             rows = cache[key]
         elif moderation:
             rows = []

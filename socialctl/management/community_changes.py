@@ -282,7 +282,7 @@ def readback(client, store, change):
         elif receipt.get("identity_valid") and change.result_id:
             target = {"video_id": edit.video_id, "thread_id": receipt.get("thread_id", edit.thread_id),
                 "comment_id": change.result_id, "parent_id": edit.parent_id}
-            row = client.find_comment(**target)
+            row = client.find_comment(**target, allow_partial=True)
             matches = author(row) == change.target_account and row["snippet"].get("textOriginal") == edit.text
             _event(change, "comment_readback", matches=matches, comment_id=change.result_id)
             if matches:
@@ -329,6 +329,11 @@ def apply_community(client, store, change_id, approval_digest):
             other = store.load(path.stem)
             if other.id != change.id and keys & operation_keys(other) and other.status in {"applying", "uncertain", "partial"}:
                 raise ResourceError(f"uncertain outcome pending in {other.id}; another UUID does not allow repetition")
+            if (other.id != change.id and other.status == "verified"
+                    and other.target_account == change.target_account
+                    and edit.action in {"add", "reply"}
+                    and other.edit == change.edit):
+                raise ResourceConflict("identical comment already verified locally; another UUID does not allow repetition")
         try:
             if baseline(client, edit) != change.before:
                 raise ResourceConflict("conflict: status/author changed since preview")

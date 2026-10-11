@@ -13,6 +13,7 @@ import re
 import tempfile
 import uuid
 from pathlib import Path
+from contextlib import ExitStack
 from typing import Literal
 
 import httpx
@@ -70,6 +71,11 @@ class MetaCommentsClient:
         except AuthError:
             raise CommentError("Meta requires valid brand credentials") from None
         writing = method != "GET"
+        probe_budget = getattr(self, '_probe_budget', None)
+        if probe_budget is not None and not writing:
+            probe_budget.check()
+            kwargs['timeout'] = min(10, probe_budget.remaining())
+            kwargs['extensions'] = {'socialcli_read_budget':probe_budget}
         try:
             response = self.client.request(method, f"{GRAPH}/{path}",
                 headers={"Authorization": f"Bearer {token}"}, follow_redirects=False, **kwargs)
@@ -92,7 +98,8 @@ class MetaCommentsClient:
                             "Meta rejected saved incremental cursor")
             error = (CommentUncertain if response.status_code >= 500 or response.is_redirect
                      else CommentRejected) if writing else CommentError
-            raise error(f"Meta HTTP {response.status_code}: operation unconfirmed; check permissions")
+            from socialctl.management.meta_errors import graph_error
+            raise error(graph_error(response, method, path, token))
         try:
             data = response.json()
             if not isinstance(data, dict) or "error" in data:
@@ -144,10 +151,25 @@ class MetaCommentsClient:
             params["after"] = after
         rows, cursors, last_cursor = [], ({after} if after else set()), None
         for _ in range(max_pages):
-            payload = self._request("GET", path, params=params)
+            try:
+                payload = self._request("GET", path, params=params)
+            except KeyboardInterrupt:
+                if not rows: raise
+                return {"data":rows, "complete":False, "absence_proven":False,
+                        "next_cursor":params.get("after"), "error":"Read interrupted", "interrupted":True}
+            except CommentCursorRejected as exc:
+                if not rows: raise
+                return {"data":rows, "complete":False, "absence_proven":False,
+                        "next_cursor":None, "error":str(exc)}
+            except CommentError as exc:
+                if not rows: raise
+                return {"data":rows, "complete":False, "absence_proven":False,
+                        "next_cursor":params.get("after"), "error":str(exc)}
             data = payload.get("data")
             if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
-                raise CommentError("Meta: invalid comments list")
+                if not rows: raise CommentError("Meta: invalid comments list")
+                return {"data":rows, "complete":False, "absence_proven":False,
+                        "next_cursor":params.get("after"), "error":"Meta: invalid later comments page"}
             rows.extend(data)
             paging = payload.get("paging", {})
             if not isinstance(paging, dict):
@@ -171,6 +193,12 @@ class MetaCommentsClient:
         if len(matches) != 1:
             raise CommentError("comment not verified on media; absence or permissions inconclusive")
         row = matches[0]
+        if self.platform is Platform.FACEBOOK:
+            explicit_parent = (row.get('parent') or {}).get('id')
+            if explicit_parent is not None and explicit_parent != (parent_id or media_id):
+                raise CommentError('comment parent differs from requested target')
+        elif row.get('parent_id') is not None and row['parent_id'] != parent_id:
+            raise CommentError('comment parent differs from requested target')
         field = "message" if self.platform is Platform.FACEBOOK else "text"
         if not isinstance(row.get(field), str):
             raise CommentError("comment does not return verifiable text")
@@ -180,9 +208,48 @@ class MetaCommentsClient:
         return {"id": comment_id, "text": row[field], "author_id": author.get("id"),
                 "media_id": media_id, "parent_id": parent_id}
 
+    def inspect_comment(self, comment_id: str) -> dict:
+        if self.platform is not Platform.FACEBOOK:
+            raise CommentError('direct comment inspection is supported here only for Facebook')
+        comment_id = _id(comment_id)
+        return self._request('GET', comment_id,
+            params={'fields':'id,message,from{id},parent{id},object{id}'})
+
     def verify_comment(self, change):
-        current = self.find_comment(change.media_id, change.remote_id,
-                                    parent_id=change.parent_id, own=True)
+        from socialctl.read_budget import ReadBudget
+        self._probe_budget = ReadBudget(10)
+        try:
+            return self._verify_comment(change)
+        except httpx.HTTPError:
+            raise CommentError('Meta comment verification exceeded its read budget or failed') from None
+        finally:
+            self._probe_budget = None
+
+    def _verify_comment(self, change):
+        current = None
+        if self.platform is Platform.FACEBOOK:
+            self.inspect_media(change.media_id)
+            row = None
+            # Read-only eventual-consistency probes. A missing direct read can fall
+            # back to exact membership; a contradictory object never becomes proof.
+            for _ in range(3):
+                try:
+                    row = self.inspect_comment(change.remote_id)
+                    break
+                except CommentError:
+                    pass
+            if row is not None:
+                parent = (row.get('parent') or {}).get('id')
+                media = (row.get('object') or {}).get('id')
+                target_matches = (parent == change.parent_id and media in {None, change.media_id}) if change.parent_id else (
+                    media == change.media_id and parent is None or parent == change.media_id and media in {None, change.media_id})
+                if row.get('id') != change.remote_id or (row.get('from') or {}).get('id') != self.account_id or not target_matches:
+                    raise CommentError('direct comment identity, actor or target does not match approved effect')
+                current = {'id':row['id'], 'text':row.get('message'), 'author_id':self.account_id,
+                    'media_id':change.media_id, 'parent_id':change.parent_id}
+        if current is None:
+            current = self.find_comment(change.media_id, change.remote_id,
+                                        parent_id=change.parent_id, own=True)
         if current["text"] != change.text:
             raise CommentError("remote text differs from approved text")
         return current
@@ -360,14 +427,27 @@ def reconcile_comment(client, store, change_id):
         return _reconcile(client, store, store.load(change_id))
 
 
+def operation_key(change):
+    return json.dumps([change.brand_root, change.platform, change.account_id, change.media_id])
+
+
 def apply_comment(client, store, change_id, approval_digest):
-    with store.apply_lock(change_id):
+    with ExitStack() as locks:
+        locks.enter_context(store.apply_lock(change_id))
         change = store.load(change_id)
         if not hmac.compare_digest(approval_digest, change.fingerprint):
             raise CommentError("approval does not match exact fingerprint")
+        locks.enter_context(store.apply_lock(str(uuid.uuid5(uuid.NAMESPACE_URL, operation_key(change)))))
         _bound(client, change)
         if change.status != "proposed":
             return _reconcile(client, store, change)
+        for path in store.root.glob('*.json'):
+            other = store.load(path.stem)
+            if other.id != change.id and operation_key(other) == operation_key(change):
+                if other.status in {'applying','uncertain'}:
+                    raise CommentError(f'uncertain outcome pending in {other.id}; another UUID cannot replay it')
+                if other.status == 'verified' and (other.action,other.parent_id,other.comment_id,other.text) == (change.action,change.parent_id,change.comment_id,change.text):
+                    raise CommentError('identical verified operation already exists; do not duplicate')
         if change.parent_id and client.find_comment(change.media_id, change.parent_id) != change.before["parent"]:
             raise CommentError("parent comment changed since preview")
         if change.comment_id and client.find_comment(change.media_id, change.comment_id,

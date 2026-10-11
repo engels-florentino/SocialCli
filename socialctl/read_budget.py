@@ -65,6 +65,7 @@ class BudgetTransport(httpx.BaseTransport):
             if self.progress:
                 self.progress()
             extensions = dict(request.extensions)
+            extensions.pop('socialcli_read_budget', None)
             existing = extensions.get('timeout', {})
             extensions['timeout'] = {key:min(value if value is not None else 30, self.budget.remaining())
                                      for key,value in {**dict.fromkeys(('connect','read','write','pool'),30), **existing}.items()}
@@ -113,7 +114,15 @@ class BudgetTransport(httpx.BaseTransport):
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         self.budget.check()
         request.read()
-        return self.runner.run(self._read(request))
+        original = self.budget
+        nested = request.extensions.get('socialcli_read_budget')
+        if nested is not None:
+            nested.check()
+            self.budget = ReadBudget(min(original.remaining(), nested.remaining()))
+        try:
+            return self.runner.run(self._read(request))
+        finally:
+            self.budget = original
 
     def close(self) -> None:
         if not self.closed:

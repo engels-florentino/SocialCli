@@ -707,7 +707,7 @@ wheels = [
 
 [[package]]
 name = "socialcli"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -723,6 +723,9 @@ connection-server = [
     { name = "fastapi" },
     { name = "uvicorn" },
 ]
+headless-credentials = [
+    { name = "cryptography" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -735,6 +738,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", marker = "extra == 'connection-server'", specifier = ">=43" },
+    { name = "cryptography", marker = "extra == 'headless-credentials'", specifier = ">=43" },
     { name = "fastapi", marker = "extra == 'connection-server'", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "keyring", specifier = ">=25.0" },
@@ -743,7 +747,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.27.2" },
     { name = "uvicorn", marker = "extra == 'connection-server'", specifier = ">=0.30" },
 ]
-provides-extras = ["connection-server"]
+provides-extras = ["headless-credentials", "connection-server"]
 
 [package.metadata.requires-dev]
 dev = [

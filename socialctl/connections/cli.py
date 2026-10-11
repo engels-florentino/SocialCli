@@ -142,7 +142,7 @@ def register(app):
                 raise ValueError('--replace-independent requires --account-id ID and --yes')
             if previous and yes and not replace_independent:
                 raise ValueError('Replacing independent credentials requires explicit --replace-independent')
-            keychain.ensure_available()
+            keychain.ensure_available(brand)
             poll_secret=secrets.token_urlsafe(32)
             with http_client() as transport:
                 broker=BrokerClient(service,transport,allow_http_local=dev_local)

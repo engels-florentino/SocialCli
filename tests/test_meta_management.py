@@ -340,3 +340,20 @@ def test_native_schedule_changed_or_published_prevents_mutation(tmp_path):
     with pytest.raises(ValueError, match="changed"):
         mod.apply_meta(client, store, change.id, change.fingerprint)
     assert not graph.writes
+
+
+def test_streaming_graph_error_reports_permission_code_without_secret(tmp_path):
+    mod, _, _, client, _ = service(tmp_path)
+    client.client=httpx.Client(transport=httpx.MockTransport(lambda r:httpx.Response(400,json={'error':{'code':200,'error_subcode':9,'message':'SECRET access_token=SECRET','fbtrace_id':'safe-ref'}})))
+    with pytest.raises(ValueError) as error:
+        client.request('POST','123_789/likes')
+    message=str(error.value)
+    assert '200' in message and '9' in message and 'safe-ref' in message and 'pages_manage_engagement' in message
+    assert 'SECRET' not in message
+
+
+def test_user_token_cannot_substitute_page_for_like(tmp_path):
+    mod, _, graph, client, store=service(tmp_path,user=True)
+    with pytest.raises(ValueError,match='Page token'):
+        mod.prepare_meta(client,store,{'action':'like','target_id':'123_789'})
+    assert not graph.writes

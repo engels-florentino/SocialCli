@@ -87,7 +87,7 @@ def broker_access_token(brand,platform,client,*,refresh=True):
         raise ValueError('brand account differs from its connection; reconnect explicitly')
     secret=keychain.get(brand,platform,metadata)
     if not isinstance(secret,str) or not 16<=len(secret)<=512:
-        raise ValueError('connection credential unavailable in the secure OS keyring')
+        raise ValueError('connection credential unavailable in the selected secure credential store')
     result=broker.request('POST',f'/v1/connections/{connection_id}/token'+('' if refresh else '?refresh=false'),secret=secret)
     if result.get('platform')!=platform.value or result.get('account',{}).get('id')!=expected:
         raise ValueError('connection account mismatch; reconnect explicitly')

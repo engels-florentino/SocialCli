@@ -1,6 +1,6 @@
 [project]
 name = "socialcli"
-version = "0.2.2"
+version = "0.2.3"
 description = "SocialCli: publish and manage creator-owned social content from the terminal."
 readme = "README.md"
 license = "MIT"
@@ -23,6 +23,7 @@ Repository = "https://github.com/engels-florentino/SocialCli"
 Issues = "https://github.com/engels-florentino/SocialCli/issues"
 
 [project.optional-dependencies]
+headless-credentials = ["cryptography>=43"]
 connection-server = [
     "cryptography>=43",
     "fastapi>=0.115",

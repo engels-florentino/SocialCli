@@ -61,3 +61,29 @@ socialcli publish my-video --brand MyBrand --only tiktok --dry-run
 ```
 
 Use `socialcli COMMAND --help` for available options. Do not post complete private diagnostics in issues. Before deleting a brand, save anything you need and separately revoke platform permissions; deleting a local file does not revoke remote access.
+
+### Community verification and likes
+
+Facebook likes currently target owned Page content through `meta prepare` with an
+explicit `like`/`unlike` proposal. They require the connected Page identity,
+`pages_manage_engagement`, the applicable Page task and an eligible object. App
+configuration alone does not prove that a connected creator granted the scope.
+Graph diagnostics include safe code/subcode and reference when available; HTTP 400
+alone cannot identify a missing permission. Reconnect after changing consent.
+
+YouTube supports video ratings through an exact community proposal, not comment
+likes or creator hearts. Instagram and TikTok comment likes are unsupported by
+these integrations. Facebook returned comment IDs are verified directly when the
+provider exposes exact actor/parent/media evidence; ambiguity stays uncertain.
+Synthetic regression tests do not establish live account eligibility.
+
+
+## Agent reliability workflows
+
+See [capabilities and required grants](docs/capabilities.md),
+[bounded inbox reads and exact source links](docs/ai-agents.md), and
+[explicit headless capability storage](docs/connections.md#headless-encrypted-capability-storage).
+Source maps live in the creator brand workspace as version 1 `source-videos.yml`;
+registered exact post slugs are applied before previews. `publish --source-link`
+requires a resolved map. Full preview and explicit approval still cover each
+publication/comment effect.

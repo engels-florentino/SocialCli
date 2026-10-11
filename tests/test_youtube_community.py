@@ -474,3 +474,11 @@ def test_reply_preparation_with_missing_list_metadata_keeps_limitation_and_block
     with pytest.raises(ResourceError, match='uncertain'):
         apply_community(client, store, another.id, another.fingerprint)
     assert not api.writes
+
+
+def test_contradictory_partial_list_cannot_authorize_reply_delete(tmp_path):
+    _,api,client,store=service(tmp_path)
+    api.on_read=lambda r:httpx.Response(200,json={'items':api.replies,'pageInfo':{'totalResults':1,'resultsPerPage':0}}) if r.url.path.endswith('/comments') else None
+    with pytest.raises(ResourceError,match='incomplete'):
+        prepare_community(client,store,{'action':'delete','video_id':'video-1','thread_id':'UgxThread','parent_id':'UgxTop','comment_id':api.replies[0]['id']})
+    assert not api.writes

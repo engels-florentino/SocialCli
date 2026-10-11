@@ -45,7 +45,7 @@ socialcli disconnect youtube --brand MyBrand
 socialcli connect youtube --brand MyBrand --management
 ```
 
-Your OS credential store must be available and unlocked. Supported keyring backends are macOS Keychain, Windows Credential Manager, Secret Service, libsecret and KWallet; the underlying CLI currently targets macOS/Linux because other features use POSIX facilities. Plaintext and absent keyrings are rejected. Headless installations need a configured secure system keyring or the existing independent-app authentication mode.
+Your OS credential store must be available and unlocked. Supported keyring backends are macOS Keychain, Windows Credential Manager, Secret Service, libsecret and KWallet; the underlying CLI currently targets macOS/Linux because other features use POSIX facilities. Plaintext and absent keyrings are rejected. Headless installations can explicitly select the encrypted capability store documented below, configure a secure system keyring, or use independent-app authentication.
 
 ## Credential handling
 
@@ -101,3 +101,58 @@ Deploy the preview-resistant connection server before rolling out the client. Ex
 For noninteractive account binding, first obtain the creator’s approval for the exact account and brand, then run `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. Keep the process running while handing the link directly to the creator. The CLI checks its secure credential store before OAuth. Missing confirmation arguments fail before a link is issued. Independent-credential replacement additionally requires `--replace-independent`.
 
 Catchable interruption restores previous local credentials and binding. Forced termination or power loss can interrupt installation between durable file writes; check `socialcli connections --brand MyBrand --json` and restore the affected account metadata from a private backup before retrying if it is inconsistent. Do not repeat an uncertain installation blindly. Provisional server connections expire if activation was not completed; cleanup failure is reported explicitly.
+
+## Headless encrypted capability storage
+
+The supported OS keyring remains the default. SocialCli never silently falls back.
+Linux/macOS servers can explicitly install `socialcli[headless-credentials]` and
+select authenticated encrypted-file storage. Only creator connection capabilities
+are stored; provider application secrets remain on the connection service.
+
+Create a private directory outside every Git repository (`chmod 700`) and an
+external Fernet key file (`chmod 600`). Generate the key using Python's
+`cryptography.fernet.Fernet.generate_key()` and write it directly to that file;
+never put the key value in a command argument, chat, `.env` or Git.
+
+```sh
+socialcli credentials configure --backend encrypted-file \
+  --store-file /secure/socialcli/capabilities.json \
+  --key-file /secure/socialcli/master.key --brand Example --yes
+socialcli credentials status --brand Example
+```
+
+Both files require a directory owned by the current user with mode 0700; files
+must have mode 0600. Symlinks and hard links are rejected. Configuration stores
+only paths/backend in the brand's `.secrets/credential-store.json`. Keep key backups
+separate from encrypted capability backups. Losing every copy of the key makes
+these capabilities unrecoverable; reconnect accounts to create new capabilities.
+
+For an already connected brand use `credentials migrate --to encrypted-file` with
+the same path options, or `credentials migrate --to keyring`. Migration verifies
+all destination capabilities before switching configuration and deleting sources.
+A failure can leave redundant encrypted destination records; the source stays
+active until the configuration switches. After a reported source-cleanup failure,
+the verified destination is active and redundant source records need removal.
+
+Rotate with `credentials rotate --new-key-file /secure/socialcli/next.key --brand
+Example --yes`. Supply a different protected key. Rotation keeps an encrypted
+`.before-rotation` backup. Keep the old key separately until that backup is archived.
+A process/power failure between store replacement and configuration switching may
+require restoring that backup to the store path with mode 0600 and selecting the
+old key. Ordinary caught failures restore the previous encrypted store. Archive
+or remove the recovery generation before another rotation. Disconnect uses the
+selected backend and does not require switching back to keyring.
+
+Use one encrypted store per brand. Store/key paths must be outside the creator
+workspace as well as Git repositories, so they cannot replace configuration,
+platform metadata, locks or recovery files. A key cannot use a store's lock or
+backup path. Shared stores across brands are rejected before configuration.
+
+
+## Agent reliability release 0.2.3
+
+Client 0.2.3 uses the existing version 1 broker protocol and is compatible with the
+preview-resistant server deployed with client 0.2.1. No new provider permissions
+are introduced by this reliability release. The local encrypted backend is an
+explicit opt-in; existing keyring capabilities are not migrated automatically.
+See [capabilities and limits](capabilities.md) and the [agent guide](ai-agents.md).

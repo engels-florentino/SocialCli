@@ -1,0 +1,117 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Capabilities and limits · SocialCli</title><meta name="description" content="SocialCli: social media tools for terminal-enabled AI agents, with previews and user approval."><link rel="stylesheet" href="style.css"><link rel="icon" type="image/png" href="assets/socialcli-logo.png"><link rel="apple-touch-icon" href="assets/socialcli-logo.png"><meta property="og:type" content="website"><meta property="og:site_name" content="SocialCli"><meta property="og:title" content="Capabilities and limits · SocialCli"><meta property="og:description" content="Social media tools for AI agents, with previews and user approval."><meta property="og:url" content="https://engels-florentino.github.io/SocialCli/capabilities.html"><meta property="og:image" content="https://engels-florentino.github.io/SocialCli/assets/socialcli-logo.png"><meta property="og:image:width" content="1254"><meta property="og:image:height" content="1254"><meta property="og:image:alt" content="SocialCli logo: S and terminal prompt >_"><meta name="twitter:card" content="summary"><meta name="twitter:image" content="https://engels-florentino.github.io/SocialCli/assets/socialcli-logo.png"></head><body><header><a class="logo" href="index.html"><img src="assets/socialcli-logo.png" width="44" height="44" alt=""><span>SocialCli</span></a><nav><a href="ai-agents.html">AI agents</a><a href="installation.html">Install</a><a href="guide.html">Guide</a><a href="platforms.html">Platforms</a><a href="connections.html">Connect</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli">GitHub</a></nav></header><main><h1 id="capabilities-permissions-and-limits">Capabilities, permissions and limits</h1>
+<p>SocialCli 0.2.3 · verified implementation scope, October 10, 2026.</p>
+<p>A supported command is not proof of access. Provider app eligibility/review,
+creator consent, token grants, actor role and object eligibility all matter.
+Adding permissions in a developer dashboard does not add them to existing tokens;
+reconnect with the requested optional access and have the creator consent.
+<code>--analytics</code> and <code>--management</code> request separate optional permissions.</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>SocialCli support</th>
+<th>Required access and identity</th>
+<th>Object and verification limits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Connect accounts</td>
+<td>YouTube, Facebook, Instagram, TikTok through configured service</td>
+<td>Creator OAuth consent; exact account binding; provider app eligible for this creator</td>
+<td>Sandbox/Testing/development restrictions still apply. Agent hands off link, never opens it.</td>
+</tr>
+<tr>
+<td>Account/content metrics</td>
+<td>Provider-specific <code>stats</code>; YouTube Analytics optional</td>
+<td>YouTube read/Analytics grants; Facebook <code>read_insights</code> and Page read access; Instagram <code>instagram_manage_insights</code> plus basic/Page access; TikTok authorized user/video read grants</td>
+<td>Metrics vary by account/content and date. Unsupported metrics are null, not zero. Partial coverage exits 1.</td>
+</tr>
+<tr>
+<td>Unified comment inbox</td>
+<td>Owned YouTube uploads, Facebook feed, Instagram media</td>
+<td>YouTube authenticated channel/read access; Facebook Page read/user-content grants; Instagram basic/comment grants and linked Page/professional account</td>
+<td>Published YouTube threads/replies; Meta top-level/direct replies only. Provider visibility, page limits and budgets apply. TikTok inbox comments unsupported.</td>
+</tr>
+<tr>
+<td>Add/reply to comments</td>
+<td>YouTube and Meta exact supervised proposals</td>
+<td>YouTube <code>youtube.force-ssl</code>; Facebook Page identity with <code>pages_manage_engagement</code> and applicable read grants; Instagram <code>instagram_manage_comments</code>, basic/Page grants</td>
+<td>Exact actor and media/parent verification required. Missing pagination metadata never proves absence. Unknown previous writes block repeats.</td>
+</tr>
+<tr>
+<td>Facebook like/unlike</td>
+<td>Owned Page posts/videos through Meta management</td>
+<td>Connected Page token, <code>pages_manage_engagement</code>, applicable Page task and read access</td>
+<td>Current CLI verifies owned content and full relevant likes traversal. It does not expose a general comment-like command or arbitrary-profile actions. HTTP 400 alone does not identify a missing permission.</td>
+</tr>
+<tr>
+<td>YouTube video rating</td>
+<td>Like/dislike/none through community proposal</td>
+<td>Authenticated channel with <code>youtube.force-ssl</code>; eligible video</td>
+<td>A video rating is distinct from a comment like/heart.</td>
+</tr>
+<tr>
+<td>Comment likes/hearts</td>
+<td>Not exposed for YouTube, Instagram or TikTok; Facebook general comment-like command not exposed</td>
+<td>Additional permissions cannot create an unimplemented endpoint</td>
+<td>Do not substitute video ratings, comment replies or a guessed endpoint.</td>
+</tr>
+<tr>
+<td>Publish content</td>
+<td>Existing provider adapters with full preview and explicit approval</td>
+<td>YouTube upload grants; Facebook <code>pages_manage_posts</code> plus Page access; Instagram <code>instagram_content_publish</code> plus basic/Page access; TikTok <code>video.upload</code> for inbox</td>
+<td>Creator-supplied media only. Instagram downloads require accessible media URLs. TikTok inbox handoff is not public publication. Direct Post production UX/review remains separate.</td>
+</tr>
+<tr>
+<td>Exact source link</td>
+<td>Explicit version 1 post-slug map, included in preview</td>
+<td>Same publication/comment grants as its placement</td>
+<td>YouTube/Meta follow-up comment; TikTok caption. No automatic pinning; Instagram/TikTok clickability not promised. Changed maps invalidate pending mapped intent.</td>
+</tr>
+<tr>
+<td>Community batch</td>
+<td>YouTube reply/rating, Meta add/reply, Facebook owned-content like/unlike</td>
+<td>One exact batch digest approved by creator; each child still verifies grants/actor/target</td>
+<td>Ordered immutable list, sequential stop on failure/uncertainty; no transaction or rollback. Reconcile never starts pending children.</td>
+</tr>
+<tr>
+<td>Disconnect</td>
+<td>Local capability removal and service connection deletion</td>
+<td>Exact selected brand/platform</td>
+<td>Service disconnection is not provider-side revocation. Revoke app access in provider settings when required.</td>
+</tr>
+</tbody>
+</table>
+<p>Required permissions above describe the supported integration, not a claim that
+any connected account currently holds them. Meta Business Manager roles and
+features can impose additional requirements. External creators require the
+provider's applicable Advanced Access, app verification/review or production
+approval. The hosted pilot status is documented in <a href="connections.html">connections</a>.
+Public GitHub availability does not establish production approval.</p>
+<h2 id="results-and-recovery">Results and recovery</h2>
+<p><code>stats --json</code> and <code>inbox --json</code> produce version 1 reports, with progress on stderr.
+Exit 0 is complete; 1 is partial/failed; 2 is an invalid invocation. Parser errors
+use standard CLI usage on stderr. Existing successful JSON schemas remain intact.
+Snapshots retain provenance when previous data is reused. Complete watermarks
+cover only the exact scope read; missing rows never prove deletion globally.</p>
+<p>Direct Meta readback checks returned ID, actor, parent/media and exact text.
+No guessed numeric/composite ID transformation or text-only match is proof.
+A bounded readback window can leave a successful remote write uncertain. Inspect
+its journal and reconcile; do not create another proposal just to repeat it.
+Synthetic tests verify these safeguards but do not prove live eventual-consistency
+behavior or provider production access.</p>
+<p>Authenticated encrypted-file capability storage is an explicit Linux/macOS
+option. Use one protected external store per brand, a separate external key,
+verified migration and recoverable rotation. Default remains the OS keyring.
+Provider application secrets and refresh tokens stay on the shared service.</p>
+<h2 id="provider-references">Provider references</h2>
+<p>Contracts were checked using current official documentation during implementation:
+<a href="https://developers.facebook.com/docs/graph-api/reference/comment/">Facebook comment</a>,
+<a href="https://developers.facebook.com/docs/graph-api/reference/comment/comments/">Facebook replies</a>,
+<a href="https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-comment/replies/">Instagram comment replies</a>,
+<a href="https://developers.google.com/youtube/v3/docs/comments">YouTube comments</a>,
+<a href="https://developers.google.com/youtube/v3/docs/videos/rate">YouTube video ratings</a>,
+<a href="https://developers.tiktok.com/doc/app-review-guidelines/">TikTok app review</a>.
+Provider policy and availability can change; these references do not certify a
+particular app or account.</p></main><footer><p>SocialCli · Engels Florentino · Public MIT project</p><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli/issues">Support</a></footer></body></html>

@@ -58,4 +58,6 @@ Each plan lists tests for its owned focus cases; other focus cases belong to the
 
 Recommended execution method: native implementation in this session, component by component. Maintain one application folder as requested. Review task diffs and test evidence before each commit; do not create agents unless the chosen execution/review workflow explicitly authorizes them. Each stage requires its own verification; previous passing tests do not prove subsequent work.
 
-Plan status: approved and executing inline. Components 1 and 2 implemented and verified; component 1 deployed. Components 3–6 remain in progress.
+Plan status: all six components implemented and reviewed. Full suite: 2,114 passed. Client 0.2.3 built and verified in clean default/headless environments. Connection service remains compatible at the deployed 0.2.1 server implementation. Final GitHub/client/docs rollout and public health checks follow the implementation commit.
+
+Release ruling: shared CLI, comments and documentation changes for components 3–6 are released together as 0.2.3 after their focused reviews and one combined full suite. Component 2 was independently committed/built as 0.2.2; its public rollout is included in 0.2.3. This avoids packaging artificial intermediate working-tree states; cost: a larger rollback unit.

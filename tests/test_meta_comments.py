@@ -53,7 +53,12 @@ class Graph:
             body = parse_qs(request.content.decode())
             text = body["message"][0]
             ident = path if path in self.comments else "900"
+            previous = self.comments.get(ident)
             self.comments[ident] = self.row(ident, text)
+            if previous:
+                self.comments[ident]['parent'] = previous['parent']
+            elif path == '800/comments':
+                self.comments[ident]['parent'] = {'id':'800'}
             if self.after_write:
                 self.after_write()
             return httpx.Response(200, json={} if self.failure == "lost-id" else
@@ -303,6 +308,7 @@ def test_facebook_own_reply_can_be_mutated_only_under_verified_parent(tmp_path, 
     mod, _, graph, client, store = service(tmp_path)
     graph.comments["800"] = graph.row("800", "Question", author="999")
     graph.comments["801"] = graph.row("801", "Our reply")
+    graph.comments["801"]['parent'] = {'id':'800'}
     change = mod.prepare_comment(client, store, media_id="789", action=action,
         parent_id="800", comment_id="801", text="Updated reply" if action == "edit" else None)
     result = mod.apply_comment(client, store, change.id, change.fingerprint)
@@ -323,3 +329,55 @@ def test_write_uses_same_token_as_authenticated_identity_even_if_credentials_rot
     change = mod.prepare_comment(client, store, media_id="789", text="Exact supplied text")
     assert mod.apply_comment(client, store, change.id, change.fingerprint).status == "verified"
     assert set(headers) == {"Bearer SECRET"}
+
+
+def test_returned_comment_id_direct_read_verifies_despite_listing_alias(tmp_path):
+    mod, brand, graph, client, store = service(tmp_path)
+    change = mod.prepare_comment(client, store, media_id='789', text='Exact supplied text')
+    graph.pages = lambda r: {'data':[graph.row('789_900','Exact supplied text')]} if graph.writes else {'data':[]}
+    result = mod.apply_comment(client, store, change.id, change.fingerprint)
+    assert result.status == 'verified' and result.remote_id == '900'
+    assert len(graph.writes) == 1
+
+
+@pytest.mark.parametrize('field,value', [('from',{'id':'999'}),('parent',{'id':'999'}),('message','Other text')])
+def test_direct_readback_rejects_wrong_actor_parent_or_text(tmp_path, field, value):
+    mod, brand, graph, client, store = service(tmp_path)
+    change = mod.prepare_comment(client, store, media_id='789', text='Exact supplied text')
+    graph.pages = lambda r: {'data':[]}
+    graph.after_write = lambda:graph.comments['900'].update({field:value})
+    result = mod.apply_comment(client, store, change.id, change.fingerprint)
+    assert result.status == 'uncertain' and len(graph.writes) == 1
+
+
+@pytest.mark.parametrize('code,expected', [(190,'Reconnect'),(200,'permission'),(100,'target'),(613,'rate')])
+def test_graph_errors_include_safe_provider_context(tmp_path, code, expected):
+    mod, _, _, client, _ = service(tmp_path)
+    client.client = httpx.Client(transport=httpx.MockTransport(lambda r:httpx.Response(400,json={'error':{
+        'code':code,'error_subcode':42,'message':'SECRET access_token=SECRET','fbtrace_id':'trace-123'}})))
+    with pytest.raises(mod.CommentError) as error:
+        client._request('GET','789')
+    message = str(error.value)
+    assert expected in message and str(code) in message and '42' in message and 'trace-123' in message
+    assert 'SECRET' not in message
+
+
+def test_new_uuid_cannot_replay_uncertain_comment(tmp_path):
+    mod, _, graph, client, store = service(tmp_path)
+    first = mod.prepare_comment(client, store, media_id='789', text='Exact supplied text')
+    graph.failure='timeout'
+    assert mod.apply_comment(client,store,first.id,first.fingerprint).status=='uncertain'
+    graph.failure=None
+    second=mod.prepare_comment(client,store,media_id='789',text='Exact supplied text')
+    with pytest.raises(mod.CommentError,match='uncertain'):
+        mod.apply_comment(client,store,second.id,second.fingerprint)
+    assert len(graph.writes)==1
+
+
+def test_fallback_listing_cannot_verify_wrong_parent(tmp_path,monkeypatch):
+    mod, _, graph, client, store = service(tmp_path)
+    change=mod.prepare_comment(client,store,media_id='789',text='Exact supplied text')
+    monkeypatch.setattr(client,'inspect_comment',lambda *a:(_ for _ in ()).throw(mod.CommentError('unavailable')))
+    graph.after_write=lambda:graph.comments['900'].update({'parent':{'id':'999'}})
+    assert mod.apply_comment(client,store,change.id,change.fingerprint).status=='uncertain'
+    assert len(graph.writes)==1

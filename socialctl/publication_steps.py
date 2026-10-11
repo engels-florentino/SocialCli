@@ -13,7 +13,7 @@ import os
 import uuid
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from socialctl.management.meta_comments import (
     CommentError, CommentStore, MetaCommentsClient, apply_comment, prepare_comment,
@@ -32,6 +32,7 @@ class Publication(BaseModel):
     account: dict
     text: str | None
     provenance: str
+    source_mapping_digest: str | None = Field(default=None, exclude_if=lambda value: value is None)
     fingerprint: str
     state: str = "uploading"
     media: dict | None = None
@@ -163,6 +164,14 @@ def _resume_publication(brand, http, store, data, *, on_media_result=None):
         return result
 
 
+def _pending_source(brand, data):
+    from socialctl.source_links import verify_source_binding
+    try:
+        verify_source_binding(brand, data['slug'], data.get('source_mapping_digest'))
+    except ValueError as exc:
+        raise CommentError(str(exc)) from None
+
+
 def _first_comment(brand, http, store, data, *, retry_rejected=False):
     _bound(brand, data)
     if not data["media"]:
@@ -178,6 +187,8 @@ def _first_comment(brand, http, store, data, *, retry_rejected=False):
     client = MetaCommentsClient(brand, result.platform, http)
     if data["comment_change_id"]:
         change = comments.load(data["comment_change_id"])
+        if change.status == "proposed" or (change.status == "rejected" and retry_rejected):
+            _pending_source(brand, data)
         if change.status == "rejected" and retry_rejected:
             previous = change.id
             change = prepare_comment(client, comments, media_id=result.platform_id, text=data["text"])
@@ -186,6 +197,7 @@ def _first_comment(brand, http, store, data, *, retry_rejected=False):
             data["comment_change_id"] = change.id
             store.write_json(data["id"], data)
     else:
+        _pending_source(brand, data)
         change = prepare_comment(client, comments, media_id=result.platform_id, text=data["text"])
         data["comment_change_id"] = change.id
         store.write_json(data["id"], data)  # Reference persisted before comment intent/POST.
@@ -216,10 +228,13 @@ def _youtube_first_comment(brand, http, store, data, result, *, retry_rejected):
     previous = None
     if data["comment_change_id"]:
         change = comments.load(data["comment_change_id"])
+        if change.status == "proposed" or (change.status == "failed" and retry_rejected):
+            _pending_source(brand, data)
         if change.status == "failed" and retry_rejected:
             previous = change.id
             change = prepare_community(client, comments, edit)
     else:
+        _pending_source(brand, data)
         change = prepare_community(client, comments, edit)
     if (change.target_brand, change.brand_root, change.target_account, change.edit) != (
         data["brand"], data["brand_root"], data["account"]["account_id"], {"version": 1, **edit}):
@@ -278,7 +293,8 @@ def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result
             return _resume_publication(brand, http, store, existing, on_media_result=on_media_result)
         data = Publication(id=identifier, brand=brand.nombre, brand_root=str(brand.raiz.resolve()),
             platform=platform.value, slug=post.slug, account=_account(brand, platform),
-            text=post.platforms[platform].first_comment, provenance=provenance, fingerprint="").model_dump()
+            text=post.platforms[platform].first_comment, provenance=provenance,
+            source_mapping_digest=post.source_mapping_digest, fingerprint="").model_dump()
         data["fingerprint"] = _fingerprint(data)
         try:
             store.write_json(identifier, data)

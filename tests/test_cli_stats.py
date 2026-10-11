@@ -588,3 +588,10 @@ def test_stats_json_reused_selected_platform_is_not_fresh(raiz, monkeypatch):
     assert report['coverage'][0]['fresh'] is False
     assert report['coverage'][0]['observed_at'] == first['coverage'][0]['observed_at']
     assert 'youtube' in report['data']['merged_existing_platforms']
+
+
+@pytest.mark.parametrize('extra',[['--only','unknown'],['--since','bad-date'],['--timeout','-1']])
+def test_stats_json_invalid_invocation_is_one_structured_report(raiz,extra):
+    result=runner.invoke(app,['stats','--brand','Histopast','--root',str(raiz),'--json',*extra])
+    assert result.exit_code==2
+    assert json.loads(result.stdout)['status']=='error'

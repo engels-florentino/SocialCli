@@ -1,6 +1,6 @@
 # Unified inbox and exact source links Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Unify supported comments and propose correct source links for each explicit clip.
 
@@ -39,11 +39,11 @@ Each plan lists tests for its owned focus cases; other focus cases belong to the
 
 **Interfaces:** `resolve_since(value: str, timezone_name: str, now: datetime) -> datetime`; `sync_brand_inbox(brand, *, since: datetime, budget: ReadBudget) -> ReadReport`. CLI `inbox --brand BRAND --since VALUE --timezone IANA --json`; defaults to human output.
 
-- [ ] **Step 1 — Write regression tests.** Test yesterday/ayer/date/RFC3339 intervals, missing/invalid timezone, daylight-saving boundary, per-account dedup, edited comments and partial failures. Invalid provider cursor triggers bounded overlap recovery without advancing complete watermark. Unsupported TikTok remains visible unavailable rather than empty success.
-- [ ] **Step 2 — Observe failure.** Run `uv run pytest tests/test_inbox.py tests/test_inbox_cli.py tests/test_meta_comment_inbox.py -q`; expected failure is the missing behavior described above, not fixture/import errors.
-- [ ] **Step 3 — Implement.** Enumerate eligible owned videos/media through existing inventory/provider readers within the shared budget. Reuse Meta sync and add YouTube adapter. Keep platform/account/comment identity, create/update/observation times, coverage and pending replies distinct. Persist complete watermarks only after complete traversal; retain partial progress separately. --since filters by documented creation semantics, while edited observations are reported distinctly. Never infer deletion from partial reads or auto-reply/classify with an external model.
-- [ ] **Step 4 — Verify.** Run `uv run pytest tests/test_inbox.py tests/test_inbox_cli.py tests/test_meta_comment_inbox.py -q` and `uv run pytest -q`; expect all tests to pass. Inspect `git diff --check` and changed files for credentials.
-- [ ] **Step 5 — Commit.** Stage only the listed implementation/tests/docs and commit with `feat: expose unified brand comment inbox`.
+- [x] **Step 1 — Write regression tests.** Test yesterday/ayer/date/RFC3339 intervals, missing/invalid timezone, daylight-saving boundary, per-account dedup, edited comments and partial failures. Invalid provider cursor triggers bounded overlap recovery without advancing complete watermark. Unsupported TikTok remains visible unavailable rather than empty success.
+- [x] **Step 2 — Observe failure.** Run `uv run pytest tests/test_inbox.py tests/test_inbox_cli.py tests/test_meta_comment_inbox.py -q`; expected failure is the missing behavior described above, not fixture/import errors.
+- [x] **Step 3 — Implement.** Enumerate eligible owned videos/media through existing inventory/provider readers within the shared budget. Reuse Meta sync and add YouTube adapter. Keep platform/account/comment identity, create/update/observation times, coverage and pending replies distinct. Persist complete watermarks only after complete traversal; retain partial progress separately. --since filters by documented creation semantics, while edited observations are reported distinctly. Never infer deletion from partial reads or auto-reply/classify with an external model.
+- [x] **Step 4 — Verify.** Run `uv run pytest tests/test_inbox.py tests/test_inbox_cli.py tests/test_meta_comment_inbox.py -q` and `uv run pytest -q`; expect all tests to pass. Inspect `git diff --check` and changed files for credentials.
+- [x] **Step 5 — Commit.** Stage only the listed implementation/tests/docs and commit with `feat: expose unified brand comment inbox`.
 
 ### Task 2: Exact clip-to-video mapping and approved linking
 
@@ -51,11 +51,11 @@ Each plan lists tests for its owned focus cases; other focus cases belong to the
 
 **Interfaces:** Brand `source-videos.yml` version 1 maps explicit post slug to exact YouTube video_id and optional series. `resolve_source_link(brand, post_slug: str) -> str | None` returns canonical URL or an explicit mapping error. Existing publication-step machinery owns approved follow-up comments.
 
-- [ ] **Step 1 — Write regression tests.** Test duplicate YAML keys/slugs, malformed IDs, conflicting explicit link/mapping, missing map and ambiguous series; no latest-title guessing. Preview includes exact generated text/destination/effect; changing map after approval invalidates intent. Interruption/retry cannot duplicate follow-up comment.
-- [ ] **Step 2 — Observe failure.** Run `uv run pytest tests/test_source_links.py tests/test_first_comment_durability.py -q`; expected failure is the missing behavior described above, not fixture/import errors.
-- [ ] **Step 3 — Implement.** Validate strict YAML schema and resolve by exact post slug. Expose missing mapping as unresolved when source linking is requested; require a valid mapping before proposing that effect. Keep generated links inside complete preview and existing durable steps. Platform support determines placement; do not promise clickable Instagram captions or unsupported pinning/comments. No additional posting or cadence changes.
-- [ ] **Step 4 — Verify.** Run `uv run pytest tests/test_source_links.py tests/test_first_comment_durability.py -q` and `uv run pytest -q`; expect all tests to pass. Inspect `git diff --check` and changed files for credentials.
-- [ ] **Step 5 — Commit.** Stage only the listed implementation/tests/docs and commit with `feat: propose exact approved source-video links`.
+- [x] **Step 1 — Write regression tests.** Test duplicate YAML keys/slugs, malformed IDs, conflicting explicit link/mapping, missing map and ambiguous series; no latest-title guessing. Preview includes exact generated text/destination/effect; changing map after approval invalidates intent. Interruption/retry cannot duplicate follow-up comment.
+- [x] **Step 2 — Observe failure.** Run `uv run pytest tests/test_source_links.py tests/test_first_comment_durability.py -q`; expected failure is the missing behavior described above, not fixture/import errors.
+- [x] **Step 3 — Implement.** Validate strict YAML schema and resolve by exact post slug. Expose missing mapping as unresolved when source linking is requested; require a valid mapping before proposing that effect. Keep generated links inside complete preview and existing durable steps. Platform support determines placement; do not promise clickable Instagram captions or unsupported pinning/comments. No additional posting or cadence changes.
+- [x] **Step 4 — Verify.** Run `uv run pytest tests/test_source_links.py tests/test_first_comment_durability.py -q` and `uv run pytest -q`; expect all tests to pass. Inspect `git diff --check` and changed files for credentials.
+- [x] **Step 5 — Commit.** Stage only the listed implementation/tests/docs and commit with `feat: propose exact approved source-video links`.
 
 ## Final release acceptance
 

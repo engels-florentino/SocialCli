@@ -1,7 +1,7 @@
 # SocialCli agent reliability design
 
 Date: 2026-10-10
-Status: Proposed technical specification; scope and ordering approved in conversation. Implementation has not started.
+Status: Approved and implemented. Client 0.2.3 verified by 2,114 fictional-transport tests and clean default/headless installs; release rollout tracked in the delivery plan. Live provider production eligibility is not established by these tests.
 
 ## Purpose
 

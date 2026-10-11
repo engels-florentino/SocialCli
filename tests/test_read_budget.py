@@ -107,3 +107,16 @@ def test_compressed_body_limit_is_applied_after_decoding(monkeypatch):
         with pytest.raises(httpx.ReadError):
             client.get('https://social.example/read')
     assert calls == ['GET']
+
+
+def test_nested_readback_budget_bounds_headers():
+    import asyncio
+    import httpx
+    from socialctl.read_budget import ReadBudget, BudgetTransport, ReadDeadlineExceeded
+    class Slow(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            await asyncio.sleep(.2)
+            return httpx.Response(200,json={})
+    with httpx.Client(transport=BudgetTransport(Slow(),ReadBudget(5))) as client:
+        with pytest.raises(ReadDeadlineExceeded):
+            client.get('https://example.test',extensions={'socialcli_read_budget':ReadBudget(.01)})

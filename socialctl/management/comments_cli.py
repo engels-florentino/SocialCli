@@ -32,7 +32,8 @@ def make_http_client():
     budget = active_read_budget.get()
     if budget is not None:
         return read_client(budget, progress=lambda: typer.echo('Reading provider data...', err=True))
-    return httpx.Client(timeout=30.0, follow_redirects=False)
+    from socialctl.read_budget import ReadBudget
+    return read_client(ReadBudget(120))
 
 
 def _json(value):

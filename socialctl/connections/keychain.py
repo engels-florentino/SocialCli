@@ -22,8 +22,12 @@ def _backend():
     raise ValueError('a secure OS keyring is required; unlock or configure your system credential store')
 
 
-def ensure_available():
-    _backend()
+def ensure_available(brand=None):
+    if brand is None:
+        _backend()
+    else:
+        from socialctl.connections.credential_store import store_for
+        store_for(brand).ensure_available()
 
 
 def _key(brand, platform, metadata):
@@ -31,14 +35,14 @@ def _key(brand, platform, metadata):
     return f'socialcli:{root_hash}', f"{platform.value}:{metadata['service_url']}:{metadata['connection_id']}"
 
 
-def get(brand, platform, metadata):
+def _os_get(brand, platform, metadata):
     try:
         return _backend().get_password(*_key(brand,platform,metadata))
     except Exception:
         raise ValueError('connection credential unavailable in the secure OS keyring') from None
 
 
-def save(brand, platform, metadata, secret):
+def _os_save(brand, platform, metadata, secret):
     try:
         backend = _backend()
         key = _key(brand,platform,metadata)
@@ -49,7 +53,7 @@ def save(brand, platform, metadata, secret):
         raise ValueError('could not save the connection in the secure OS keyring') from None
 
 
-def delete(brand, platform, metadata):
+def _os_delete(brand, platform, metadata):
     try:
         backend = _backend()
         key = _key(brand,platform,metadata)
@@ -57,3 +61,18 @@ def delete(brand, platform, metadata):
             backend.delete_password(*key)
     except Exception:
         raise ValueError('could not delete the connection from the secure OS keyring') from None
+
+
+def get(brand, platform, metadata):
+    from socialctl.connections.credential_store import store_for
+    return store_for(brand).get(brand, platform, metadata)
+
+
+def save(brand, platform, metadata, secret):
+    from socialctl.connections.credential_store import store_for
+    return store_for(brand).save(brand, platform, metadata, secret)
+
+
+def delete(brand, platform, metadata):
+    from socialctl.connections.credential_store import store_for
+    return store_for(brand).delete(brand, platform, metadata)

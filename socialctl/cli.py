@@ -86,6 +86,8 @@ from socialctl.scheduler import (
 )
 
 app = typer.Typer(help="Publish already produced content on YouTube, Facebook, Instagram and TikTok.")
+from socialctl.connections.credential_cli import credentials_app
+app.add_typer(credentials_app, name="credentials")
 brand_app = typer.Typer(help="Brand management.")
 app.add_typer(brand_app, name="brand")
 app.add_typer(content_app, name="content")
@@ -104,6 +106,11 @@ register_inventory(app, content_app)
 
 from socialctl.connections.cli import register as register_connections
 register_connections(app)
+from socialctl.management.community_batch_cli import register as register_community_batches
+from socialctl.workspace import default_root
+register_community_batches(changes_app, default_root())
+from socialctl.inbox_cli import register as register_inbox
+register_inbox(app, default_root())
 
 from socialctl.workspace import default_root
 
@@ -252,7 +259,7 @@ def _cargar_marca(root: Path, nombre: str) -> Brand:
         _fallar(str(exc))
 
 
-def _cargar_post_con_avisos(brand: Brand, slug: str, *, avisos: list[str] | None = None) -> Post:
+def _cargar_post_con_avisos(brand: Brand, slug: str, *, avisos: list[str] | None = None, source_link: bool = False) -> Post:
     """Load a post and display any loading warnings."""
     with warnings.catch_warnings(record=True) as capturados:
         warnings.simplefilter("always")
@@ -269,7 +276,11 @@ def _cargar_post_con_avisos(brand: Brand, slug: str, *, avisos: list[str] | None
             typer.echo(f"WARNING: {aviso.message}")
         else:
             avisos.append(f"WARNING: {aviso.message}")
-    return post
+    from socialctl.source_links import apply_source_mapping
+    try:
+        return apply_source_mapping(brand, post, required=source_link)
+    except ValueError as exc:
+        _fallar(str(exc))
 
 
 def _mostrar_comentario(result):
@@ -339,6 +350,12 @@ def _publicar_impl(
         if not confirmado:
             typer.echo("Canceled. Nothing was published.")
             raise typer.Exit(0)
+
+    from socialctl.source_links import verify_source_mapping
+    try:
+        verify_source_mapping(brand, post)
+    except ValueError as exc:
+        _fallar(str(exc))
 
     resultados = publicar(post, brand, solo=destinos, on_progreso=_mostrar_progreso,
                           retry_guard=retry_guard)
@@ -570,10 +587,11 @@ def publish(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show the preview without publishing."),
     yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt."),
     only: list[str] = typer.Option(None, "--only", help="Publish only on these platforms."),
+    source_link: bool = typer.Option(False, "--source-link", help="Require this exact post in source-videos.yml before previewing."),
 ) -> None:
     """Validate every platform, display the complete preview, then publish approved content."""
     brand = _cargar_marca(root, brand_nombre)
-    post = _cargar_post_con_avisos(brand, slug)
+    post = _cargar_post_con_avisos(brand, slug, source_link=source_link)
 
     destinos: list[Platform] | None = None
     if only:
@@ -1312,14 +1330,23 @@ def stats(
     timeout: float = typer.Option(120, "--timeout", help="Total read time limit in seconds."),
 ) -> None:
     """Read platform metrics and save a brand snapshot. Selected-platform reads merge with today's data; old snapshots expire after one year."""
-    marca = _cargar_marca(root, brand_nombre)
+    def invalid(message):
+        if json_output:
+            from socialctl.read_reports import ReadReport, emit_report, safe_error
+            emit_report(ReadReport(status='error', errors=[{'message':safe_error(message)}]))
+            raise typer.Exit(2)
+        _fallar(message)
+    try:
+        marca = cargar_brand(root, brand_nombre)
+    except _EXCEPCIONES_MARCA as exc:
+        invalid(str(exc))
 
     fecha_desde = None
     if desde is not None:
         try:
             fecha_desde = date.fromisoformat(desde)
         except ValueError:
-            _fallar(f"'--desde {desde}' is not a valid YYYY-MM-DD date.")
+            invalid(f"'--since {desde}' is not a valid YYYY-MM-DD date.")
 
     # Mismo patrón que `publish` (`socialctl/cli.py:638-643`): la opción se
     # declara como texto y se convierte aquí, para que una red desconocida dé
@@ -1330,7 +1357,7 @@ def stats(
             destinos = [Platform(r) for r in only]
         except ValueError:
             validas = ", ".join(p.value for p in Platform)
-            _fallar(f"--only contains an unknown platform. Valid platforms: {validas}")
+            invalid(f"--only contains an unknown platform. Valid platforms: {validas}")
     else:
         destinos = list(LECTORES)
 
@@ -1339,7 +1366,7 @@ def stats(
     try:
         budget = ReadBudget(timeout)
     except ValueError as exc:
-        _fallar(str(exc))
+        invalid(str(exc))
     redes = {}
     request_number = 0
     def progress():

@@ -127,3 +127,10 @@ socialcli disconnect youtube --brand MyBrand
 
 
 For an agent without interactive stdin, obtain the user’s explicit authorization for the exact account ID and brand first, then use `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. `--yes` confirms this account connection only; it does not authorize publication. Never guess an ID or use its position in a returned list. Replacing independent credentials additionally requires `--replace-independent`. Without these explicit arguments, noninteractive execution stops before creating an authorization link.
+
+
+Agent reliability: see the [AI agent guide](docs/ai-agents.md) for bounded JSON
+reads, unified inbox, exact source links and supervised community batches, and
+the [capability matrix](docs/capabilities.md) for permissions and network limits.
+For servers, [explicit encrypted capability storage](docs/connections.md#headless-encrypted-capability-storage)
+is available with the `headless-credentials` extra; no automatic fallback is used.

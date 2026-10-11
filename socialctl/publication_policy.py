@@ -27,6 +27,8 @@ def validate_derivation(post: PlatformPost, *, require_origin: bool) -> list[Val
         return errors
     if post.source_video_id is None:
         error("source_video_id", "the exact source long-form video ID is missing")
-    elif meta and post.first_comment != expected_long_comment(post.source_video_id):
+    elif meta and post.first_comment not in {
+            expected_long_comment(post.source_video_id),
+            f"Full video: https://www.youtube.com/watch?v={post.source_video_id}"}:
         error("first_comment", "the exact comment linking to the source long-form video is missing")
     return errors
