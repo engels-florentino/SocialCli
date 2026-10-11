@@ -207,8 +207,47 @@ def test_meta_analytics_consent_requests_only_its_read_permission(tmp_path, plat
     assert set(analytics['scope'][0].split(',')) == base | {extra}
 
 
-def test_tiktok_rejects_analytics_and_meta_rejects_management(tmp_path):
+def test_tiktok_rejects_analytics_and_management(tmp_path):
     p = setup(tmp_path, lambda r: httpx.Response(500))
-    for platform, options in [('tiktok', {'analytics':True}), ('facebook', {'management':True}), ('instagram', {'management':True})]:
+    for platform, options in [('tiktok', {'analytics':True}), ('tiktok', {'management':True})]:
         with pytest.raises(ValueError):
             p.authorization_url(platform, 'state', 'verifier', **options)
+
+
+@pytest.mark.parametrize('platform,management,analytics', [
+    ('facebook', {'pages_read_user_content', 'pages_manage_engagement', 'pages_manage_metadata'}, 'read_insights'),
+    ('instagram', {'instagram_manage_comments', 'pages_manage_metadata'}, 'instagram_manage_insights'),
+])
+def test_meta_management_consent_is_optional_and_combines_with_analytics(tmp_path, platform, management, analytics):
+    provider = setup(tmp_path, lambda r: httpx.Response(500))
+    basic = set(provider.scopes(platform))
+    url = provider.authorization_url(platform, 'state', 'verifier', management=True, analytics=True)
+    query = parse_qs(urlsplit(url).query)
+    assert set(query['scope'][0].split(',')) == basic | management | {analytics}
+    assert basic.isdisjoint(management)
+    assert query['auth_type'] == ['rerequest']
+
+
+@pytest.mark.parametrize('platform', ['facebook', 'instagram'])
+@pytest.mark.parametrize('missing', [False, True])
+def test_meta_management_exchange_validates_requested_permissions(tmp_path, platform, missing):
+    provider = setup(tmp_path, lambda r: httpx.Response(500))
+    required = provider.scopes(platform, management=True, analytics=True)
+    missing_scope = 'pages_manage_engagement' if platform == 'facebook' else 'instagram_manage_comments'
+    granted = [scope for scope in required if not missing or scope != missing_scope]
+    def handler(request):
+        if request.url.path.endswith('/oauth/access_token'):
+            return httpx.Response(200, json={'access_token':'fictional-user', 'expires_in':3600})
+        if request.url.path.endswith('/me/permissions'):
+            return httpx.Response(200, json={'data':[{'permission':s, 'status':'granted'} for s in granted]})
+        assert not missing, 'incomplete grants must be rejected before account discovery'
+        return httpx.Response(200, json={'data':[{'id':'123', 'name':'Example', 'access_token':'fictional-page',
+            'instagram_business_account':{'id':'456', 'username':'example'}}]})
+    provider = setup(tmp_path, handler)
+    if missing:
+        with pytest.raises(ValueError, match='required permissions were not granted'):
+            provider.exchange(platform, 'code', 'verifier', management=True, analytics=True)
+    else:
+        result = provider.exchange(platform, 'code', 'verifier', management=True, analytics=True)
+        assert set(result['grant']['granted_scopes']) == set(required)
+        assert result['accounts'][0]['id'] == ('123' if platform == 'facebook' else '456')

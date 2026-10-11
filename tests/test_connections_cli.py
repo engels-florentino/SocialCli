@@ -221,3 +221,21 @@ def test_meta_analytics_flag_reaches_authorization_service(tmp_path, monkeypatch
     assert requests[0]['analytics'] is True
     assert requests[0]['management'] is False
     assert not ring.values
+
+
+@pytest.mark.parametrize('platform', ['facebook', 'instagram'])
+def test_meta_management_and_analytics_flags_reach_authorization_service(tmp_path, monkeypatch, platform):
+    from socialctl.connections import cli as cli_module, keychain
+    crear_brand(tmp_path, 'Example')
+    ring = MemoryKeyring()
+    monkeypatch.setattr(keychain, '_backend', lambda: ring)
+    requests = []
+    def transport(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(503, json={'detail':'unavailable'})
+    monkeypatch.setattr(cli_module, 'http_client', lambda: httpx.Client(transport=httpx.MockTransport(transport)))
+    result = runner.invoke(app, ['connect', platform, '--management', '--analytics', '--brand', 'Example', '--root', str(tmp_path), '--service', 'https://social.example'])
+    assert len(requests) == 1, result.output
+    assert requests[0]['management'] is True
+    assert requests[0]['analytics'] is True
+    assert not ring.values

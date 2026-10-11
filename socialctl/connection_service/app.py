@@ -104,7 +104,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
         try:
             providers.scopes(body.platform, management=body.management, analytics=body.analytics)
         except ValueError:
-            raise HTTPException(400, 'optional permissions are YouTube-only') from None
+            raise HTTPException(400, 'requested optional permissions are not supported for this platform') from None
         if body.platform not in settings.providers:
             raise HTTPException(503, 'this platform is not configured; use independent-app auth or contact the operator')
         record_id = secrets.token_urlsafe(24)

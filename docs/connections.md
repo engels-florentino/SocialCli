@@ -74,3 +74,16 @@ Catchable cancellation and installation failures restore the previous account co
 The HTTPS service is deployed at https://social.florentino.pro. Google is configured with a web OAuth client and is in Testing: access is restricted to the project's authorized test users. A real Histopast pilot verified account selection, OS keyring installation, provider identity, Google refresh and service disconnection. A second connection with `--analytics` successfully retrieved an authorized channel report. This does not establish approval for public access or a successful second independent creator test. TikTok is also configured with matching sandbox credentials; its authorized Histopast target completed real Web OAuth, identity verification, renewal and service disconnection. Its production approval and inbox demo remain pending. A dedicated Meta app, SocialCli (`1551964416681979`), was created in the verified Florentino.pro business portfolio. The `florentino.pro` domain is already verified in Meta. The legacy Histopast app remains in its original portfolio; its Facebook and Instagram identities still verify. The new app has the SocialCli logo, saved OAuth callbacks and matching server credentials. Both shared Meta connectors are enabled for the development pilot. Real Facebook and Instagram pilots verified selection of only Histopast, the exact account identities, OS keyring installation and service disconnection. No content was published, and publishing permissions were not exercised. The app remains unpublished; Tech Provider access verification, provider review and an independent creator pilot remain pending. Service disconnection does not revoke the provider authorization.
 
 The service's daily retention timer is installed and its first manual run succeeded. No media was uploaded during these checks.
+
+## Optional Meta management access
+
+Use `--management` for comment management and webhook permissions. Combine it with `--analytics` to request statistics as well:
+
+```bash
+socialcli connect facebook --brand MyBrand --management --analytics
+socialcli connect instagram --brand MyBrand --management --analytics
+```
+
+Facebook adds `pages_read_user_content`, `pages_manage_engagement` and `pages_manage_metadata`. Instagram adds `instagram_manage_comments` and `pages_manage_metadata`. These permissions are optional and are checked during the OAuth callback. If a requested permission is declined, SocialCli rejects the incomplete connection. Existing connections must be disconnected and reconnected to grant additional permissions. Update the client before using these flags with Meta.
+
+Permission consent does not subscribe webhooks or approve comments, moderation or publication actions. Each action keeps its existing approval requirements. The Meta developer app also needs the corresponding permissions and, for external creators, the required Advanced Access and review. This does not enable advertising, shopping or private-message features.

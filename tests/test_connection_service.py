@@ -127,7 +127,10 @@ def test_disabled_connectors_and_optional_scope_mismatch_are_rejected(tmp_path):
     client, _ = make_service(tmp_path)
     challenge = hashlib.sha256(b's').hexdigest()
     assert client.post('/v1/authorizations', json={'platform':'tiktok','poll_challenge':challenge}).status_code == 503
-    assert client.post('/v1/authorizations', json={'platform':'facebook','poll_challenge':challenge,'management':True}).status_code in {400,422}
+    assert client.post('/v1/authorizations', json={'platform':'facebook','poll_challenge':challenge,'management':True}).status_code == 503
+    mismatch = client.post('/v1/authorizations', json={'platform':'tiktok','poll_challenge':challenge,'management':True})
+    assert mismatch.status_code == 400
+    assert mismatch.json()['detail'] == 'requested optional permissions are not supported for this platform'
     assert client.post('/v1/authorizations', json={'platform':'youtube','poll_challenge':'not-a-hash'}).status_code == 422
     assert client.get('/healthz').json()['configured_platforms'] == ['youtube']
 
@@ -209,3 +212,24 @@ def test_uninstalled_connection_expires_within_pairing_window(tmp_path):
     path=f"/v1/connections/{connected['connection_id']}"
     now[0]+=601
     assert client.get(path,headers=connection_headers(connected)).status_code==404
+
+
+@pytest.mark.parametrize('platform,expected', [
+    ('facebook', {'pages_read_user_content', 'pages_manage_engagement', 'pages_manage_metadata', 'read_insights'}),
+    ('instagram', {'instagram_manage_comments', 'pages_manage_metadata', 'instagram_manage_insights'}),
+])
+def test_meta_optional_scopes_survive_service_authorization_roundtrip(tmp_path, platform, expected):
+    from socialctl.connection_service.app import create_app
+    settings = Settings('https://social.example', tmp_path / 'vault.sqlite3', [Fernet.generate_key()],
+        providers={platform:AppCredentials('fictional-client','fictional-secret')})
+    client = TestClient(create_app(settings), base_url=settings.public_url)
+    secret = 'fictional-poll-secret-12345678901234567890'
+    response = client.post('/v1/authorizations', json={'platform':platform,
+        'poll_challenge':hashlib.sha256(secret.encode()).hexdigest(), 'management':True, 'analytics':True})
+    assert response.status_code == 201
+    value = response.json()
+    redirect = client.get(value['browser_url'], follow_redirects=False)
+    assert redirect.status_code == 303
+    scopes = set(parse_qs(urlsplit(redirect.headers['location']).query)['scope'][0].split(','))
+    assert expected <= scopes
+    assert client.delete('/v1/authorizations/'+value['authorization_id'], headers={'Authorization':'Bearer '+secret}).status_code == 200

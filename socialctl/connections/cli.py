@@ -103,7 +103,7 @@ def register(app):
                 brand_name:str=typer.Option(...,'--brand'),
                 root:Path=typer.Option(default_root(),'--root'),
                 service:str=typer.Option(DEFAULT_SERVICE,'--service',help='HTTPS connection service.'),
-                management:bool=typer.Option(False,'--management',help='YouTube: request metadata management.'),
+                management:bool=typer.Option(False,'--management',help='YouTube: metadata management; Facebook/Instagram: comments and webhook permissions.'),
                 analytics:bool=typer.Option(False,'--analytics',help='YouTube, Facebook or Instagram: request analytics read access.'),
                 dev_local:bool=typer.Option(False,'--dev-local',help='Development only: permit a loopback HTTP service.')):
         """Connect your own social account in the browser without developer credentials."""
@@ -114,8 +114,8 @@ def register(app):
         try:
             brand=cargar_brand(root,brand_name)
             lock_fd=acquire_brand_lock(brand)
-            if management and platform is not Platform.YOUTUBE:
-                raise ValueError('management permission is YouTube-only')
+            if management and platform is Platform.TIKTOK:
+                raise ValueError('TikTok management permission is not available in this connection flow')
             if analytics and platform is Platform.TIKTOK:
                 raise ValueError('TikTok analytics permission is not available in this connection flow')
             previous=brand.leer_secreto(platform)
