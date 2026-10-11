@@ -54,6 +54,8 @@ socialcli connect tiktok --brand MyBrand
 socialcli connections --brand MyBrand --json
 ```
 
+**AI agents:** run `socialcli connect PLATFORM --brand MyBrand --no-browser`. Give the printed login link directly to the user without opening, fetching or previewing it. The first visit starts the single-use flow. Keep the command running while the user authorizes; generate a fresh link if it expires or was already used. See the [agent connection instructions](docs/ai-agents.md#hand-the-login-link-to-the-user-without-opening-it).
+
 `connect` saves the selected account identifiers in `MyBrand/accounts.yml` automatically. You do not need your own developer app, client ID, client secret or pasted provider token for shared mode. Your OS credential store must be available and unlocked. Connecting does not upload or publish content.
 
 **Hosted access today:** TikTok is in sandbox and accepts only authorized target accounts. Google is in Testing for authorized test users; Meta is unpublished and restricted to development access. Anyone can install the public CLI, but installation does not grant access to these hosted provider integrations. If your account is not eligible, wait for production availability or use a service whose operator has the required provider access. See the [connection guide](docs/connections.md).

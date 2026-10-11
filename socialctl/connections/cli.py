@@ -103,6 +103,7 @@ def register(app):
                 brand_name:str=typer.Option(...,'--brand'),
                 root:Path=typer.Option(default_root(),'--root'),
                 service:str=typer.Option(DEFAULT_SERVICE,'--service',help='HTTPS connection service.'),
+                no_browser:bool=typer.Option(False,'--no-browser',help='AI agents: print the single-use login link without opening it; give it directly to the user.'),
                 management:bool=typer.Option(False,'--management',help='YouTube: metadata management; Facebook/Instagram: comments and webhook permissions.'),
                 analytics:bool=typer.Option(False,'--analytics',help='YouTube, Facebook or Instagram: request analytics read access.'),
                 dev_local:bool=typer.Option(False,'--dev-local',help='Development only: permit a loopback HTTP service.')):
@@ -132,9 +133,14 @@ def register(app):
                 expected_url=broker.origin+'/connect/'+auth_id
                 if start.get('browser_url')!=expected_url:
                     raise ValueError('invalid authorization browser URL')
-                typer.echo(f'Opening your browser to connect {platform.value}. No content will be published.')
-                typer.echo(f'If it does not open, visit: {expected_url}')
-                webbrowser.open(expected_url)
+                if no_browser:
+                    typer.echo(f'Give this single-use link directly to the user to connect {platform.value}: {expected_url}')
+                    typer.echo('Do not open, fetch or preview this link. Its first visit starts authorization. It expires in 10 minutes.')
+                    typer.echo('Waiting for the user to authorize. Keep this command running. No content will be published.')
+                else:
+                    typer.echo(f'Opening your browser to connect {platform.value}. No content will be published.')
+                    typer.echo(f'If it does not open, visit: {expected_url}')
+                    webbrowser.open(expected_url)
                 deadline=time.monotonic()+600
                 while True:
                     result=broker.request('POST',f'/v1/authorizations/{auth_id}/poll',secret=poll_secret)

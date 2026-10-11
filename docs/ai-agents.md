@@ -14,6 +14,9 @@ Read MyBrand/brand.md and MyBrand/estrategia.md before drafting copy.
 Use socialcli --help and command-specific --help to discover supported options.
 Use JSON output where the command supports it; other commands return text.
 Do not expose credentials or read .env/.secrets files into the conversation.
+For account connection, use --no-browser and hand the login link to me.
+Never open, fetch or preview it; the first visit consumes the link.
+Keep the command running while I complete login.
 Use only the produced media I identify. Do not generate, crop or reencode it.
 Show the complete dry-run preview and wait for my explicit approval before
 publishing, scheduling or applying a remote change. Approval covers only the
@@ -24,6 +27,16 @@ uncertain submission without checking the remote account first.
 ```
 
 Replace the path and brand with your own values. Use `--root /path/to/my-social` on commands or start the agent in that folder. `SOCIALCLI_ROOT` is another supported option. A tool's `--yes` flag does not grant the agent permission to act.
+
+## Hand the login link to the user without opening it
+
+AI agents must use `socialcli connect PLATFORM --brand MyBrand --no-browser` and give the printed link directly to the user. Never open, fetch, validate, preview or follow that link with a browser, HTTP client or link-unfurl tool: its first visit starts a single-use authorization bound to that browser. Keep the CLI process running while the user signs in and confirms the account. The link expires after ten minutes. If it was already visited, expired or cancelled, restart `connect --no-browser` to generate a fresh link; do not reuse it. Account confirmation still requires the user’s explicit approval.
+
+```bash
+socialcli connect youtube --brand MyBrand --no-browser
+```
+
+Send the user: “Open this link in your own browser to connect your account: <printed URL>. I will keep SocialCli waiting for your authorization.” Do not cancel the running command after printing the link, and do not launch a second connection while the first one is pending.
 
 ## Example 1: ask the agent to check your accounts
 

@@ -239,3 +239,33 @@ def test_meta_management_and_analytics_flags_reach_authorization_service(tmp_pat
     assert requests[0]['management'] is True
     assert requests[0]['analytics'] is True
     assert not ring.values
+
+
+def test_no_browser_hands_link_to_user_and_waits_for_authorization(tmp_path, monkeypatch):
+    server, store, ring = wire(tmp_path, monkeypatch)
+    from socialctl.connections import cli as cli_module
+    crear_brand(tmp_path, 'Example')
+    user_browser = cli_module.webbrowser.open
+    def forbidden_browser(url):
+        pytest.fail('Agent mode must never open the single-use link')
+    monkeypatch.setattr(cli_module.webbrowser, 'open', forbidden_browser)
+    handed_off = []
+    def transport(request):
+        if request.url.path.endswith('/poll') and not handed_off:
+            auth_id = request.url.path.split('/')[-2]
+            handed_off.append(auth_id)
+            # The human opens the printed link while the agent's CLI is polling.
+            user_browser('https://social.example/connect/' + auth_id)
+        response = server.request(request.method, str(request.url), headers=dict(request.headers),
+                                  content=request.content, follow_redirects=False)
+        return httpx.Response(response.status_code, headers=dict(response.headers), content=response.content)
+    monkeypatch.setattr(cli_module, 'http_client', lambda: httpx.Client(transport=httpx.MockTransport(transport)))
+    result = runner.invoke(app, ['connect', 'youtube', '--brand', 'Example', '--root', str(tmp_path),
+                                '--service', 'https://social.example', '--no-browser'], input='y\n')
+    assert result.exit_code == 0, result.output
+    assert 'https://social.example/connect/' + handed_off[0] in result.output
+    assert 'single-use' in result.output
+    assert 'Do not open, fetch or preview' in result.output
+    assert 'Opening your browser' not in result.output
+    assert cargar_brand(tmp_path, 'Example').cuentas['youtube']['channel_id'] == 'UC-one'
+    assert len(ring.values) == 1
