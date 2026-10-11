@@ -131,3 +131,6 @@ Have the operator enter the fingerprint, or use an agent runner that supports th
 - **Honest result states.** Agents can distinguish confirmed actions, TikTok inbox handoffs and uncertain outcomes that need verification.
 
 Agents do not expand platform permissions or remove provider review requirements. This release uses operator-supplied provider applications and has no shared OAuth backend. TikTok production approval is pending, and Direct Post UX controls are incomplete. Read [platform setup](../SETUP.md), [security](../SECURITY.md) and [TikTok limitations](tiktok-review.md).
+
+
+For an agent without interactive stdin, obtain the user’s explicit authorization for the exact account ID and brand first, then use `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. `--yes` confirms this account connection only; it does not authorize publication. Never guess an ID or use its position in a returned list. Replacing independent credentials additionally requires `--replace-independent`. Without these explicit arguments, noninteractive execution stops before creating an authorization link.

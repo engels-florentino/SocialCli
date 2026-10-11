@@ -124,3 +124,6 @@ socialcli disconnect youtube --brand MyBrand
 ```
 
 [Connection guide](docs/connections.md) · [Self-host the connection service](deploy/connection-service/README.md). Independent-app `socialcli auth` remains supported.
+
+
+For an agent without interactive stdin, obtain the user’s explicit authorization for the exact account ID and brand first, then use `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. `--yes` confirms this account connection only; it does not authorize publication. Never guess an ID or use its position in a returned list. Replacing independent credentials additionally requires `--replace-independent`. Without these explicit arguments, noninteractive execution stops before creating an authorization link.

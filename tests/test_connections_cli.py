@@ -25,6 +25,7 @@ class MemoryKeyring:
 def wire(tmp_path,monkeypatch):
     assert importlib.util.find_spec('socialctl.connections.client') is not None, 'CLI browser connection is missing'
     from socialctl.connections import client as client_module,keychain,cli as cli_module
+    monkeypatch.setattr(cli_module, 'interactive_terminal', lambda: True)
     from tests.test_connection_service import make_service
     server,store=make_service(tmp_path/'server')
     ring=MemoryKeyring()
@@ -215,7 +216,7 @@ def test_meta_analytics_flag_reaches_authorization_service(tmp_path, monkeypatch
         requests.append(json.loads(request.content))
         return httpx.Response(503, json={'detail':'unavailable'})
     monkeypatch.setattr(cli_module, 'http_client', lambda: httpx.Client(transport=httpx.MockTransport(transport)))
-    result = runner.invoke(app, ['connect', platform, '--analytics', '--brand', 'Example', '--root', str(tmp_path), '--service', 'https://social.example'])
+    result = runner.invoke(app, ['connect', platform, '--analytics', '--brand', 'Example', '--root', str(tmp_path), '--service', 'https://social.example', '--account-id', '123', '--yes'])
     assert len(requests) == 1, result.output
     assert requests[0]['platform'] == platform
     assert requests[0]['analytics'] is True
@@ -234,7 +235,7 @@ def test_meta_management_and_analytics_flags_reach_authorization_service(tmp_pat
         requests.append(json.loads(request.content))
         return httpx.Response(503, json={'detail':'unavailable'})
     monkeypatch.setattr(cli_module, 'http_client', lambda: httpx.Client(transport=httpx.MockTransport(transport)))
-    result = runner.invoke(app, ['connect', platform, '--management', '--analytics', '--brand', 'Example', '--root', str(tmp_path), '--service', 'https://social.example'])
+    result = runner.invoke(app, ['connect', platform, '--management', '--analytics', '--brand', 'Example', '--root', str(tmp_path), '--service', 'https://social.example', '--account-id', '123', '--yes'])
     assert len(requests) == 1, result.output
     assert requests[0]['management'] is True
     assert requests[0]['analytics'] is True
@@ -269,3 +270,69 @@ def test_no_browser_hands_link_to_user_and_waits_for_authorization(tmp_path, mon
     assert 'Opening your browser' not in result.output
     assert cargar_brand(tmp_path, 'Example').cuentas['youtube']['channel_id'] == 'UC-one'
     assert len(ring.values) == 1
+
+
+@pytest.mark.parametrize('flags', [[], ['--yes'], ['--account-id', 'UC-one']])
+def test_noninteractive_requires_exact_account_before_pairing(tmp_path, monkeypatch, flags):
+    from socialctl.connections import cli as cli_module
+    crear_brand(tmp_path, 'Example')
+    started = []
+    monkeypatch.setattr(cli_module, 'http_client', lambda: started.append(True))
+    result = runner.invoke(app, ['connect', 'youtube', '--brand', 'Example', '--root', str(tmp_path), *flags])
+    assert result.exit_code != 0
+    assert not started
+    assert '--account-id' in result.output and '--yes' in result.output
+
+
+def test_connect_yes_binds_only_requested_account(tmp_path, monkeypatch):
+    server, store, ring = wire(tmp_path, monkeypatch)
+    crear_brand(tmp_path, 'Example')
+    result = runner.invoke(app, ['connect', 'youtube', '--brand', 'Example', '--root', str(tmp_path),
+                                '--service', 'https://social.example', '--account-id', 'UC-one', '--yes'])
+    assert result.exit_code == 0, result.output
+    assert 'Connect Creator one' not in result.output
+    assert cargar_brand(tmp_path, 'Example').cuentas['youtube']['channel_id'] == 'UC-one'
+    assert len(ring.values) == 1
+
+
+def test_connect_requested_account_mismatch_never_completes(tmp_path, monkeypatch):
+    server, store, ring = wire(tmp_path, monkeypatch)
+    crear_brand(tmp_path, 'Example')
+    result = runner.invoke(app, ['connect', 'youtube', '--brand', 'Example', '--root', str(tmp_path),
+                                '--service', 'https://social.example', '--account-id', 'UC-other', '--yes'])
+    assert result.exit_code == 1
+    assert 'requested account' in result.output
+    assert not ring.values
+    with store.transaction() as db:
+        assert db.execute("SELECT count(*) FROM records WHERE kind='connection'").fetchone()[0] == 0
+
+
+def test_noninteractive_replacement_requires_explicit_flag(tmp_path, monkeypatch):
+    server, store, ring = wire(tmp_path, monkeypatch)
+    brand = crear_brand(tmp_path, 'Example')
+    brand.guardar_secreto(Platform.YOUTUBE, {'access_token': 'existing'})
+    args = ['connect', 'youtube', '--brand', 'Example', '--root', str(tmp_path),
+            '--service', 'https://social.example', '--account-id', 'UC-one', '--yes']
+    result = runner.invoke(app, args)
+    assert result.exit_code == 1 and '--replace-independent' in result.output
+    assert brand.leer_secreto(Platform.YOUTUBE) == {'access_token': 'existing'}
+    assert not ring.values
+    result = runner.invoke(app, args + ['--replace-independent'])
+    assert result.exit_code == 0, result.output
+
+
+def test_account_id_selection_ignores_provider_order(tmp_path, monkeypatch):
+    server, store, ring = wire(tmp_path, monkeypatch)
+    from socialctl.connections import cli as cli_module
+    crear_brand(tmp_path, 'Example')
+    def transport(request):
+        response = server.request(request.method, str(request.url), headers=dict(request.headers), content=request.content, follow_redirects=False)
+        data = response.json()
+        if request.url.path.endswith('/poll') and data.get('status') == 'ready':
+            data['accounts'].insert(0, {'id': 'UC-other', 'name': 'Other creator'})
+        return httpx.Response(response.status_code, headers={'content-type': 'application/json'}, json=data)
+    monkeypatch.setattr(cli_module, 'http_client', lambda: httpx.Client(transport=httpx.MockTransport(transport)))
+    result = runner.invoke(app, ['connect', 'youtube', '--brand', 'Example', '--root', str(tmp_path),
+                                '--service', 'https://social.example', '--account-id', 'UC-one', '--yes'])
+    assert result.exit_code == 0, result.output
+    assert cargar_brand(tmp_path, 'Example').cuentas['youtube']['channel_id'] == 'UC-one'
