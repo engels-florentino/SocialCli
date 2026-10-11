@@ -227,6 +227,37 @@ standard stderr usage output. Existing JSON commands retain their successful
 schemas. Use explicit `--json` to obtain structured runtime errors and nonzero
 partial-read status. Progress is on stderr; parse stdout as one JSON document.
 
+Use SocialCli's own time limit to preserve a final report:
+
+```bash
+socialcli stats --brand Example --only youtube --json --timeout 80
+socialcli inbox --brand Example --since 2026-10-09T00:00:00-04:00 --json --timeout 150
+```
+
+An external process timeout can terminate SocialCli before it saves or emits
+results. If the runner needs one, allow a grace period beyond `--timeout`.
+Full YouTube stats request retention and traffic separately for every selected
+video, plus audience reports. `--since` filters by publication date; it does not
+change the metrics reporting period. Increasing the timeout does not reduce
+these requests.
+
+Inbox scans reuse verified ownership/parent bindings only within a read-only
+scan. Prepare/apply/reconcile still verify fresh remote state. Exact integer
+YouTube reply counts of zero avoid empty reply requests. Missing pagination
+metadata remains incomplete; verified observations survive. Meta comments
+without verifiable ID, text, author or parent, or with invalid times, are skipped independently,
+without discarding other valid observations or advancing complete watermarks.
+Meta coverage includes `skipped_comments` counts for `own`, `before_since` and
+`unverifiable`. Missing creation times are retained with incomplete interval
+coverage. Zero returned comments with partial coverage never proves that
+there are no new comments.
+
+Bounded reads honor HTTPX's environment proxy, `NO_PROXY` and custom CA settings,
+as ordinary SocialCli requests do. Deadline errors are distinct from transport
+failures; transport diagnostics identify fixed error classes without exposing
+exception text or credentials. Never paste proxy credentials or tokens into an
+issue report.
+
 ## Exact source links inside approved previews
 
 Create `Example/source-videos.yml` outside the application repository:

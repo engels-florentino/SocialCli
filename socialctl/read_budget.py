@@ -23,6 +23,16 @@ class ReadResponseTooLarge(httpx.ReadError):
     pass
 
 
+def transport_label(exc):
+    """Identify failures using fixed labels, never provider text or URLs."""
+    for kind in (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout,
+                 httpx.PoolTimeout, httpx.ProxyError, httpx.ConnectError,
+                 httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError):
+        if isinstance(exc, kind):
+            return kind.__name__
+    return 'TransportError'
+
+
 class ReadBudget:
     def __init__(self, seconds: float, *, clock=time.monotonic):
         if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or seconds <= 0:
@@ -147,8 +157,20 @@ class BudgetTransport(httpx.BaseTransport):
                 self.runner.close()
 
 
+class _EnvironmentTransport(httpx.AsyncBaseTransport):
+    """Keep HTTPX's public proxy/NO_PROXY/CA routing inside the cancellable loop."""
+    def __init__(self):
+        self.client = httpx.AsyncClient(timeout=30, follow_redirects=False, trust_env=True)
+
+    async def handle_async_request(self, request):
+        return await self.client.send(request, stream=True, follow_redirects=False)
+
+    async def aclose(self):
+        await self.client.aclose()
+
+
 def read_client(budget: ReadBudget, *, progress=None) -> httpx.Client:
-    return httpx.Client(transport=BudgetTransport(httpx.AsyncHTTPTransport(), budget, progress),
+    return httpx.Client(transport=BudgetTransport(_EnvironmentTransport(), budget, progress),
                         timeout=30, follow_redirects=False, trust_env=False)
 
 

@@ -1,6 +1,7 @@
 """Bounded fixed-host community reads and one explicit effect, without retry."""
 import json
 import re
+from socialctl.read_budget import ReadDeadlineExceeded
 
 from socialctl.management.community_schema import opaque_id
 from socialctl.management.youtube_resources import API, YouTubeResourcesClient, ResourceError, ResourceUncertain, resource_id
@@ -100,6 +101,10 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
             except KeyboardInterrupt:
                 result["error"] = "Read interrupted; verified items retained"
                 result["interrupted"] = True
+                break
+            except ReadDeadlineExceeded as exc:
+                result['error'] = str(exc)
+                result['timed_out'] = True
                 break
             except ResourceError as exc:
                 result["error"] = str(exc)

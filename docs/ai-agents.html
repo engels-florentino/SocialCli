@@ -161,6 +161,15 @@ invocation. CLI parser errors (for example missing required arguments) use the
 standard stderr usage output. Existing JSON commands retain their successful
 schemas. Use explicit <code>--json</code> to obtain structured runtime errors and nonzero
 partial-read status. Progress is on stderr; parse stdout as one JSON document.</p>
+<p>Use SocialCli's own time limit to preserve a final report: <code>socialcli stats --brand Example --only youtube --json --timeout 80</code>.
+If the runner also uses an external timeout, allow a grace period beyond <code>--timeout</code>.
+Full YouTube stats requests retention and traffic separately for each selected video, plus audience data.
+<code>--since</code> filters publication dates, not the metrics reporting period.</p>
+<p>Inbox scans reuse verified bindings only within a read-only scan; prepare/apply/reconcile retain fresh checks.
+Verified comments survive deadlines and independently invalid Meta rows. Meta coverage includes <code>skipped_comments</code> counts for <code>own</code>, <code>before_since</code> and <code>unverifiable</code>.
+Missing creation times are retained with incomplete interval coverage. Zero returned comments with partial coverage never proves absence.
+Bounded reads honor environment proxy, <code>NO_PROXY</code> and custom CA settings. Fixed transport error labels identify failures without exposing credentials.
+See the <a href="https://github.com/engels-florentino/SocialCli/blob/main/docs/ai-agents.md">detailed agent guide</a>.</p>
 <h2 id="exact-source-links-inside-approved-previews">Exact source links inside approved previews</h2>
 <p>Create <code>Example/source-videos.yml</code> outside the application repository:</p>
 <pre><code class="language-yaml">version: 1

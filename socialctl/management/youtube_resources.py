@@ -7,6 +7,7 @@ import uuid
 from urllib.parse import quote
 
 import httpx
+from socialctl.read_budget import ReadDeadlineExceeded, transport_label
 
 from socialctl.auth import obtener_token
 from socialctl.management.changes import ChangeError
@@ -121,6 +122,8 @@ class YouTubeResourcesClient(YouTubeManagementClient):
                 credential = self.brand.leer_secreto(Platform.YOUTUBE)
                 transport = self.client if credential.get("auth_mode") == "broker" else _FixedOAuth(self.client)
                 self._access_token = obtener_token(self.brand, Platform.YOUTUBE, transport)
+            except ReadDeadlineExceeded:
+                raise
             except Exception:
                 raise ResourceError("YouTube credentials unavailable; refresh unconfirmed") from None
         return self._access_token
@@ -163,8 +166,15 @@ class YouTubeResourcesClient(YouTubeManagementClient):
                                     if k.lower() not in {"content-encoding", "content-length"}}
                 return httpx.Response(response.status_code, headers=response_headers,
                                       content=bytes(data), request=response.request)
+        except ReadDeadlineExceeded:
+            if writing:
+                raise ResourceUncertain('YouTube: transport deadline exceeded; outcome unconfirmed') from None
+            raise
         except ResourceError:
             raise
+        except httpx.TransportError as exc:
+            raise (ResourceUncertain if writing else ResourceError)(
+                f"YouTube: transport interrupted ({transport_label(exc)}); outcome unconfirmed") from None
         except Exception:
             raise (ResourceUncertain if writing else ResourceError)(
                 "YouTube: transport interrupted; outcome unconfirmed") from None

@@ -17,6 +17,7 @@ from contextlib import ExitStack
 from typing import Literal
 
 import httpx
+from socialctl.read_budget import ReadDeadlineExceeded, transport_label
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from socialctl.auth import AuthError, obtener_token
@@ -79,6 +80,13 @@ class MetaCommentsClient:
         try:
             response = self.client.request(method, f"{GRAPH}/{path}",
                 headers={"Authorization": f"Bearer {token}"}, follow_redirects=False, **kwargs)
+        except ReadDeadlineExceeded:
+            if writing:
+                raise CommentUncertain('Meta: transport deadline exceeded; outcome unconfirmed') from None
+            raise
+        except httpx.TransportError as exc:
+            error = CommentUncertain if writing else CommentError
+            raise error(f'Meta: transport interrupted ({transport_label(exc)}); outcome unconfirmed') from None
         except Exception:
             error = CommentUncertain if writing else CommentError
             raise error("Meta: transporte interrumpido; resultado desconocido" if writing else
@@ -165,6 +173,10 @@ class MetaCommentsClient:
                 if not rows: raise
                 return {"data":rows, "complete":False, "absence_proven":False,
                         "next_cursor":params.get("after"), "error":str(exc)}
+            except ReadDeadlineExceeded as exc:
+                if not rows: raise
+                return {"data":rows, "complete":False, "absence_proven":False,
+                        "next_cursor":params.get("after"), "error":str(exc), "timed_out":True}
             data = payload.get("data")
             if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
                 if not rows: raise CommentError("Meta: invalid comments list")

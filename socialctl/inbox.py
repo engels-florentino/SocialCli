@@ -7,7 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo,ZoneInfoNotFoundError
 
 from socialctl.models import Platform
-from socialctl.read_budget import read_client
+from socialctl.read_budget import read_client, ReadDeadlineExceeded
 from socialctl.read_reports import ReadReport,safe_error
 from socialctl.management.meta_comment_inbox import CommentInboxStore,sync_inbox
 from socialctl.migration_files import write_json
@@ -75,6 +75,7 @@ def _youtube_rows(client, video_id):
     report = client.list_threads(video_id)
     rows, errors = [], []
     complete = report['complete']
+    timed_out = report.get('timed_out', False)
     if report.get('error'):
         errors.append(report['error'])
 
@@ -103,12 +104,16 @@ def _youtube_rows(client, video_id):
         for thread in report['items']:
             top = thread['snippet']['topLevelComment']
             observe(top, None, thread['id'])
-            if report.get('interrupted'):
+            count = thread['snippet'].get('totalReplyCount')
+            if report.get('interrupted') or timed_out or (type(count) is int and count == 0):
                 continue
             try:
                 replies = client.list_replies(video_id, thread['id'], top['id'])
+            except ReadDeadlineExceeded as exc:
+                replies = {'items': [], 'complete': False, 'error': str(exc), 'timed_out': True}
             except Exception as exc:
                 replies = {'items': [], 'complete': False, 'error': safe_error(str(exc))}
+            timed_out = replies.get('timed_out', False)
             complete = complete and replies['complete']
             if replies.get('error'):
                 errors.append(replies['error'])
@@ -125,8 +130,7 @@ def _youtube_rows(client, video_id):
 
 def sync_brand_inbox(brand,*,since,budget):
     from socialctl.management.meta_client import MetaClient
-    from socialctl.management.meta_comments import MetaCommentsClient
-    from socialctl.management.youtube_community import YouTubeCommunityClient
+    from socialctl.management.inbox_readers import MetaInboxClient, YouTubeInboxClient
     from socialctl.inventory import sync_content,InventoryStore
     from socialctl.management.changes import now_utc
     store=UnifiedInboxStore(brand.raiz);coverage=[];errors=[];edited=set();observed_keys=set()
@@ -157,7 +161,7 @@ def sync_brand_inbox(brand,*,since,budget):
                             inventory=sync_content(brand,platform,http,resume=False)
                         media=[v['remote_id'] for v in InventoryStore(brand,platform,account).list_items() if v.get('last_sync_id')==inventory['sync_id']]
                         complete=inventory['complete'] and inventory['details_complete']
-                        client=YouTubeCommunityClient(brand,http)
+                        client=YouTubeInboxClient(brand,http)
                         for ident in media:
                             budget.check()
                             try:items,ok,problems=_youtube_rows(client,ident)
@@ -179,7 +183,7 @@ def sync_brand_inbox(brand,*,since,budget):
                         listing=meta.content_list('posts' if platform is Platform.FACEBOOK else 'media',for_comments=True)
                         if listing.get('error'):
                             errors.append({'platform':platform.value,'message':safe_error(listing['error'])})
-                        complete=listing['complete'];client=MetaCommentsClient(brand,platform,http)
+                        complete=listing['complete'];client=MetaInboxClient(brand,platform,http)
                         inbox=CommentInboxStore(brand.raiz)
                         for media in listing['data']:
                             budget.check();ident=media['id']
@@ -187,6 +191,9 @@ def sync_brand_inbox(brand,*,since,budget):
                                 result=sync_inbox(client,inbox,media_id=ident,since=since.isoformat(),resume=True)
                                 results=[result]; problems=[];items=[]
                                 def collect(observation):
+                                    counts = row.setdefault('skipped_comments', {'own':0, 'before_since':0, 'unverifiable':0})
+                                    for label in counts:
+                                        counts[label] += observation.get('skipped_' + label, 0)
                                     records=[r for r in inbox.load().comments if r.platform==platform.value and r.account_id==account and r.media_id==ident and r.last_observed_at==observation['observed_at']]
                                     fresh=[{'platform':r.platform,'account_id':r.account_id,'media_id':r.media_id,'parent_id':r.parent_id,
                                         'comment_id':r.comment_id,'author_id':r.author_id,'text':r.text,'created_time':r.created_time,
@@ -199,6 +206,7 @@ def sync_brand_inbox(brand,*,since,budget):
                                     row['scopes'].append({'media_id':ident,'filter':'top_level_and_direct_replies','complete':False})
                                     raise KeyboardInterrupt()
                                 for parent_id in result['parent_ids']:
+                                    budget.check()
                                     try:
                                         reply_result=sync_inbox(client,inbox,media_id=ident,parent_id=parent_id,since=since.isoformat(),resume=True)
                                         results.append(reply_result);collect(reply_result)

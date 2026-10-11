@@ -134,3 +134,46 @@ def test_nested_readback_budget_bounds_headers():
     with httpx.Client(transport=BudgetTransport(Slow(),ReadBudget(5))) as client:
         with pytest.raises(ReadDeadlineExceeded):
             client.get('https://example.test',extensions={'socialcli_read_budget':ReadBudget(.01)})
+
+
+def test_bounded_reads_honor_environment_proxy_and_no_proxy(monkeypatch):
+    """Agent servers may only reach provider hosts through their HTTPS proxy."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    from contextlib import contextmanager
+    from socialctl.read_budget import read_client, ReadBudget
+    seen = []
+    class Proxy(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen.append(self.path)
+            self.send_response(200)
+            self.send_header('Content-Length','2')
+            self.end_headers()
+            self.wfile.write(b'ok')
+        def do_CONNECT(self):
+            seen.append('CONNECT ' + self.path)
+            self.send_response(502)
+            self.send_header('Content-Length','0')
+            self.end_headers()
+        def log_message(self, *args): pass
+    @contextmanager
+    def server():
+        httpd = ThreadingHTTPServer(('127.0.0.1',0),Proxy)
+        thread = Thread(target=httpd.serve_forever,daemon=True)
+        thread.start()
+        try: yield f'http://127.0.0.1:{httpd.server_port}'
+        finally:
+            httpd.shutdown();httpd.server_close();thread.join()
+    for name in ('HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy','no_proxy'):
+        monkeypatch.delenv(name,raising=False)
+    with server() as proxy, server() as origin:
+        monkeypatch.setenv('HTTP_PROXY',proxy)
+        monkeypatch.setenv('HTTPS_PROXY',proxy)
+        monkeypatch.setenv('NO_PROXY','127.0.0.1')
+        with read_client(ReadBudget(2)) as client:
+            assert client.get('http://socialcli-proxy-only.invalid/read').text == 'ok'
+            assert client.get(origin + '/direct').text == 'ok'
+            with pytest.raises(httpx.ProxyError):
+                client.get('https://socialcli-proxy-only.invalid/read')
+    assert seen[:2] == ['http://socialcli-proxy-only.invalid/read','/direct']
+    assert seen[2:] == ['CONNECT socialcli-proxy-only.invalid:443'] * 3

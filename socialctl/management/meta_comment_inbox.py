@@ -24,6 +24,7 @@ from socialctl.management.meta_comments import (
     apply_comment,
     prepare_comment,
     reconcile_comment,
+    _id,
 )
 
 
@@ -215,6 +216,44 @@ def grouped_inbox(data: InboxData, *, platform: str | None = None, media_id: str
     return result
 
 
+def verified_inbox_rows(rows, platform, media_id, parent_id=None):
+    """Keep independent valid observations; ambiguous IDs never become parents."""
+    remote, rejected, skipped = {}, set(), 0
+    field = 'message' if platform.value == 'facebook' else 'text'
+    time_field = 'created_time' if platform.value == 'facebook' else 'timestamp'
+    for row in rows:
+        ident = row.get('id')
+        try:
+            _id(ident)
+            author = row.get('from')
+            if not isinstance(author, dict) or not isinstance(author.get('id'), str) or not author['id'] or not isinstance(row.get(field), str):
+                raise CommentError('unverifiable text or author')
+            if platform.value == 'facebook':
+                parent = row.get('parent')
+                if parent is not None and (not isinstance(parent, dict) or parent.get('id') != (parent_id or media_id)):
+                    raise CommentError('unverifiable parent')
+            elif row.get('parent_id') is not None and row['parent_id'] != parent_id:
+                raise CommentError('unverifiable parent')
+            if row.get(time_field) is not None:
+                _canonical_time(row[time_field])
+            if ident in rejected:
+                skipped += 1
+                continue
+            if ident in remote and remote[ident] != row:
+                del remote[ident]
+                rejected.add(ident)
+                skipped += 2
+                continue
+            remote[ident] = row
+        except (CommentError, ValueError, TypeError):
+            if isinstance(ident, str) and ident in remote:
+                del remote[ident]
+                skipped += 1
+            if isinstance(ident, str): rejected.add(ident)
+            skipped += 1
+    return remote, skipped
+
+
 def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id: str,
                since: str | None = None, max_pages: int = 100, parent_id: str | None = None, resume: bool = False) -> dict:
     if not 1 <= max_pages <= 100:
@@ -246,14 +285,17 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             **({"parent_id":parent_id} if parent_id else {}))
         cursor_recovered = True
     now = now_utc().isoformat()
-    remote: dict[str, dict] = {}
-    for row in listing["data"]:
-        ident = row.get("id")
-        if not isinstance(ident, str):
-            raise CommentError("Meta returned a comment without a verifiable ID")
-        if ident in remote and remote[ident] != row:
-            raise CommentError("Meta returned the same comment with incompatible data")
-        remote[ident] = row
+    remote, skipped_unverifiable = verified_inbox_rows(listing['data'], client.platform, media_id, parent_id)
+    if skipped_unverifiable:
+        listing = {**listing, 'complete':False, 'next_cursor':None,
+            'error': ((listing.get('error') + '; ') if listing.get('error') else '') +
+                     'Some Meta comments lack verifiable identity, text, author, parent or time; valid observations retained'}
+    time_field = 'created_time' if client.platform.value == 'facebook' else 'timestamp'
+    unknown_creation_time = sum(row.get(time_field) is None for row in remote.values())
+    if unknown_creation_time:
+        listing = {**listing, 'complete':False, 'next_cursor':None,
+            'error': ((listing.get('error') + '; ') if listing.get('error') else '') +
+                     'Some Meta comments lack creation time; interval membership unknown; observations retained'}
 
     added = updated = unchanged = skipped_own = skipped_before_since = 0
     with store.lock():
@@ -327,8 +369,10 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
         "provider_cursor": listing.get("next_cursor"), "complete": listing["complete"],
         "cursor_recovered": cursor_recovered, "interrupted":listing.get("interrupted",False), "parent_ids": list(remote), "error": listing.get("error"),
         "new": added, "updated": updated,
-        "deduplicated": unchanged + len(listing["data"]) - len(remote),
+        "deduplicated": unchanged + max(0, len(listing["data"]) - len(remote) - skipped_unverifiable),
         "skipped_own": skipped_own, "skipped_before_since": skipped_before_since,
+        "skipped_unverifiable": skipped_unverifiable,
+        "unknown_creation_time": unknown_creation_time,
         "groups": grouped_inbox(data, platform=client.platform.value, media_id=media_id)}
 
 
