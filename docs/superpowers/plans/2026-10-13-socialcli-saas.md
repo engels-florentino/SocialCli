@@ -14,7 +14,9 @@
 candidata `0.3.0rc1`. El servicio público sigue en 0.2.6. Identidad, vinculación,
 trial, Stripe test, control de acceso, migración, rotación, renovación, eliminación
 y recordatorios tienen código y pruebas. El correo real llegó a bandeja de entrada;
-Auth privado y restauración se verificaron. Distribución y preparación del piloto
+Auth privado y restauración se verificaron. El mantenimiento tiene límites de tiempo,
+contadores de pendientes y diagnóstico privado de solo lectura; la suite pasa 2396
+pruebas. Los timers y las alertas aún no están activados. Distribución y preparación del piloto
 siguen en ejecución: no hay publicación PyPI ni despliegue público del SaaS.
 
 La lista original de abajo conserva los criterios de aceptación completos; no debe

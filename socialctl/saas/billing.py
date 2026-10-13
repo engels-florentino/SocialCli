@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import HTTPException
 from socialctl.saas.access import AccessControl
+from socialctl.saas.budget import BudgetExpired
 
 API_VERSION = '2025-09-30.clover'
 
@@ -66,6 +67,7 @@ class BillingService:
         self.metadata,self.vault,self.settings=metadata,metadata.vault,settings
         self.client,self.clock,self.origin=client,clock,origin
         self.access=AccessControl(metadata)
+        self.budget=None
 
     def api(self,method,path,data=None,key=None):
         headers={'Authorization':'Bearer '+self.settings.secret_key,'Stripe-Version':API_VERSION}
@@ -73,9 +75,10 @@ class BillingService:
         try:
             with self.client.stream(method,'https://api.stripe.com/v1'+path,headers=headers,
                     params=data if method=='GET' else None,data=data if method!='GET' else None,
-                    timeout=20,follow_redirects=False) as response:
+                    timeout=self.budget.timeout(20) if self.budget else 20,follow_redirects=False) as response:
                 content=bytearray()
                 for chunk in response.iter_bytes():
+                    if self.budget and self.budget.expired():raise BudgetExpired()
                     content.extend(chunk)
                     if len(content)>2*1024*1024:raise unavailable()
                 if response.status_code!=200:raise unavailable()
@@ -83,7 +86,7 @@ class BillingService:
                 value=json.loads(content)
                 if not isinstance(value,dict):raise unavailable()
                 return value
-        except (httpx.HTTPError,ValueError,TypeError):
+        except (httpx.HTTPError,ValueError,TypeError,BudgetExpired):
             raise unavailable() from None
 
     def verify_configuration(self):

@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse,RedirectResponse
 from socialctl.saas import pages
 from socialctl.saas.auth import IdentityError,IdentityUnavailable
 from socialctl.saas.routes import read_form
+from socialctl.saas.budget import using_budget
 
 
 class AccountLifecycle:
@@ -101,14 +102,20 @@ class AccountLifecycle:
         return '<section aria-label="Connected accounts"><h2>Connected accounts</h2>'+('<ul class="account-list">'+''.join(connections)+'</ul>' if connections else '<p class="description">No social accounts connected yet. Ask your assistant to connect your account.</p>')+'</section><section aria-label="Assistants"><h2>Assistants</h2>'+('<ul class="account-list">'+''.join(installations)+'</ul>' if installations else '<p class="description">No assistants linked yet.</p>')+'</section><a class="text-link" href="/account/delete">Delete my account</a>'
 
 
-def run_deletions(metadata,identity,billing,clock,limit=100):
+def run_deletions(metadata,identity,billing,clock,limit=100,*,budget=None):
+    with using_budget(budget,identity,billing):
+        return _run_deletions(metadata,identity,billing,clock,limit,budget)
+
+
+def _run_deletions(metadata,identity,billing,clock,limit,budget):
     completed=0;pending=0;vault=metadata.vault
     with vault.transaction() as db:
         jobs=[dict(r) for r in db.execute("SELECT * FROM saas_deletions WHERE state='pending' AND next_attempt<=? AND lease_until<=? ORDER BY next_attempt,requested LIMIT ?",(clock(),clock(),limit))]
     for job in jobs:
+        if budget and budget.expired():break
         user_id=job['user_id'];token=secrets.token_hex(20)
         with vault.transaction() as db:
-            claimed=db.execute("UPDATE saas_deletions SET lease=?,lease_until=? WHERE user_id=? AND state='pending' AND lease_until<=?",(token,clock()+300,user_id,clock())).rowcount
+            claimed=db.execute("UPDATE saas_deletions SET lease=?,lease_until=? WHERE user_id=? AND state='pending' AND lease_until<=? AND next_attempt<=?",(token,clock()+300,user_id,clock(),clock())).rowcount
             row=db.execute('SELECT * FROM saas_billing WHERE user_id=?',(user_id,)).fetchone()
             billing_row=dict(row) if row else None
         if not claimed:continue
@@ -137,7 +144,10 @@ def run_deletions(metadata,identity,billing,clock,limit=100):
             with vault.transaction() as db:
                 db.execute("UPDATE saas_deletions SET lease=NULL,lease_until=0,next_attempt=? WHERE user_id=? AND lease=?",(clock()+300,user_id,token))
             pending+=1
-    return {'completed':completed,'pending':pending}
+    with vault.transaction() as db:
+        due=db.execute("SELECT count(*) FROM saas_deletions WHERE state='pending' AND next_attempt<=?",(clock(),)).fetchone()[0]
+    return {'completed':completed,'pending':pending,'due':due,
+            'budget_exhausted':bool(budget and budget.expired())}
 
 
 def install_lifecycle_routes(app,settings,metadata,sessions,clock):

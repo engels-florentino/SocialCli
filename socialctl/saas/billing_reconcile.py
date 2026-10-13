@@ -1,5 +1,6 @@
 """Canonical Stripe reconciliation: event timestamps never decide access."""
 from socialctl.saas.billing import fixed_price, unavailable, stripe_id
+from socialctl.saas.budget import using_budget
 
 
 def paid_until(billing,customer,subscription,invoices):
@@ -62,14 +63,23 @@ def reconcile(billing,user_id):
         return {'status':status,'paid_until':end,'review':review}
 
 
-def run_pending(billing,limit=100):
+def run_pending(billing,limit=100,*,budget=None):
+    with using_budget(budget,billing):
+        return _run_pending(billing,limit,budget)
+
+
+def _run_pending(billing,limit,budget):
     """Run on the isolated five-minute maintenance timer; safe to retry on crash."""
     from fastapi import HTTPException
     with billing.vault.transaction() as db:
         events=[dict(r) for r in db.execute("SELECT * FROM saas_billing_events WHERE state='pending' AND next_attempt<=? ORDER BY next_attempt,received,event_id LIMIT ?",(billing.clock(),limit))]
         due=[r[0] for r in db.execute('SELECT b.user_id FROM saas_billing b JOIN saas_users u ON u.id=b.user_id WHERE b.customer_id IS NOT NULL AND b.sync_due<=? AND u.deleting=0 ORDER BY b.sync_due,b.user_id LIMIT ?',(billing.clock(),limit))]
     processed=0;failed=0;visited=set()
+    # Reserve half the phase for periodic reconciliation, even under event load.
+    event_budget=budget.portion(0.5) if budget else None
+    if event_budget:billing.budget=event_budget
     for event in events:
+        if event_budget and event_budget.expired():break
         key=(event['account_id'],event['mode'],event['event_id'])
         with billing.vault.transaction() as db:
             row=db.execute('SELECT user_id FROM saas_billing WHERE customer_id=?',(event['customer_id'],)).fetchone()
@@ -86,7 +96,9 @@ def run_pending(billing,limit=100):
                 state='pending';failed+=1
         with billing.vault.transaction() as db:
             db.execute("UPDATE saas_billing_events SET state=?,next_attempt=? WHERE account_id=? AND mode=? AND event_id=? AND state='pending'",(state,billing.clock()+300,*key))
+    if budget:billing.budget=budget
     for user_id in due:
+        if budget and budget.expired():break
         if user_id in visited:continue
         try:
             billing.reconcile(user_id)
@@ -95,4 +107,8 @@ def run_pending(billing,limit=100):
             with billing.vault.transaction() as db:
                 db.execute('UPDATE saas_billing SET sync_due=? WHERE user_id=? AND lease_until<=?',
                            (billing.clock()+300,user_id,billing.clock()))
-    return {'processed':processed,'retry_pending':failed}
+    with billing.vault.transaction() as db:
+        event_due=db.execute("SELECT count(*) FROM saas_billing_events WHERE state='pending' AND next_attempt<=?",(billing.clock(),)).fetchone()[0]
+        customer_due=db.execute("SELECT count(*) FROM saas_billing b JOIN saas_users u ON u.id=b.user_id WHERE b.customer_id IS NOT NULL AND b.sync_due<=? AND u.deleting=0",(billing.clock(),)).fetchone()[0]
+    return {'processed':processed,'retry_pending':failed,'due':event_due+customer_due,
+            'budget_exhausted':bool(budget and budget.expired())}

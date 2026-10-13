@@ -5,6 +5,7 @@ from uuid import UUID
 import httpx
 from fastapi import HTTPException
 from socialctl.saas.models import AuthenticatedUser
+from socialctl.saas.budget import BudgetExpired
 
 
 def digest(value):
@@ -22,6 +23,7 @@ class IdentityUnavailable(Exception):
 class SupabaseAuth:
     def __init__(self, settings, client):
         self.settings, self.client = settings, client
+        self.budget = None
 
     def request(self, method, path, *, token=None, data=None):
         headers = {'apikey':self.settings.auth_key} if self.settings.auth_key else {}
@@ -29,12 +31,12 @@ class SupabaseAuth:
             headers['Authorization']='Bearer '+token
         try:
             result = self.client.request(method,self.settings.auth_url+path,json=data,headers=headers,
-                                         timeout=15,follow_redirects=False)
+                                         timeout=self.budget.timeout(15) if self.budget else 15,follow_redirects=False)
             if result.status_code in {400,401,403,422}:
                 raise IdentityError()
             result.raise_for_status()
             return result.json() if result.content else {}
-        except (httpx.HTTPError,ValueError):
+        except (httpx.HTTPError,ValueError,BudgetExpired):
             raise IdentityUnavailable() from None
 
     def send_code(self,email):
@@ -63,11 +65,11 @@ class SupabaseAuth:
         try:
             result=self.client.request('DELETE',self.settings.auth_url+'/admin/users/'+user_id,
                 headers={'Authorization':'Bearer '+self.settings.auth_admin_key,'apikey':self.settings.auth_admin_key},
-                timeout=15,follow_redirects=False)
+                timeout=self.budget.timeout(15) if self.budget else 15,follow_redirects=False)
             if result.status_code in {200,204}:return
             if result.status_code==404 and result.json().get('error_code')=='user_not_found':return
             raise IdentityUnavailable()
-        except (httpx.HTTPError,ValueError,AttributeError):
+        except (httpx.HTTPError,ValueError,AttributeError,BudgetExpired):
             raise IdentityUnavailable() from None
 
     @staticmethod

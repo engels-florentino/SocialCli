@@ -42,7 +42,13 @@ def rejection(code):
 
 
 class SMTPMailer:
-    def __init__(self,settings):self.settings=settings
+    def __init__(self,settings):
+        self.settings=settings
+        self.budget=None
+
+    def constrain(self,server):
+        if self.budget:
+            server.sock.settimeout(self.budget.timeout(20))
 
     def send(self,recipient,message,before_send):
         try:mailbox(recipient)
@@ -50,18 +56,27 @@ class SMTPMailer:
         server=None;sending=False
         try:
             raw=message.as_bytes(policy=SMTP)
-            server=smtplib.SMTP(self.settings.host,self.settings.port,timeout=20)
+            server=smtplib.SMTP(self.settings.host,self.settings.port,
+                timeout=self.budget.timeout(20) if self.budget else 20)
+            self.constrain(server)
             code,_=server.ehlo()
             if code!=250:return 'retry'
+            self.constrain(server)
             server.starttls(context=ssl.create_default_context())
+            self.constrain(server)
             code,_=server.ehlo()
             if code!=250:return 'retry'
+            self.constrain(server)
             server.login(self.settings.username,self.settings.password)
+            self.constrain(server)
             code,_=server.mail('access@socialcli.app')
             if code!=250:return 'retry'  # sender configuration must be fixed by operator
+            self.constrain(server)
             code,_=server.rcpt(recipient)
             if code not in {250,251}:return rejection(code)
+            self.constrain(server)
             if not before_send():return 'cancelled'
+            self.constrain(server)
             sending=True
             try:code,_=server.data(raw)
             except smtplib.SMTPDataError as error:return rejection(error.smtp_code)

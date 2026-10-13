@@ -10,6 +10,7 @@ from string import Template
 from socialctl.saas.access import AccessControl
 from socialctl.saas.pages import utc_date
 from socialctl.saas.mail import mailbox
+from socialctl.saas.budget import using_budget
 
 DAY=86400
 LEASE_SECONDS=300
@@ -65,13 +66,18 @@ class Reminders:
             # Retain minimal delivery receipts only briefly after the trial. No addresses.
             db.execute('DELETE FROM saas_reminders WHERE trial_end<?',(now-30*DAY,))
 
-    def run(self,sender,limit=100):
+    def run(self,sender,limit=100,*,budget=None):
+        with using_budget(budget,sender):
+            return self._run(sender,limit,budget)
+
+    def _run(self,sender,limit,budget):
         self.prepare()
         accepted=0
         with self.vault.transaction() as db:
             jobs=([dict(row) for row in db.execute("SELECT * FROM saas_reminders WHERE state='pending' AND next_attempt<=? ORDER BY next_attempt,id LIMIT ?",(self.clock(),limit))]
                 if sender is not None else [])
         for job in jobs:
+            if budget and budget.expired():break
             lease=secrets.token_hex(24)
             with self.vault.transaction() as db:
                 claimed=db.execute("UPDATE saas_reminders SET state='preparing',attempts=attempts+1,lease=?,lease_until=? WHERE id=? AND state='pending' AND next_attempt<=?",(lease,self.clock()+LEASE_SECONDS,job['id'],self.clock())).rowcount
@@ -83,6 +89,7 @@ class Reminders:
                 recipient=identity['payload']['email']
 
             def before_send():
+                if budget and budget.expired():return False
                 with self.vault.transaction() as db:
                     row=db.execute('SELECT * FROM saas_reminders WHERE id=?',(job['id'],)).fetchone()
                     if row is None or row['lease']!=lease or row['state']!='preparing' or row['lease_until']<=self.clock():return False
@@ -90,6 +97,7 @@ class Reminders:
                     if not self.eligible(db,job,self.clock()) or identity is None or identity['payload']['email']!=recipient:
                         db.execute("UPDATE saas_reminders SET state='cancelled',lease=NULL WHERE id=?",(job['id'],))
                         return False
+                    if budget and budget.expired():return False
                     db.execute("UPDATE saas_reminders SET state='sending',lease_until=? WHERE id=?",(self.clock()+LEASE_SECONDS,job['id']))
                     return True
 
@@ -115,4 +123,5 @@ class Reminders:
             counts={row['state']:row['n'] for row in db.execute("SELECT state,count(*) AS n FROM saas_reminders WHERE (state='pending' AND next_attempt<=?) OR state IN ('uncertain','rejected','preparing','sending') GROUP BY state",(self.clock(),))}
             retry_pending=db.execute("SELECT count(*) FROM saas_reminders WHERE state='pending' AND attempts>0").fetchone()[0]
         return {'disabled':sender is None,'accepted':accepted,'retry_pending':retry_pending,'due':counts.get('pending',0),'uncertain':counts.get('uncertain',0),
-                'rejected':counts.get('rejected',0),'in_progress':counts.get('preparing',0)+counts.get('sending',0)}
+                'rejected':counts.get('rejected',0),'in_progress':counts.get('preparing',0)+counts.get('sending',0),
+                'budget_exhausted':bool(budget and budget.expired())}
