@@ -7,10 +7,14 @@ application joins `socialcli-identity` and reaches `http://socialcli-auth:9999`.
 Set `SOCIALCLI_AUTH_INTERNAL_HTTP=1` explicitly for that private hop. The web
 browser talks to SocialCli over HTTPS; identity tokens stay on the server.
 
-Copy `auth.env.example` to private `auth.env`. Create private `database.env`
-with POSTGRES_USER=socialcli_auth, POSTGRES_DB=socialcli_auth and a long random
-POSTGRES_PASSWORD matching the Auth database URL. Set a separate random JWT
-secret. Keep both env files mode 0600, directories mode 0700, outside Git.
+Copy `auth.env.example` to private `auth.env` and `database.env.example` to private
+`database.env`. Bootstrap with `socialcli_db_admin` and its separate random
+`POSTGRES_PASSWORD`. Set `SOCIALCLI_AUTH_DB_PASSWORD` to another random password,
+matching the `socialcli_auth` runtime URL in `auth.env`. Auth never receives the
+database administrator password. Set a separate random JWT secret.
+Use URL-safe random passwords; otherwise percent-encode the runtime password in
+the PostgreSQL URL while keeping the raw value in `database.env`.
+Keep both env files mode 0600, directories mode 0700, outside Git.
 Run `docker compose up -d`. `init.sql` initializes the Auth namespace and role
 required by upstream migrations on an empty dedicated database.
 
@@ -40,8 +44,21 @@ Back up this dedicated Postgres database with pg_dump and keep JWT/SMTP
 credentials separately. Restore into another isolated stack and exercise OTP
 verification before relying on a backup. Monitor Auth health and delivery errors
 without logging codes, JWTs or SMTP passwords. Pin and review Auth image updates.
-The PostgreSQL image's bootstrap owner is privileged; restrict the runtime role
-before public launch and test future Auth migrations with that role.
+The PostgreSQL bootstrap owner is privileged. The Auth runtime role owns its
+schema, has database CREATE for migrations, and has no superuser, role creation,
+database creation, replication or RLS bypass privilege. Test each Auth upgrade's
+migrations with that role before rollout; do not add superuser to resolve an
+upgrade failure. `init.sql` applies only to empty volumes. Existing instances
+need a verified separate administrator login and restore test before conversion.
+The original bootstrap role cannot lose SUPERUSER: `separate-runtime.sql` renames
+it to `socialcli_bootstrap`, disables login, creates a restricted runtime login
+and transfers only Auth objects. Never use `REASSIGN OWNED` on the bootstrap role,
+which owns system catalogs. Run the guarded transaction only on this dedicated
+legacy cluster, as `socialcli_db_admin`, with `SOCIALCLI_AUTH_DB_PASSWORD` set
+privately. After restarting Auth, verify no bootstrap **client backend** remains;
+PostgreSQL's internal logical replication launcher is not a client login.
+If post-migration validation fails, retain restricted privileges and investigate
+with the separate administrator; never automatically promote the runtime user.
 
 This preparation is private infrastructure, not a completed public SaaS rollout.
 
@@ -74,3 +91,27 @@ was changed.
 
 Upstream initialization reference:
 https://github.com/supabase/auth/blob/master/init_postgres.sh
+
+## Restore and runtime permissions verified, 2026-10-13
+
+A custom-format dump taken with a single exported snapshot was restored into an
+isolated temporary Docker network and volume. Counts and sorted row digests
+matched for all 28 Auth/public tables. The exact legacy-bootstrap conversion
+passed there, as did initialization of an empty volume with `init.sql` and all
+75 Auth migrations under the restricted runtime role. Temporary stacks were
+removed; private dumps and sanitized reports remain in `auth/restore-probes/`.
+
+The conversion was then applied to the dedicated private Auth stack. Its runtime
+role has no superuser, role/database creation, replication, RLS bypass or inherited
+roles. A separately password-authenticated administrator owns the database; the
+runtime owns the Auth schema. The old bootstrap login is disabled.
+
+A fictional identity was created, its generated OTP redeemed without sending
+mail, its session verified, then the identity deleted and access rejected. The
+original user remained and no probe identities remained. Health returned 200.
+The public 0.2.6 broker was not restarted or changed.
+
+Administrator recovery credentials and the SaaS service-role API credential are
+kept in separate 0600 files outside Git. The latter expires after one year and
+must be replaced before expiry. This test does not establish scheduled/off-site
+backup coverage, SQLite restoration, or completion of the public browser flow.
