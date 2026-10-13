@@ -44,3 +44,31 @@ The PostgreSQL image's bootstrap owner is privileged; restrict the runtime role
 before public launch and test future Auth migrations with that role.
 
 This preparation is private infrastructure, not a completed public SaaS rollout.
+
+## Runtime schema repair and DNS verification, 2026-10-13
+
+The first real `/otp` test failed before sending mail because runtime queries
+looked for `users` in the default search path. Health alone did not detect this.
+`init.sql` now sets the dedicated role/database search path to `auth`, matching
+Supabase Auth's upstream initialization. Use `DB_NAMESPACE=auth` for the explicit
+namespace setting.
+
+On the already initialized private database, the prior migration ledger was in
+`public.schema_migrations`. Before changing it, Auth was stopped and a private
+custom-format database dump was saved. The 75 previously applied migration
+versions were reconciled into `auth.schema_migrations` (20 missing entries),
+without inventing versions or resetting tables. Auth was recreated and `/health`
+and the user-authorized `/otp` request both returned 200. There were no Auth users
+before the test. The provider accepting a request does not prove inbox delivery.
+The actual first-email test was requested by the user; receipt confirmation is
+recorded separately.
+
+Namecheap now serves MX `10 mail.florentino.pro`, root SPF `v=spf1 mx -all`, and
+DMARC `v=DMARC1; p=none`. SMTP2GO verified the domain's DKIM and return-path CNAMEs.
+Its outbound route remains the existing Stalwart relay. Changing Email Forwarding
+to Custom MX removed Namecheap's managed SPF; it was restored as an independent
+host TXT record and verified on both authoritative nameservers. No web A record
+was changed.
+
+Upstream initialization reference:
+https://github.com/supabase/auth/blob/master/init_postgres.sh

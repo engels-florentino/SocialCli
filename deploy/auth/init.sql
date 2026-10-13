@@ -7,3 +7,6 @@ DO $$ BEGIN
     CREATE ROLE postgres NOLOGIN;
   END IF;
 END $$;
+
+-- Runtime queries use unqualified table names, separately from migrations.
+ALTER ROLE socialcli_auth IN DATABASE socialcli_auth SET search_path = auth;
