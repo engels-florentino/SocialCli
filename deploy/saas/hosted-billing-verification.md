@@ -52,3 +52,10 @@ References: [Stripe subscription cancellation changes](https://docs.stripe.com/c
 
 Regression verification: focused billing/webhook tests **40 passed**; full suite
 **2,401 passed**, one upstream Starlette deprecation warning (48.60 seconds).
+
+The fix was deployed to the isolated candidate at checkpoint `fe9700c`, after a
+verified SQLite snapshot. Reconciliation of the same real Sandbox subscription
+now records scheduled cancellation, preserves paid access through Nov 13 and
+reports no billing review. Both candidate and original public containers remain
+healthy. The screenshot/UI steps establish Stripe's hosted flow; the public
+SocialCli return and delivery of a webhook are still unverified.

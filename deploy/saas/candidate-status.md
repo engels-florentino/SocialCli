@@ -1,6 +1,6 @@
 # Isolated server candidate — 13 October 2026
 
-Code checkpoint: `8bbd094`, SocialCli **0.3.0rc1**. Public SocialCli remains
+Code checkpoint: `fe9700c`, SocialCli **0.3.0rc1**. Public SocialCli remains
 **0.2.6**. This is a private server deployment, not a public SaaS launch.
 
 ## Deployed boundaries
@@ -23,10 +23,10 @@ Code checkpoint: `8bbd094`, SocialCli **0.3.0rc1**. Public SocialCli remains
 
 ## Evidence
 
-- Full Python suite: **2,396 passed**, one upstream Starlette deprecation warning.
+- Full Python suite: **2,401 passed**, one upstream Starlette deprecation warning.
 - Wheel and source archive passed the release allowlist/private-file verifier.
-- Wheel SHA256: `6d2ba5ce35e7d32767d72cf2efef33520392e8c2bd9bcd05b0a7f9d55022250e`.
-- Sdist SHA256: `877f15d4459381221963d50367d13869ac1267d5fd6d1f69e3c8c53c7be4147a`.
+- Wheel SHA256: `50bc17bd3f9132e81d9b92b335fd4dfa47bd0f8dbf641d8a3ebcfa44b7ebe552`.
+- Sdist SHA256: `19578bc5b214ee354071b60d2956851e7d9f7f3936f7a75b23c7d2fcc339fc6e`.
 - Candidate installed in its own Python 3.12 image; version is 0.3.0rc1.
 - Local HTTP probes: `/healthz`, `/agents`, `/account/login` return 200;
   unauthenticated `/account/` redirects 303. Guide and login include expected
@@ -37,6 +37,12 @@ Code checkpoint: `8bbd094`, SocialCli **0.3.0rc1**. Public SocialCli remains
 - Manual maintenance and separate read-only operational report exited 0 with no
   pending work; Docker reports healthy and verified loopback binding on 8789.
 
-The package-index release, hosted browser checkout, real signed webhook delivery,
+A fictional owner now exercises actual hosted Stripe Sandbox Checkout/Portal; see
+[hosted billing evidence](hosted-billing-verification.md). The subscription was paid
+with a test card and cancelled at period end. No real owner/social account was added.
+The Portal timestamp cancellation fix was rechecked against that exact Stripe
+subscription after candidate-only redeployment, with a verified pre-update snapshot.
+
+The package-index release, complete browser registration/return, real signed webhook delivery,
 public proxy routing, backup scheduling/off-host recovery, alert delivery and
 Muse/Grok pilot remain outstanding. This deployment does not establish these.
