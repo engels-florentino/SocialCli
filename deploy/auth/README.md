@@ -115,3 +115,10 @@ Administrator recovery credentials and the SaaS service-role API credential are
 kept in separate 0600 files outside Git. The latter expires after one year and
 must be replaced before expiry. This test does not establish scheduled/off-site
 backup coverage, SQLite restoration, or completion of the public browser flow.
+
+The built candidate wheel was also loaded in a disposable Linux container on
+the private identity network. Its actual `SupabaseAuth` adapter verified a
+generated fictional OTP and fetched the identity. The SaaS durable deletion
+worker removed the exact Auth fixture and local identity, rejected the old access
+token, and handled repeated deletion idempotently. No mail or social API calls
+were made. This still does not replace the public browser pilot.
