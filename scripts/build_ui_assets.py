@@ -22,6 +22,7 @@ def build(root: Path, *, check=False) -> int:
     for name, value in re.findall(r'(--[a-z-]+):([^;]+);', (source / 'tokens.css').read_text()):
         trial = trial.replace('var(' + name + ')', value)
     bundles['socialctl/ui/email/trial.html'] = trial
+    bundles['docs/agents.md'] = (source / 'agents.md').read_text()
     stale = []
     for destination, expected in bundles.items():
         output = root / destination

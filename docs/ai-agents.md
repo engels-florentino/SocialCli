@@ -332,3 +332,9 @@ See the [capability and permission matrix](capabilities.md) before proposing an
 unsupported action. For headless servers, select the documented
 [encrypted capability store](connections.md#headless-encrypted-capability-storage)
 explicitly; OS keyring remains the default and no silent fallback is provided.
+
+## SaaS candidate installation
+
+For 0.3.0rc1 installation, protected persistent storage and browser-owned SocialCli
+sign-in, use the [candidate bootstrap guide](agents.md). Public PyPI availability
+and the real Muse/Grok pilot remain unconfirmed.

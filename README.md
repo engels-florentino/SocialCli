@@ -18,6 +18,15 @@ Install SocialCli where your agent can run shell commands, point it at your crea
 
 [The AI agent guide](docs/ai-agents.md) includes the commands behind these prompts, workspace instructions and the approval workflow. JSON is available on supported diagnostics and inventory commands. SocialCli runs through the agent's shell; it does not include an AI model or an MCP server. Your agent must keep credentials private and preserve the distinction between confirmed, pending and uncertain results.
 
+## SaaS candidate
+
+This branch prepares **0.3.0rc1** with email sign-in, agent pairing, a 14-day trial
+and a USD 10/month subscription in Stripe test mode. It has not been published to
+PyPI or deployed over the public 0.2.6 service. Use the reviewed candidate wheel
+for testing; see [the candidate agent guide](docs/agents.md) and
+[release procedure](deploy/saas/release.md). `socialcli --version` reports the
+version in the agent's actual installed environment.
+
 ## Install
 
 Use macOS or Linux with Python 3.11 or later, Git, and an available OS credential store. Video checks also require `ffprobe`, included with FFmpeg. If `python3 --version` reports an older version, install a supported Python first or replace `python3` below with your supported interpreter, such as `python3.12`. SocialCli inspects files; it does not generate, crop or reencode content.

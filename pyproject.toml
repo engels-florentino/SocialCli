@@ -1,6 +1,6 @@
 [project]
 name = "socialcli"
-version = "0.2.6"
+version = "0.3.0rc1"
 description = "SocialCli: publish and manage creator-owned social content from the terminal."
 readme = "README.md"
 license = "MIT"
@@ -18,7 +18,7 @@ socialcli = "socialctl.cli:app"
 socialctl = "socialctl.cli:app"
 
 [project.urls]
-Homepage = "https://engels-florentino.github.io/SocialCli/"
+Homepage = "https://socialcli.app"
 Repository = "https://github.com/engels-florentino/SocialCli"
 Issues = "https://github.com/engels-florentino/SocialCli/issues"
 
@@ -44,3 +44,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["socialctl"]
+
+# Do not rely on VCS ignore discovery inside a linked worktree for sdist safety.
+[tool.hatch.build.targets.sdist]
+only-include = ["socialctl", "pyproject.toml", "README.md", "LICENSE"]
+exclude = ["**/.env", "**/.env.*", "**/*.env", "**/.secrets/**", "**/__pycache__/**", "**/*.pyc", "**/*.key", "**/*.pem", "**/*.sqlite3*"]

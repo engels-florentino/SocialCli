@@ -1,0 +1,117 @@
+name: Reviewed Python release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Reviewed immutable tag matching the package version (for example v0.3.0rc1)
+        required: true
+        type: string
+      index:
+        description: Target package index; approve the artifact before production publication
+        required: true
+        type: choice
+        default: testpypi
+        options: [testpypi, pypi]
+permissions:
+  contents: read
+concurrency:
+  group: socialcli-release-${{ inputs.tag }}-${{ inputs.index }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - id: version
+        name: Verify exact tag and package identity
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_INDEX: ${{ inputs.index }}
+        run: |
+          python - <<'PY'
+          import os,re,subprocess,tomllib
+          tag=os.environ['RELEASE_TAG']
+          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:rc[0-9]+)?',tag), 'Use a reviewed release tag'
+          if os.environ['RELEASE_INDEX']=='pypi':
+              assert 'rc' not in tag, 'Candidates go to TestPyPI first'
+          head=subprocess.check_output(['git','rev-parse','HEAD']).strip()
+          tagged=subprocess.check_output(['git','rev-parse','refs/tags/'+tag+'^{commit}']).strip()
+          assert head==tagged
+          with open('pyproject.toml','rb') as f: project=tomllib.load(f)['project']
+          assert project['name']=='socialcli' and project['version']==tag[1:]
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write('version='+project['version']+'\ncommit='+head.decode()+'\n')
+          PY
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: uv sync --locked --group dev
+      - run: uv run python scripts/build_ui_assets.py --check
+      - run: uv run pytest -q
+      - run: uv build
+      - name: Verify both archive contents before uploading
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: python scripts/release/check_artifacts.py dist "$RELEASE_VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: socialcli-reviewed-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+  smoke:
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: socialcli-reviewed-distributions
+          path: dist/
+      - name: Install and exercise the built wheel outside the checkout
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python -m venv "$RUNNER_TEMP/socialcli-smoke"
+          "$RUNNER_TEMP/socialcli-smoke/bin/python" -m pip install "$(pwd)/dist/socialcli-$RELEASE_VERSION-py3-none-any.whl[headless-credentials]"
+          cp scripts/release/smoke_installed.py "$RUNNER_TEMP/socialcli-smoke.py"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/socialcli-smoke/bin/python" socialcli-smoke.py "$RELEASE_VERSION"
+  publish:
+    needs: [build, smoke]
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.index }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: socialcli-reviewed-distributions
+          path: dist/
+      - name: Publish reviewed candidate to TestPyPI
+        if: inputs.index == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 snapshot
+        with:
+          repository-url: https://test.pypi.org/legacy/
+      - name: Publish approved stable release to PyPI
+        if: inputs.index == 'pypi'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1 snapshot

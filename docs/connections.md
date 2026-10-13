@@ -156,3 +156,9 @@ preview-resistant server deployed with client 0.2.1. No new provider permissions
 are introduced by this reliability release. The local encrypted backend is an
 explicit opt-in; existing keyring capabilities are not migrated automatically.
 See [capabilities and limits](capabilities.md) and the [agent guide](ai-agents.md).
+
+For the SaaS candidate, encrypted storage also binds installation, pairing and
+rotation credentials to their own slots. Backend migration preserves the active
+SocialCli installation as well as social capabilities. Finish pending sign-in or
+connection recovery before changing backends; `credentials configure` cannot
+replace a backend containing an existing installation. Use `credentials migrate`.

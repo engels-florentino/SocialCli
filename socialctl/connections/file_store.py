@@ -154,7 +154,8 @@ class EncryptedFileStore:
     def binding(brand, platform, metadata):
         return {'version':1, 'brand':str(brand.raiz.resolve()), 'platform':platform.value,
             'service_url':metadata['service_url'], 'connection_id':metadata['connection_id'],
-            'account_id':metadata['account_id']}
+            'account_id':(None if platform.value in {'socialcli_account','socialcli_pair','socialcli_rotation'}
+                          else metadata['account_id'])}
 
     def _record(self, brand, platform, metadata):
         binding = self.binding(brand,platform,metadata)

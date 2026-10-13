@@ -86,6 +86,20 @@ from socialctl.scheduler import (
 )
 
 app = typer.Typer(help="Publish already produced content on YouTube, Facebook, Instagram and TikTok.")
+
+
+def _show_version(value: bool):
+    if value:
+        from importlib.metadata import version
+        typer.echo('SocialCli ' + version('socialcli'))
+        raise typer.Exit()
+
+
+@app.callback()
+def main_options(version: bool = typer.Option(False, '--version', callback=_show_version,
+                                               is_eager=True, help='Show the installed SocialCli version.')):
+    pass
+
 from socialctl.connections.credential_cli import credentials_app
 app.add_typer(credentials_app, name="credentials")
 brand_app = typer.Typer(help="Brand management.")

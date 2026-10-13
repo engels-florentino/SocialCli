@@ -12,7 +12,7 @@ from urllib.parse import urlsplit, parse_qs
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -130,6 +130,10 @@ def create_app(settings: Settings, *, store: Store | None = None,
             raise HTTPException(404, 'connection or authorization not found')
         legacy.require(db,kind,record_id,record)
         return record
+
+    @app.get('/agents', response_class=PlainTextResponse)
+    def agent_instructions():
+        return (Path(__file__).parent.parent / 'ui/assets/agents.md').read_text()
 
     @app.get('/healthz')
     def health():

@@ -60,6 +60,29 @@ def output(value,json_output):
     else: typer.echo(value['status'].replace('_',' ').capitalize()+'.')
 
 
+def finish_pending_pair(client,brand,installation_id):
+    """Finish delivery cleanup only after this durable installation is verified."""
+    path=brand.dir_secretos/'socialcli-pairing.json'
+    if not path.exists():return
+    pending=json.loads(path.read_text())
+    if pending['service_url']!=client.origin:
+        raise ValueError('A pairing is pending for another service.')
+    secret=keychain.get(brand,Slot.PAIR,pending)
+    if secret is not None:
+        pair_id=opaque(pending['connection_id'])
+        try:
+            result=client.request('POST','/api/saas/v1/pairings/'+pair_id+'/poll',secret=secret)
+            if result.get('installation_id')!=installation_id or result.get('status') not in {'approved','consumed'}:
+                raise ValueError('Pending pairing does not match the saved installation.')
+            client.request('POST','/api/saas/v1/pairings/'+pair_id+'/ack',secret=secret)
+        except ServiceRejected as exc:
+            if exc.status!=404:raise  # Expired delivery cannot be replayed.
+    # Missing proof can result from a crash between secret deletion and unlink.
+    # The installation itself was authenticated; no new grant is inferred here.
+    keychain.delete(brand,Slot.PAIR,pending)
+    path.unlink(missing_ok=True)
+
+
 @account_app.command('login')
 def login(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),
           service:str=typer.Option(DEFAULT_SAAS,'--service'),label:str=typer.Option('AI assistant','--label'),
@@ -78,9 +101,11 @@ def login(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(defa
                     raise ValueError('Sign out of the existing SocialCli service before changing services.')
                 try:
                     status=client.request('GET','/api/saas/v1/installations/'+opaque(previous['connection_id']),secret=keychain.get(brand,Slot.ACCOUNT,previous))
-                    output({'version':1,'status':'signed_in','installation_id':status['installation_id']},json_output);return
                 except ServiceRejected as exc:
                     if exc.status!=401: raise
+                else:
+                    finish_pending_pair(client,brand,status['installation_id'])
+                    output({'version':1,'status':'signed_in','installation_id':status['installation_id']},json_output);return
             pending_path=brand.dir_secretos/'socialcli-pairing.json'
             pending=json.loads(pending_path.read_text()) if pending_path.exists() else None
             if pending and pending['service_url']!=client.origin: raise ValueError('A pairing is pending for another service.')

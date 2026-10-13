@@ -77,6 +77,20 @@ def status(brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_
     except Exception as exc: fail(exc)
 
 
+def stable_credentials(brand):
+    from socialctl.connections.account_cli import Slot,metadata,recovery_path
+    if ((brand.dir_secretos/'socialcli-pairing.json').exists()
+            or any(recovery_path(brand,p).exists() for p in Platform)):
+        raise ValueError('Finish pending sign-in or connection recovery before changing credential backends.')
+    records=[]
+    installation=metadata(brand)
+    if installation:records.append((Slot.ACCOUNT,installation))
+    for platform in Platform:
+        meta=brand.leer_secreto(platform)
+        if meta.get('auth_mode')=='broker':records.append((platform,meta))
+    return records
+
+
 @credentials_app.command('configure')
 def configure(backend:str=typer.Option(...,'--backend'),store_file:Path|None=typer.Option(None,'--store-file'),key_file:Path|None=typer.Option(None,'--key-file'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),yes:bool=typer.Option(False,'--yes')):
     try:
@@ -85,7 +99,7 @@ def configure(backend:str=typer.Option(...,'--backend'),store_file:Path|None=typ
         selected=cargar_brand(root,brand)
         fd=acquire_brand_lock(selected)
         try:
-            if any(selected.leer_secreto(p).get('auth_mode')=='broker' for p in Platform):
+            if stable_credentials(selected):
                 raise ValueError('existing connections require credentials migrate')
             dest,config=destination(backend,store_file,key_file,selected.raiz.parent)
             dest.ensure_available()
@@ -105,18 +119,17 @@ def migrate(to:str=typer.Option(...,'--to'),store_file:Path|None=typer.Option(No
         selected=cargar_brand(root,brand)
         fd=acquire_brand_lock(selected)
         try:
+            bindings=stable_credentials(selected)
             source=store_for(selected)
             dest,config=destination(to,store_file,key_file,selected.raiz.parent)
             if type(source) is type(dest):
                 raise ValueError('use rotate for keys; migration requires another backend')
             source.ensure_available();dest.ensure_available()
             records=[]
-            for p in Platform:
-                meta=selected.leer_secreto(p)
-                if meta.get('auth_mode')=='broker':
-                    capability=source.get(selected,p,meta)
-                    if not capability: raise ValueError('source capability missing')
-                    records.append((p,meta,capability))
+            for p,meta in bindings:
+                capability=source.get(selected,p,meta)
+                if not capability: raise ValueError('source capability missing')
+                records.append((p,meta,capability))
             confirm(yes,f'Migrate {len(records)} connection capabilities to {to}; verify destination before switching or removing source.')
             if isinstance(dest,EncryptedFileStore): dest.claim(selected)
             for p,meta,capability in records:

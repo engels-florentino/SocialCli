@@ -10,9 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-13-socialcli-saas-design.md`.
 
-**Estado:** borrador de planificación para revisión. Precio confirmado por el usuario: USD 10 al mes. Se preparó únicamente el dominio raíz en NPM con HTTPS y la web actual; el SaaS no se ha implementado. Las demás propuestas del diseño siguen sujetas a revisión.
-Revisión ampliada del 13 de octubre: cierra huecos de legacy, agentes sin stdin,
-cobros duplicados, eliminación, mantenimiento y UI consistente.
+**Estado al 13-oct-2026:** implementación en la rama aislada `feat/socialcli-saas`,
+candidata `0.3.0rc1`. El servicio público sigue en 0.2.6. Identidad, vinculación,
+trial, Stripe test, control de acceso, migración, rotación, renovación, eliminación
+y recordatorios tienen código y pruebas. El correo real llegó a bandeja de entrada;
+Auth privado y restauración se verificaron. Distribución y preparación del piloto
+siguen en ejecución: no hay publicación PyPI ni despliegue público del SaaS.
+
+La lista original de abajo conserva los criterios de aceptación completos; no debe
+interpretarse como un recuento automático del progreso. El estado detallado y las
+limitaciones de cada comprobación están en los documentos de `deploy/auth/` y
+`deploy/saas/`, y en el plan de ejecución. Google producción y cobros reales siguen
+aplazados por instrucción del usuario.
 
 ## Global Constraints
 
@@ -346,12 +355,12 @@ El secreto de webhook se configura aparte; no es la clave API.
 - [ ] Configurar claves, precio y webhook Stripe live separados de test; comprobar el importe mostrado.
 - [ ] Presentar el despliegue y la oferta concretos para aprobación antes de cobrar o abrir acceso general.
 
-## Decisiones pendientes antes de implementar
+## Decisiones originales y pendientes de lanzamiento
 
-1. Aprobar o cambiar la propuesta de 14 días sin tarjeta.
-2. Confirmar el límite propuesto de una marca/cuatro conexiones; el precio ya está confirmado en USD 10 al mes.
-3. Aprobar Supabase Auth dedicado y el remitente de correo de acceso.
-4. Revisar el diseño y elegir ejecución nativa o por subagentes; por ahora no se ha iniciado ninguna.
+1. Implementado para el piloto: 14 días sin tarjeta desde la primera conexión.
+2. Piloto implementado con una marca/cuatro conexiones y precio confirmado de USD 10 al mes.
+3. Autorizado y preparado: Auth/PostgreSQL dedicado y Stalwart, remitente access@socialcli.app; entrega real confirmada.
+4. Ejecución nativa en curso, con revisiones independientes acotadas; mantener diseño UI consistente.
 5. Aprobar retención de autorizaciones por inactividad y política de reembolsos/disputas antes del lanzamiento live.
 
 ## Matriz de cobertura de la revisión
