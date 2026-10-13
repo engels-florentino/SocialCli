@@ -36,7 +36,7 @@ async def read_form(request,origin):
 
 def safe_next(value):
     # Installation approval paths are added by the pairing phase, never arbitrary URLs.
-    return value if value=='/account/' or re.fullmatch(r'/account/pair/[A-Za-z0-9_-]{16,64}',value or '') else '/account/'
+    return value if value=='/account/' or re.fullmatch(r'/account/(?:pair|migrate)/[A-Za-z0-9_-]{16,64}',value or '') else '/account/'
 
 
 def install_account_routes(app,settings,vault,identity_client,clock):

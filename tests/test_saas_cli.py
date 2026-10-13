@@ -111,3 +111,72 @@ def test_lost_activation_response_recovers_without_repeating_oauth(tmp_path,monk
     with server.app.state.saas.vault.transaction() as db:
         assert db.execute("SELECT count(*) FROM records WHERE kind='authorization'").fetchone()[0]==before
     assert cargar_brand(tmp_path,'MyBrand').cuentas['youtube']['channel_id']=='UC-two'
+
+
+def test_migrate_old_connection_with_browser_confirmation_and_lost_ack_recovery(tmp_path,monkeypatch):
+    server,now,ring=wire(tmp_path,monkeypatch);crear_brand(tmp_path,'MyBrand')
+    common=['--brand','MyBrand','--root',str(tmp_path)]
+    assert runner.invoke(app,['account','login',*common,'--service','https://social.example','--no-browser']).exit_code==0
+    from tests.test_saas_migration import old_connection
+    from socialctl.connections import account_cli
+    old=old_connection(server);brand=cargar_brand(tmp_path,'MyBrand')
+    saved={'version':1,'auth_mode':'broker','service_url':'https://social.example',
+           'connection_id':old['connection_id'],'account_id':'UC-two','account':{'id':'UC-two','name':'Creator two'}}
+    keychain.save(brand,Platform.YOUTUBE,saved,old['connection_secret'])
+    (brand.dir_secretos/'youtube.json').write_text(json.dumps(saved))
+    legacy_cli.bind_account(brand,Platform.YOUTUBE,saved['account'])
+    real_factory=account_cli.http_client;lost=[True]
+    def transport(request):
+        assert not request.url.path.endswith('/authorizations')
+        if '/migrations/' in request.url.path and request.url.path.endswith('/poll'):
+            page=server.get('/account/migrate/'+request.url.path.split('/')[-2])
+            if page.status_code==200:
+                assert server.post(page.url,data=fields(page),headers={'Origin':'https://social.example'}).status_code==200
+        with real_factory() as client:
+            response=client.send(request)
+        if request.url.path.endswith('/activate') and lost[0]:
+            lost[0]=False
+            raise httpx.ReadTimeout('secret-in-error-never-print')
+        return response
+    monkeypatch.setattr(account_cli,'http_client',lambda:httpx.Client(transport=httpx.MockTransport(transport)))
+    result=runner.invoke(app,['account','migrate','youtube',*common,'--no-browser'])
+    assert result.exit_code==1 and 'recover' in result.output,result.output
+    assert 'secret-in-error' not in result.output and old['connection_secret'] not in result.output
+    result=runner.invoke(app,['account','recover','youtube',*common])
+    assert result.exit_code==0,result.output
+    brand=cargar_brand(tmp_path,'MyBrand');new=brand.leer_secreto(Platform.YOUTUBE)
+    assert new['protocol']=='saas-v1'
+    with legacy_cli.http_client() as client:
+        from socialctl.connections.client import broker_access_token
+        assert broker_access_token(brand,Platform.YOUTUBE,client,refresh=False)=='social-access'
+    assert server.post('/v1/connections/'+old['connection_id']+'/token',headers={'Authorization':'Bearer '+old['connection_secret']}).status_code==404
+    with server.app.state.saas.vault.transaction() as db:
+        assert db.execute("SELECT count(*) FROM records WHERE kind='authorization'").fetchone()[0]==0
+
+
+def test_migration_never_sends_old_secret_to_unrelated_service(tmp_path,monkeypatch):
+    server,now,ring=wire(tmp_path,monkeypatch);crear_brand(tmp_path,'MyBrand')
+    common=['--brand','MyBrand','--root',str(tmp_path)]
+    assert runner.invoke(app,['account','login',*common,'--service','https://social.example','--no-browser']).exit_code==0
+    brand=cargar_brand(tmp_path,'MyBrand')
+    saved={'version':1,'auth_mode':'broker','service_url':'https://different-legacy.example','connection_id':'legacy-connection-123','account_id':'UC-two'}
+    keychain.save(brand,Platform.YOUTUBE,saved,'legacy-secret-must-not-leak')
+    (brand.dir_secretos/'youtube.json').write_text(json.dumps(saved))
+    from socialctl.connections import account_cli
+    requests=[]
+    def capture(request):
+        requests.append(request)
+        return httpx.Response(404,json={'detail':'unavailable'})
+    monkeypatch.setattr(account_cli,'http_client',lambda:httpx.Client(transport=httpx.MockTransport(capture)))
+    result=runner.invoke(app,['account','migrate','youtube',*common,'--no-browser'])
+    assert result.exit_code==1
+    assert requests==[], 'Migration must reject an unrelated credential destination before network I/O'
+    assert 'legacy-secret-must-not-leak' not in result.output
+
+
+def test_official_one_way_migration_origin_is_allowed_and_reverse_is_rejected():
+    from socialctl.connections import account_cli
+    check=getattr(account_cli,'migration_origin_allowed',lambda old,new:False)
+    assert check('https://social.florentino.pro/','https://socialcli.app')
+    assert not check('https://socialcli.app','https://social.florentino.pro')
+    assert not check('https://social.florentino.pro','https://socialcli.app.attacker.example')

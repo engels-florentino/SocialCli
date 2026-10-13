@@ -28,9 +28,11 @@ by `templates`, not exposed to the internet. It shares canonical design tokens.
 - Stalwart v0.16.14 domain socialcli.app ID `d`; dedicated access mailbox created.
 - SMTP authentication succeeded with certificate verification; no external
   delivery has been claimed.
-- Public DNS instructions are in `socialcli-domain-public-dns.json` on the
-  server. Configure MX, SPF and DKIM in Namecheap, then verify outbound relay
-  sender authorization before testing delivery to an external inbox.
+- Stalwart outbound strategy was confirmed to relay through SMTP2GO. The
+  SocialCli sending domain has been added there; DNS verification is pending.
+  The generated Stalwart zone file is not a ready-to-publish DNS configuration:
+  configure the actual relay CNAME records plus Stalwart receiving MX, and
+  verify sender authorization before testing delivery to an external inbox.
 
 ## Operations
 

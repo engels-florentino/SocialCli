@@ -125,6 +125,12 @@ class Connections:
                         wanted=data['account'].get('page_id') if data['platform']=='instagram' else data['account']['id']
                         have=other_grant['payload']['account'].get('page_id') if other=='instagram' else other_grant['payload']['account']['id']
                         if wanted!=have: raise HTTPException(409,'page_mismatch: Facebook and Instagram must share the same Page.')
+            if data.get('legacy_id'):
+                from socialctl.saas.migration import legacy_record
+                old=legacy_record(self,db,data['legacy_id'],data['legacy_hash'],data['platform'])
+                if old['payload']['account']!=data['account']:
+                    raise HTTPException(409,'connection_changed: Review the current connection.')
+                data['grant']=old['payload']['grant']
             if data['existing_grant']:
                 grant_id=data['existing_grant']
                 existing=self.vault.get(db,'saas-grant',grant_id)
@@ -143,6 +149,9 @@ class Connections:
                 'platform':data['platform'],'grant_id':grant_id,'account':data['account']},
                 expires=self.clock()+INSTALLATION_SECONDS,credential_hash=candidate['credential_hash'])
             self.vault.delete(db,'saas-candidate',connection_id)
+            if data.get('legacy_id'):
+                self.vault.delete(db,'connection',data['legacy_id'])
+                db.execute("DELETE FROM legacy_allowance WHERE kind='connection' AND id=?",(data['legacy_id'],))
             if current_id and current_id!=grant_id:
                 self.vault.delete(db,'saas-grant',current_id)
         return {'version':1,'status':'active'}

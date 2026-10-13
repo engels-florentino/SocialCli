@@ -109,3 +109,21 @@ fence against an in-flight Checkout, and delete the exact Auth user. External fa
 a generic 404 is not taken as proof of identity deletion. Stripe invoice records
 remain subject to its required retention; local free-trial eligibility markers
 retain their independently published expiry.
+
+## Explicit legacy migration
+
+The candidate CLI supports `socialcli account migrate youtube --brand MyBrand
+--no-browser` after `account login`. Give the printed link directly to the user;
+only their browser may open and confirm it. The service requires both the old
+activated capability and an approved installation belonging to the browser user.
+It does not infer ownership from brand names or email addresses.
+
+The old connection remains usable until the client stores the replacement and
+activates it. The activation transaction rechecks the legacy proof, takes its
+latest provider grant and removes the legacy record atomically. Lost activation
+responses use `socialcli account recover youtube --brand MyBrand`; do not repeat
+OAuth. Abandoned or expired migration attempts leave legacy access unchanged.
+The transfer must use the same vault and keys. The client permits only matching
+service origins or the fixed one-way transfer from `https://social.florentino.pro`
+to `https://socialcli.app`; arbitrary service changes cannot receive an old secret.
+Deploy the reviewed shared-vault service before attempting a real migration.

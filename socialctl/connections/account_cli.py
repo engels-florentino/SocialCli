@@ -13,7 +13,7 @@ import httpx
 import typer
 from socialctl.brands import cargar_brand
 from socialctl.connections import keychain
-from socialctl.connections.client import opaque,visible
+from socialctl.connections.client import opaque,visible,service_origin
 from socialctl.connections.saas_client import SaaSClient,ServiceRejected,TransportFailure
 from socialctl.connections.cli import atomic_bytes,acquire_brand_lock,bind_account,validate_binding
 from socialctl.models import Platform
@@ -275,5 +275,50 @@ def attach(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Pat
         typer.echo(platform.value+' attached for '+visible(brand.nombre)+'. No OAuth or publication was repeated.')
     except Exception as exc:
         typer.echo(str(exc) if isinstance(exc,ValueError) else 'Could not attach safely. Check your SocialCli account.',err=True);raise typer.Exit(1)
+    finally:
+        if lock is not None:os.close(lock)
+
+
+def migration_origin_allowed(old,new,*,allow_http_local=False):
+    source=service_origin(old,allow_http_local=allow_http_local)
+    target=service_origin(new,allow_http_local=allow_http_local)
+    # The only cross-origin transfer approved for this distribution. Never
+    # accept aliases supplied by the destination service itself.
+    return source==target or (source,target)==('https://social.florentino.pro','https://socialcli.app')
+
+
+@account_app.command('migrate')
+def migrate(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),
+            no_browser:bool=typer.Option(False,'--no-browser'),timeout:float=typer.Option(600,'--timeout',min=1,max=600)):
+    """Move an existing legacy connection after its owner confirms in the browser."""
+    lock=None
+    try:
+        brand=cargar_brand(root,brand_name);lock=acquire_brand_lock(brand)
+        if recovery_path(brand,platform).exists():raise ValueError('Resolve pending connection recovery first.')
+        saved=metadata(brand);old=brand.leer_secreto(platform)
+        if not saved:raise ValueError('Run socialcli account login first.')
+        if old.get('auth_mode')!='broker' or old.get('protocol')=='saas-v1':
+            raise ValueError('This command requires an existing legacy broker connection.')
+        keychain.ensure_available(brand)
+        with http_client() as transport:
+            client=SaaSClient(saved['service_url'],transport,allow_http_local=saved.get('development_local') is True)
+            if not migration_origin_allowed(old['service_url'],client.origin,allow_http_local=saved.get('development_local') is True and old.get('development_local') is True):
+                raise ValueError('Legacy connection belongs to another service. Its credential cannot be transferred to this destination.')
+            poll_secret=secrets.token_urlsafe(32)
+            start=client.request('POST','/api/saas/v1/installations/'+opaque(saved['connection_id'])+'/migrations',
+                secret=keychain.get(brand,Slot.ACCOUNT,saved),legacy_secret=keychain.get(brand,platform,old),
+                body={'platform':platform.value,'brand':brand.nombre,'legacy_id':opaque(old['connection_id']),
+                      'poll_challenge':hashlib.sha256(poll_secret.encode()).hexdigest()})
+            migration_id=opaque(start.get('migration_id'));expected=client.origin+'/account/migrate/'+migration_id
+            if start.get('browser_url')!=expected:raise ValueError('Invalid SocialCli migration URL.')
+            handoff(expected,no_browser=no_browser,seconds=600)
+            result=wait(client,'/api/saas/v1/migrations/'+migration_id+'/poll',poll_secret,
+                min(timeout,start['expires_in']),start['poll_interval'],{'selected'})
+            if result.get('account',{}).get('id')!=old.get('account_id'):
+                raise ValueError('The migration account does not match the local connection.')
+            finalize_local(brand,platform,client,result)
+        typer.echo(platform.value+' migrated for '+visible(brand.nombre)+'. No OAuth or publication was repeated.')
+    except Exception as exc:
+        typer.echo(str(exc) if isinstance(exc,ValueError) else 'Could not confirm migration. Keep local credentials and check account recovery.',err=True);raise typer.Exit(1)
     finally:
         if lock is not None:os.close(lock)
