@@ -16,8 +16,10 @@ trial, Stripe test, control de acceso, migración, rotación, renovación, elimi
 y recordatorios tienen código y pruebas. El correo real llegó a bandeja de entrada;
 Auth privado y restauración se verificaron. El mantenimiento tiene límites de tiempo,
 contadores de pendientes y diagnóstico privado de solo lectura; la suite pasa 2396
-pruebas. Los timers y las alertas aún no están activados. Distribución y preparación del piloto
-siguen en ejecución: no hay publicación PyPI ni despliegue público del SaaS.
+pruebas. La candidata está desplegada de forma aislada en el servidor, con base
+propia y acceso solo local; salud, Auth y configuración Stripe test verificados.
+Los timers y las alertas aún no están activados. El piloto sigue en preparación:
+no hay publicación PyPI ni despliegue público del SaaS.
 
 La lista original de abajo conserva los criterios de aceptación completos; no debe
 interpretarse como un recuento automático del progreso. El estado detallado y las

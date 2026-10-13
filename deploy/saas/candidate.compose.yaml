@@ -1,0 +1,32 @@
+name: socialcli-saas-candidate
+services:
+  candidate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: socialcli-saas-candidate:0.3.0rc1
+    container_name: socialcli-saas-candidate
+    restart: unless-stopped
+    env_file: service.env
+    environment:
+      SOCIALCLI_BIND: 0.0.0.0
+      SOCIALCLI_DATABASE: /data/connections.sqlite3
+    ports:
+      - '127.0.0.1:8789:8787'
+    volumes:
+      - ./state:/data
+    networks: [identity]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 100
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: '2'}
+networks:
+  identity:
+    external: true
+    name: socialcli-identity

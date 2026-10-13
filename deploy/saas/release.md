@@ -66,7 +66,7 @@ this workflow. External environment protection must be configured before running
 
 Reference: [PyPA Trusted Publishing guide](https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/).
 
-## Local candidate verification, 2026-10-13
+## Local candidate verification, 2026-10-13 — checkpoint 2e3c51a
 
 - Full suite: 2,382 passed, one upstream Starlette TestClient deprecation warning.
 - Clean wheel installs: macOS/Python 3.13 and Linux/Python 3.12 outside the checkout;
@@ -87,3 +87,7 @@ Reference: [PyPA Trusted Publishing guide](https://packaging.python.org/en/lates
 
 These are local/container checks, not an executed GitHub workflow, downloaded
 TestPyPI/PyPI verification, every host's keyring, or a real Muse/Grok pilot.
+
+The newer maintenance/server checkpoint and artifact hashes are recorded in
+[candidate-status.md](candidate-status.md). The hashes above identify the earlier
+distribution verification, not the latest candidate deployment.
