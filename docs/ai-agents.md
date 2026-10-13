@@ -46,6 +46,30 @@ socialcli connect youtube --brand MyBrand --no-browser
 
 Send the user: “Open this link in your own browser to connect your account: <printed URL>. I will keep SocialCli waiting for your authorization.” Do not cancel the running command after printing the link, and do not launch a second connection while the first one is pending.
 
+## SaaS candidate: understand connection renewal
+
+For an installed client and service supporting the SaaS protocol, use
+`socialcli connections --brand MyBrand --json` to read `renewal_status` without
+renewing credentials. These candidate states are not a claim that the public
+0.2.6 service has already been upgraded:
+
+| State | Action |
+| --- | --- |
+| `ready` | Continue within the user's existing authorization. |
+| `required` | Renewal is due. A read failure does not authorize a write or reconnection. |
+| `pending` | Another renewal is running; wait before reading status again. |
+| `retryable` | Keep local credentials; retry the authorized operation after the service backoff. |
+| `configuration_error` | Keep the connection; the service operator must fix configuration. |
+| `uncertain` | Do not force or repeat renewal. Review the account status; ask for explicit approval if a replacement connection is needed. |
+| `reconnect_required` | Provider authorization or permissions need explicit user consent. |
+
+`connection_inactive` means the SocialCli grant expired after inactivity;
+`installation_revoked` concerns this agent's installation. Neither proves that
+the social provider revoked the account. Missing local storage is also separate:
+recover the workspace or sign in and attach an existing valid connection before
+proposing new provider authorization. Never delete credentials to troubleshoot a
+temporary network failure.
+
 ## Example 1: ask the agent to check your accounts
 
 **Your prompt:**

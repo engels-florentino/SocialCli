@@ -299,7 +299,16 @@ def register(app):
                 typer.echo('No shared connections. Independent-app credentials use socialcli auth status.')
             else:
                 for row in rows:
-                    typer.echo(f"{row['platform']}: {visible(row['account']['name'])} ({row['account']['id']})"+(' — reconnect required' if row.get('needs_reconnect') else ' — connected'))
+                    renewal_label={None:'connected','ready':'connected',
+                        'required':'renewal required by an explicitly authorized operation',
+                        'pending':'renewal pending; try later',
+                        'retryable':'provider unreachable; keep connection and retry later',
+                        'uncertain':'renewal uncertain; review your SocialCli account',
+                        'configuration_error':'service configuration needs attention',
+                        'reconnect_required':'reconnect required with your explicit approval'}
+                    label=('reconnect required with your explicit approval' if row.get('needs_reconnect')
+                        else renewal_label.get(row.get('renewal_status'),'review your SocialCli account'))
+                    typer.echo(f"{row['platform']}: {visible(row['account']['name'])} ({row['account']['id']}) — {label}")
         except ValueError as exc:
             fail(str(exc))
         except Exception:

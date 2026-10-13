@@ -12,6 +12,8 @@ from socialctl.saas.auth import digest
 from socialctl.saas.pairing import proof,INSTALLATION_SECONDS
 from socialctl.saas.routes import read_form
 from socialctl.saas.access import AccessControl
+from socialctl.saas import renewal
+from socialctl.connection_service.providers import RefreshFailure
 
 OAUTH_SECONDS=600
 INACTIVITY_SECONDS=90*86400
@@ -135,7 +137,7 @@ class Connections:
                 grant_id=data['existing_grant']
                 existing=self.vault.get(db,'saas-grant',grant_id)
                 if existing is None or existing['expires']<=self.clock():
-                    raise HTTPException(409,'provider_authorization_expired: Reconnect this account.')
+                    raise HTTPException(409,'connection_inactive: This SocialCli connection expired after inactivity.')
             else:
                 grant_id=secrets.token_urlsafe(24)
                 self.vault.put(db,'saas-grant',grant_id,{'user_id':user_id,'platform':data['platform'],
@@ -259,11 +261,13 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
             cap=connections.capability(db,connection_id,request);data=cap['payload']
             grant=vault.get(db,'saas-grant',data['grant_id'])
             if grant is None or grant['expires']<=clock():
-                raise HTTPException(409,'provider_authorization_expired: Reconnect this account.')
+                raise HTTPException(409,'connection_inactive: This SocialCli connection expired after inactivity.')
             decision=connections.access.decision(db,data['user_id'],clock())
+            renewal_state=renewal.state(grant['payload'],clock())
             return {'version':1,'platform':data['platform'],'account':data['account'],
                 'expires_at':grant['payload']['grant']['expires_at'],'granted_scopes':grant['payload']['grant']['granted_scopes'],
-                'connection_expires_at':cap['expires'],'needs_reconnect':False,
+                'connection_expires_at':cap['expires'],'needs_reconnect':renewal_state=='reconnect_required',
+                'renewal_status':renewal_state,
                 'access':{'allowed':decision.allowed,'reason':decision.reason,'access_until':decision.access_until}}
 
     @app.delete('/api/saas/v1/connections/{connection_id}')
@@ -282,28 +286,33 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
             connections.allowed(db,data['user_id'])
             record=vault.get(db,'saas-grant',data['grant_id'])
             if record is None or record['expires']<=clock():
-                raise HTTPException(409,'provider_authorization_expired: Reconnect this account.')
+                raise HTTPException(409,'connection_inactive: This SocialCli connection expired after inactivity.')
             if data['platform'] not in settings.providers: raise HTTPException(503,'platform_unavailable: Try again later.')
             grant=record['payload']['grant']
+            renewal.check(record['payload'],clock(),refresh)
             if grant['expires_at']<=clock()+60:
-                if not refresh: raise HTTPException(409,'renewal_required: An explicitly authorized operation must renew this token.')
-                if record['payload'].get('refresh_lease'):
-                    raise HTTPException(503,'renewal_pending: Another renewal is pending. Try again later.')
                 lease=secrets.token_urlsafe(24)
+                renewal.clear(record['payload'])
                 record['payload']['refresh_lease']=lease
+                record['payload']['refresh_started_at']=clock()
                 vault.put(db,'saas-grant',data['grant_id'],record['payload'],expires=record['expires'])
         if lease:
             try:
                 renewed=providers.refresh(data['platform'],grant)
-            except Exception:
-                # Keep the lease on uncertain outcomes: a rotating refresh token may
-                # already have been consumed. Never replay an ambiguous exchange.
-                raise HTTPException(503,'renewal_uncertain: Renewal could not be confirmed. Check your SocialCli account.') from None
+            except Exception as error:
+                code=error.code if isinstance(error,RefreshFailure) else 'renewal_uncertain'
+                with vault.transaction() as db:
+                    current=vault.get(db,'saas-grant',data['grant_id'])
+                    if current is None or current['payload'].get('refresh_lease')!=lease:
+                        raise HTTPException(409,'connection_changed: Review the current connection.') from None
+                    renewal.record_failure(current['payload'],code,clock())
+                    vault.put(db,'saas-grant',data['grant_id'],current['payload'],expires=current['expires'])
+                renewal.reject(code)
             with vault.transaction() as db:
                 current=vault.get(db,'saas-grant',data['grant_id'])
                 if current is None or current['payload'].get('refresh_lease')!=lease:
                     raise HTTPException(409,'connection_changed: Review the current connection.')
-                current['payload'].pop('refresh_lease');current['payload']['grant']=renewed
+                renewal.clear(current['payload']);current['payload']['grant']=renewed
                 vault.put(db,'saas-grant',data['grant_id'],current['payload'],expires=current['expires'])
                 grant=renewed
         with vault.transaction() as db:

@@ -145,3 +145,32 @@ cannot be cancelled locally; resume it. If both old and replacement credentials
 are confirmed inactive, cancellation clears only the known local credentials,
 allowing `account login` and `account attach` without new OAuth when the provider
 grant remains valid. Network uncertainty never authorizes deleting the journal.
+
+## Provider renewal outcomes
+
+SaaS renewal records a durable lease before contacting Google or TikTok. Only a
+connection/pool failure known to precede sending the request permits another
+attempt after 30 seconds. A confirmed OAuth client/configuration rejection permits
+retry after 300 seconds once the operator fixes configuration. No background
+retry is triggered by status, the account page, or a `refresh=false` read.
+
+Confirmed `invalid_grant`, expired nonrenewable authorization, or reduced
+permissions require explicit user consent for replacement. A timeout while
+writing/reading, an unrecognized error response, invalid success body, or a lost
+process may mean a rotating refresh token was consumed. These become
+`renewal_uncertain`, not a permanent misleading `renewal_pending`. A live lease
+is shown as pending for 120 seconds; elapsed time never authorizes replay. The
+original worker may still finish and commit its verified response. Otherwise the
+owner can approve a new connection; replacement activation atomically retires the
+old grant. Do not clear a lease or error manually to force another exchange.
+
+Account status returns `renewal_status` and sets `needs_reconnect` only for known
+provider expiration/revocation or permissions changes. The shared account UI and
+CLI distinguish these from network and configuration problems. Provider error
+bodies, tokens and request URLs are never used as diagnostics. This applies to
+`/api/saas/v1`; legacy `/v1` renewal behavior is unchanged and must remain within
+the reviewed legacy cutoff/rollback constraints.
+
+References: [HTTPX timeouts](https://www.python-httpx.org/advanced/timeouts/),
+[Google token expiration](https://developers.google.com/identity/protocols/oauth2),
+and [TikTok OAuth errors](https://developers.tiktok.com/doc/oauth-error-handling/).

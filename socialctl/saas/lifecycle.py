@@ -87,9 +87,13 @@ class AccountLifecycle:
         for kind,record_id,record in records:
             data=record['payload']
             if kind=='saas-grant':
+                from socialctl.saas.renewal import notice
                 label=escape(data['account'].get('name',data['account']['id']))
                 platform=escape(data['platform'],quote=True)
-                connections.append(f'<li><strong>{label}</strong><p>{platform.title()} · {escape(data["account"]["id"])}</p><form method="post" action="/account/connections/{platform}/disconnect">{pages.hidden("csrf",csrf)}<button class="secondary-button" type="submit">Disconnect {platform.title()}</button></form></li>')
+                message=('This SocialCli connection expired after inactivity. Ask your assistant to help you connect again.'
+                    if record['expires']<=self.clock() else notice(data,self.clock()))
+                diagnostic=f'<p class="status-notice">{escape(message)}</p>' if message else ''
+                connections.append(f'<li><strong>{label}</strong><p>{platform.title()} · {escape(data["account"]["id"])}</p>{diagnostic}<form method="post" action="/account/connections/{platform}/disconnect">{pages.hidden("csrf",csrf)}<button class="secondary-button" type="submit">Disconnect {platform.title()}</button></form></li>')
             elif kind=='saas-installation':
                 label=escape(data['label']);rid=escape(record_id,quote=True)
                 expired=' · Expired' if record['expires']<=self.clock() else ''

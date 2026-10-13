@@ -19,6 +19,17 @@ GOOGLE_ANALYTICS = 'https://www.googleapis.com/auth/yt-analytics.readonly'
 GRAPH = 'https://graph.facebook.com/v26.0'
 
 
+class RefreshFailure(ValueError):
+    """A fixed diagnostic; never contains provider response text or credentials."""
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
+class PermissionsChanged(ValueError):
+    pass
+
+
 def identifier(value):
     if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,256}', value):
         raise ValueError('account discovery failed')
@@ -90,12 +101,12 @@ class Providers:
             url = 'https://www.facebook.com/v26.0/dialog/oauth'
         return url + '?' + urlencode(params)
 
-    def request(self, method, url, **kwargs):
+    def request(self, method, url, *, renewal=False, **kwargs):
         try:
             # Endpoints are constructed solely inside this module. No provider
             # next-page URL, redirect or user-supplied target is followed.
             with self.client.stream(method, url, timeout=20, follow_redirects=False, **kwargs) as response:
-                if response.status_code != 200:
+                if response.status_code != 200 and not renewal:
                     raise ValueError()
                 raw = bytearray()
                 for chunk in response.iter_bytes():
@@ -107,10 +118,26 @@ class Providers:
                 if not isinstance(body, dict):
                     raise ValueError()
                 error = body.get('error')
+                if renewal and response.status_code in {400, 401} and 'access_token' not in body:
+                    if error == 'invalid_grant':
+                        raise RefreshFailure('provider_authorization_expired')
+                    if isinstance(error, str) and error in {'invalid_client', 'unauthorized_client',
+                            'invalid_request', 'unsupported_grant_type', 'invalid_scope'}:
+                        raise RefreshFailure('provider_configuration')
+                if response.status_code != 200:
+                    raise ValueError()
                 if error and (not isinstance(error, dict) or error.get('code') != 'ok'):
                     raise ValueError()
                 return body
+        except RefreshFailure:
+            raise
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+            if renewal:
+                raise RefreshFailure('renewal_retryable') from None
+            raise ValueError('provider request failed; check the connection or app configuration') from None
         except Exception:
+            if renewal:
+                raise RefreshFailure('renewal_uncertain') from None
             raise ValueError('provider request failed; reconnect or check app configuration') from None
 
     def normalize(self, platform, body, required, *, previous=None):
@@ -122,9 +149,10 @@ class Providers:
         else:
             raise ValueError('provider permissions could not be verified')
         if not set(required) <= set(granted):
-            raise ValueError('required permissions were not granted')
+            raise PermissionsChanged('required permissions were not granted')
         result = {'access_token': token_string(body.get('access_token')),
-                  'refresh_token': token_string(body.get('refresh_token') or (previous or {}).get('refresh_token')),
+                  'refresh_token': token_string(body.get('refresh_token') if platform == 'tiktok'
+                      else body.get('refresh_token', (previous or {}).get('refresh_token'))),
                   'expires_at': time.time() + lifetime(body.get('expires_in')),
                   'granted_scopes': granted}
         if platform == 'tiktok':
@@ -247,9 +275,9 @@ class Providers:
 
     def refresh(self, platform, grant):
         if platform not in {'youtube', 'tiktok'}:
-            raise ValueError('this platform requires reconnection')
+            raise RefreshFailure('provider_authorization_expired')
         if grant.get('refresh_expires_at', float('inf')) <= time.time():
-            raise ValueError('authorization expired; reconnect')
+            raise RefreshFailure('provider_authorization_expired')
         credentials = self.settings.providers[platform]
         data = {'client_id': credentials.client_id, 'client_secret': credentials.client_secret,
                 'grant_type':'refresh_token', 'refresh_token':token_string(grant.get('refresh_token'))}
@@ -257,5 +285,11 @@ class Providers:
         if platform == 'tiktok':
             data['client_key'] = data.pop('client_id')
             url = 'https://open.tiktokapis.com/v2/oauth/token/'
-        body = self.request('POST', url, data=data)
-        return self.normalize(platform, body, grant['granted_scopes'], previous=grant)
+        body = self.request('POST', url, data=data, renewal=True)
+        try:
+            return self.normalize(platform, body, grant['granted_scopes'], previous=grant)
+        except PermissionsChanged:
+            raise RefreshFailure('provider_permissions_changed') from None
+        except Exception:
+            # A successful exchange may already have rotated the refresh token.
+            raise RefreshFailure('renewal_uncertain') from None
