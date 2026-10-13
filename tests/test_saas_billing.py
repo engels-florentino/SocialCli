@@ -252,3 +252,32 @@ def test_payment_reconciliation_restores_existing_connection_and_impayment_block
     assert token(client,result).status_code==402
     stripe.paid();billing.reconcile(USER)
     assert token(client,result).status_code==200
+
+
+def test_portal_timestamp_cancellation_is_shown_without_removing_paid_access(tmp_path):
+    """Real Clover Portal returns cancel_at with cancel_at_period_end=false."""
+    from socialctl.saas.billing_routes import install_billing_routes
+    client,now,metadata,stripe,billing=setup(tmp_path)
+    install_billing_routes(client.app,billing)
+    expire(metadata,now);login(client);billing.checkout(USER);stripe.paid()
+    subscription=stripe.subscriptions[0]
+    subscription['cancel_at']=subscription['items']['data'][0]['current_period_end']
+    assert subscription['cancel_at_period_end'] is False
+    billing.reconcile(USER)
+    assert 'Will not renew' in client.get('/account/').text
+    assert AccessControl(metadata).access_for(USER,now[0]).reason=='paid'
+    # Reversing the cancellation must remove the notice on canonical refresh.
+    subscription['cancel_at']=None
+    billing.reconcile(USER)
+    assert 'Will not renew' not in client.get('/account/').text
+    assert AccessControl(metadata).access_for(USER,now[0]).reason=='paid'
+
+
+@pytest.mark.parametrize('cancel_at',[None,0,True,'3802600'])
+def test_non_timestamp_values_do_not_report_scheduled_cancellation(tmp_path,cancel_at):
+    client,now,metadata,stripe,billing=setup(tmp_path)
+    expire(metadata,now);billing.checkout(USER);stripe.paid()
+    stripe.subscriptions[0]['cancel_at']=cancel_at
+    billing.reconcile(USER)
+    with metadata.vault.transaction() as db:
+        assert db.execute('SELECT cancel_at_period_end FROM saas_billing').fetchone()[0]==0

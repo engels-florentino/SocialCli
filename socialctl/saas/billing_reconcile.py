@@ -47,7 +47,11 @@ def reconcile(billing,user_id):
                 until=paid_until(billing,customer,sub,invoices)
                 if selected is None or until>end:
                     selected=stripe_id(sub.get('id'),'sub_');status=sub.get('status','')
-                    end=until;cancel=sub.get('cancel_at_period_end') is True
+                    end=until
+                    # Clover Portal can schedule an explicit cancel_at timestamp
+                    # while cancel_at_period_end remains false. Both mean no renewal.
+                    cancel=(sub.get('cancel_at_period_end') is True
+                            or type(sub.get('cancel_at')) is int and sub['cancel_at']>0)
                     if sub.get('pause_collection'):status='paused'
                     if status=='trialing':review='unexpected_stripe_trial'
         if review and review!='unexpected_stripe_trial':status='';end=0
