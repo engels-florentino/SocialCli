@@ -22,6 +22,7 @@ class Settings:
     providers: dict[str, AppCredentials] = field(default_factory=dict, repr=False)
     allow_http_local: bool = False
     saas: SaaSSettings | None = None
+    legacy_cutoff: bool = False
 
     def __post_init__(self):
         parts = urlsplit(self.public_url)
@@ -58,4 +59,5 @@ class Settings:
                    database=Path(os.environ.get('SOCIALCLI_DATABASE', '/data/connections.sqlite3')),
                    encryption_keys=keys, providers=providers,
                    allow_http_local=os.environ.get('SOCIALCLI_ALLOW_HTTP_LOCAL') == '1',
-                   saas=SaaSSettings.from_environment())
+                   saas=SaaSSettings.from_environment(),
+                   legacy_cutoff=os.environ.get('SOCIALCLI_LEGACY_CUTOFF')=='1')

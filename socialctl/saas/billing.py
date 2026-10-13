@@ -224,3 +224,42 @@ class BillingService:
     def reconcile(self,user_id):
         from socialctl.saas.billing_reconcile import reconcile
         return reconcile(self,user_id)
+
+    def delete_account_billing(self,user_id,row):
+        """No new charges: wait for in-flight Checkout, expire sessions, cancel subscriptions."""
+        if row['lease_until']>self.clock():raise HTTPException(409,'Billing cleanup is waiting for an earlier request.')
+        if self.api('GET','/account').get('id')!=self.settings.account_id:raise unavailable()
+        customer=row['customer_id']
+        if not customer:
+            if not row['customer_started']:return
+            if self.clock()-row['customer_started']>=23*3600:raise unavailable()
+            result=self.api('POST','/customers',{'metadata[app]':'socialcli','metadata[user_id]':user_id},'socialcli-customer-'+row['customer_key'])
+            if not self.owned(result,user_id):raise unavailable()
+            customer=stripe_id(result.get('id'),'cus_')
+            with self.vault.transaction() as db:
+                db.execute('UPDATE saas_billing SET customer_id=? WHERE user_id=?',(customer,user_id))
+        owner=self.api('GET','/customers/'+stripe_id(customer,'cus_'))
+        if owner.get('deleted') is True and owner.get('id')==customer:return
+        if not self.owned(owner,user_id):raise unavailable()
+        sessions=self.listing('/checkout/sessions',{'customer':customer})
+        if any(not self.owned(s,user_id) or s.get('customer')!=customer for s in sessions):raise unavailable()
+        # Close hosted payment pages before taking the subscription snapshot.
+        # A page completing concurrently either appears in the later read or
+        # makes expiration fail, leaving the durable job pending for another pass.
+        for session in sessions:
+            if session.get('status')=='open':
+                self.api('POST','/checkout/sessions/'+stripe_id(session.get('id'),'cs_')+'/expire',{},'socialcli-delete-session-'+session['id'])
+        subscriptions=self.listing('/subscriptions',{'customer':customer,'status':'all'})
+        if any(not self.owned(s,user_id) or s.get('customer')!=customer for s in subscriptions):raise unavailable()
+        subscription_ids={s['id'] for s in subscriptions}
+        for session in sessions:
+            if session.get('mode')=='subscription' and session.get('status')=='complete' and session.get('subscription') not in subscription_ids:
+                raise unavailable()
+        for sub in subscriptions:
+            if sub.get('status') not in {'canceled','incomplete_expired'}:
+                self.api('DELETE','/subscriptions/'+stripe_id(sub.get('id'),'sub_'))
+        # Delete the dedicated, owner-verified Stripe customer as a final fence:
+        # Stripe prevents subsequent subscriptions and cancels any concurrent one.
+        # Historical invoice records remain with Stripe. A repeat GET reports deleted.
+        deleted=self.api('DELETE','/customers/'+stripe_id(customer,'cus_'))
+        if deleted.get('id')!=customer or deleted.get('deleted') is not True:raise unavailable()

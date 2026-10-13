@@ -42,6 +42,8 @@ class StripeFixture:
             result=self.customers.get(path.split('/')[-1],{})
         elif path=='/v1/subscriptions': result={'data':self.subscriptions,'has_more':False}
         elif path=='/v1/invoices': result={'data':self.invoices,'has_more':False}
+        elif path.endswith('/expire'):
+            result=self.sessions[path.split('/')[-2]];result['status']='expired'
         elif path.endswith('/line_items'):result={'has_more':False,'data':[{'price':self.price(),'quantity':1}]}
         elif path=='/v1/checkout/sessions' and request.method=='GET': result={'data':list(self.sessions.values()),'has_more':False}
         elif path=='/v1/checkout/sessions':

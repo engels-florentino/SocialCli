@@ -11,6 +11,7 @@ class SaaSSettings:
     auth_key: str = field(default='', repr=False)
     allow_internal_auth: bool = False
     billing: BillingSettings | None = None
+    auth_admin_key: str = field(default='',repr=False)
 
     def __post_init__(self):
         url = urlsplit(self.auth_url)
@@ -26,4 +27,5 @@ class SaaSSettings:
         return cls(auth_url=os.environ.get('SOCIALCLI_AUTH_URL',''),
                    auth_key=os.environ.get('SOCIALCLI_AUTH_KEY',''),
                    allow_internal_auth=os.environ.get('SOCIALCLI_AUTH_INTERNAL_HTTP') == '1',
-                   billing=BillingSettings.from_environment())
+                   billing=BillingSettings.from_environment(),
+                   auth_admin_key=os.environ.get('SOCIALCLI_AUTH_ADMIN_KEY',''))

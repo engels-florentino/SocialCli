@@ -159,6 +159,7 @@ def install_account_routes(app,settings,vault,identity_client,clock):
         token=csrf(request,'saas-account')
         details=pages.subscription(decision,entitlement,billing,token,
             enabled=hasattr(app.state,'saas_billing'),processing=request.query_params.get('payment')=='processing' and not decision.allowed)
+        details+=app.state.saas_lifecycle.panel(user.id,token)
         response=HTMLResponse(pages.account(user,token,details))
         response.headers['Content-Security-Policy']="default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self' https://checkout.stripe.com https://billing.stripe.com; frame-ancestors 'none'; base-uri 'none'"
         return response
@@ -177,4 +178,6 @@ def install_account_routes(app,settings,vault,identity_client,clock):
     app.state.saas_valid_form=valid_form
     from socialctl.saas.pairing import install_pairing_routes
     install_pairing_routes(app,settings,metadata,sessions,clock)
+    from socialctl.saas.lifecycle import install_lifecycle_routes
+    install_lifecycle_routes(app,settings,metadata,sessions,clock)
     return metadata,sessions

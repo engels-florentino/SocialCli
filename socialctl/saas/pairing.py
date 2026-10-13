@@ -113,7 +113,7 @@ def install_pairing_routes(app,settings,metadata,sessions,clock):
                 installation_id,secret=secrets.token_urlsafe(24),secrets.token_urlsafe(32)
                 vault.put(db,'saas-installation',installation_id,{'user_id':user.id,'label':record['payload']['label'],
                     'created_at':clock()},expires=clock()+INSTALLATION_SECONDS,credential_hash=digest(secret))
-                record['payload'].update(status='approved',installation_id=installation_id,installation_secret=secret)
+                record['payload'].update(status='approved',user_id=user.id,installation_id=installation_id,installation_secret=secret)
                 vault.put(db,'saas-pair',pair_id,record['payload'],expires=record['expires'],credential_hash=record['credential_hash'])
         await asyncio.to_thread(commit)
         return HTMLResponse(pages.page('Assistant linked','<p class="eyebrow">ALL SET</p><h1 id="page-title">Assistant linked</h1><p class="description">Return to your assistant to continue. No social account has been connected by this step.</p><a class="secondary-button" href="/account/">Your account</a>'))

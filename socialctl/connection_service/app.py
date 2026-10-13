@@ -68,6 +68,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
     vault = store or Store(settings.database, settings.encryption_keys)
     client = provider_client or httpx.Client(timeout=20, follow_redirects=False)
     providers = Providers(settings, client)
+    from socialctl.connection_service.legacy import LegacyPolicy
+    legacy = LegacyPolicy(vault,clock,close=settings.legacy_cutoff or bool(settings.saas and settings.saas.billing))
     landing_tokens = LandingTokens(settings.encryption_keys)
     auth_client = identity_client or (httpx.Client(timeout=15, follow_redirects=False) if settings.saas else None)
 
@@ -126,6 +128,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
         proof = bearer(request)
         if record is None or record['expires'] <= clock() or not hmac.compare_digest(proof, record['credential_hash']):
             raise HTTPException(404, 'connection or authorization not found')
+        legacy.require(db,kind,record_id,record)
         return record
 
     @app.get('/healthz')
@@ -145,6 +148,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
         data = {'platform':body.platform, 'status':'pending', 'management':body.management,
                 'analytics':body.analytics}
         with vault.transaction() as db:
+            legacy.allow_creation(db)
             vault.purge(db, now=clock())
             if not vault.admit(db, request.client.host if request.client else 'unknown', now=clock()):
                 raise HTTPException(429, 'too many connection attempts; try again later', headers={'Retry-After':'60'})
@@ -160,6 +164,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
         record = vault.get(db, 'authorization', authorization_id)
         if record is None or record['expires'] <= clock():
             raise HTTPException(404, 'authorization expired or unavailable; restart connect in SocialCli')
+        legacy.require(db,'authorization',authorization_id,record)
         if record['payload']['status'] != 'pending' or 'state' in record['payload']:
             raise HTTPException(409, 'this authorization has already started; restart connect in SocialCli')
         return record
@@ -245,6 +250,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
             record = vault.get(db,'authorization',authorization_id)
             if record is None or record['expires'] <= clock():
                 raise HTTPException(400, 'invalid authorization callback')
+            legacy.require(db,'authorization',authorization_id,record)
             data = record['payload']
             if (data['platform'] != platform or data['status'] != 'pending'
                     or not hmac.compare_digest(state,data.get('state',''))
@@ -271,6 +277,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
             with vault.transaction() as db:
                 current = vault.get(db,'authorization',authorization_id)
                 if current is not None and current['expires'] > clock():
+                    legacy.require(db,'authorization',authorization_id,current)
                     vault.put(db,'authorization',authorization_id,data,expires=current['expires'],credential_hash=current['credential_hash'])
             response = browser_page('Authorization received. No content was published.' if data['status']=='ready'
                                     else 'Authorization could not be completed. Check permissions and app configuration.', success=data['status']=='ready')
@@ -311,7 +318,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
                 grant['access_token'] = account['access_token']
             connection_id, connection_secret = secrets.token_urlsafe(24), secrets.token_urlsafe(32)
             payload = {'platform':data['platform'],'account':safe_account(account),'grant':grant,'activated':False}
-            vault.put(db,'connection',connection_id,payload,expires=clock()+SESSION_SECONDS,credential_hash=digest(connection_secret))
+            expires=legacy.provisional(db,authorization_id,connection_id,clock()+SESSION_SECONDS)
+            vault.put(db,'connection',connection_id,payload,expires=expires,credential_hash=digest(connection_secret))
             vault.delete(db,'authorization',authorization_id)
         return {'version':1,'connection_id':connection_id,'connection_secret':connection_secret,
                 'platform':payload['platform'],'account':payload['account'],
@@ -346,6 +354,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
                 vault.put(db,'connection',connection_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
             if not data.get('activated') and refresh:
                 data['activated'] = True
+                legacy.activated(db,connection_id,clock()+CONNECTION_SECONDS)
                 vault.put(db,'connection',connection_id,data,expires=clock()+CONNECTION_SECONDS,credential_hash=record['credential_hash'])
         return {'version':1,'access_token':grant['access_token'],'expires_at':grant['expires_at'],
                 'granted_scopes':grant['granted_scopes'],'platform':data['platform'],'account':data['account']}

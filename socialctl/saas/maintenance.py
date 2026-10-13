@@ -9,6 +9,8 @@ from socialctl.connection_service.store import Store
 from socialctl.saas.store import SaaSStore
 from socialctl.saas.billing import BillingService
 from socialctl.saas.billing_reconcile import run_pending
+from socialctl.saas.auth import SupabaseAuth
+from socialctl.saas.lifecycle import AccountLifecycle,run_deletions
 
 
 def main():
@@ -17,14 +19,16 @@ def main():
     for name in ('httpx','httpcore'):
         logging.getLogger(name).disabled=True
     settings=Settings.from_environment()
-    if not settings.saas or not settings.saas.billing:
-        raise SystemExit('SaaS test billing must be configured before maintenance starts.')
+    if not settings.saas:
+        raise SystemExit('SaaS identity must be configured before maintenance starts.')
     metadata=SaaSStore(Store(settings.database,settings.encryption_keys),settings.encryption_keys)
     with httpx.Client(timeout=20,follow_redirects=False) as client:
-        billing=BillingService(metadata,settings.saas.billing,client,time.time,settings.public_url)
-        result=run_pending(billing)
+        billing=BillingService(metadata,settings.saas.billing,client,time.time,settings.public_url) if settings.saas.billing else None
+        result=run_pending(billing) if billing else {'processed':0,'retry_pending':0}
+        result['deletions']=run_deletions(metadata,SupabaseAuth(settings.saas,client),billing,time.time)
+    AccountLifecycle(metadata,time.time).prune_expired()
     print(json.dumps(result))
-    if result['retry_pending']:
+    if result['retry_pending'] or result['deletions']['pending']:
         raise SystemExit(1)
 
 

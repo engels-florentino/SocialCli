@@ -15,7 +15,7 @@ class SaaSStore:
         with vault.transaction() as db:
             db.execute('CREATE TABLE IF NOT EXISTS saas_schema (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)')
             version = db.execute('SELECT coalesce(max(version),0) FROM saas_schema').fetchone()[0]
-            if version > 4:
+            if version > 5:
                 raise ValueError('SaaS database is newer than this release; keep commercial access closed')
             if version < 1:
                 db.execute('CREATE TABLE saas_users (id TEXT PRIMARY KEY, created REAL NOT NULL, suspended INTEGER NOT NULL DEFAULT 0, deleting INTEGER NOT NULL DEFAULT 0, session_version INTEGER NOT NULL DEFAULT 0)')
@@ -33,6 +33,9 @@ class SaaSStore:
                 db.execute("CREATE TABLE saas_billing (user_id TEXT PRIMARY KEY,customer_id TEXT UNIQUE,subscription_id TEXT UNIQUE,customer_key TEXT NOT NULL,customer_started REAL NOT NULL,checkout_id TEXT,attempt TEXT,attempt_started REAL,lease TEXT,lease_until REAL NOT NULL DEFAULT 0,sync_due REAL NOT NULL DEFAULT 0,cancel_at_period_end INTEGER NOT NULL DEFAULT 0,review TEXT NOT NULL DEFAULT '')")
                 db.execute("CREATE TABLE saas_billing_events (account_id TEXT NOT NULL,mode TEXT NOT NULL,event_id TEXT NOT NULL,body_hash TEXT NOT NULL,customer_id TEXT,type TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',received REAL NOT NULL,next_attempt REAL NOT NULL DEFAULT 0,PRIMARY KEY(account_id,mode,event_id))")
                 db.execute('INSERT INTO saas_schema(version) VALUES(4)')
+            if version < 5:
+                db.execute("CREATE TABLE saas_deletions (user_id TEXT PRIMARY KEY,requested REAL NOT NULL,state TEXT NOT NULL DEFAULT 'pending',billing_done INTEGER NOT NULL DEFAULT 0,next_attempt REAL NOT NULL DEFAULT 0,lease TEXT,lease_until REAL NOT NULL DEFAULT 0)")
+                db.execute('INSERT INTO saas_schema(version) VALUES(5)')
 
     def user(self, db, user_id):
         return db.execute('SELECT * FROM saas_users WHERE id=?',(user_id,)).fetchone()

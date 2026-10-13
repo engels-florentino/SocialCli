@@ -57,6 +57,19 @@ class SupabaseAuth:
     def logout(self,token):
         self.request('POST','/logout?scope=local',token=token)
 
+    def delete_user(self,user_id):
+        user_id=str(UUID(user_id))
+        if not self.settings.auth_admin_key:raise IdentityUnavailable()
+        try:
+            result=self.client.request('DELETE',self.settings.auth_url+'/admin/users/'+user_id,
+                headers={'Authorization':'Bearer '+self.settings.auth_admin_key,'apikey':self.settings.auth_admin_key},
+                timeout=15,follow_redirects=False)
+            if result.status_code in {200,204}:return
+            if result.status_code==404 and result.json().get('error_code')=='user_not_found':return
+            raise IdentityUnavailable()
+        except (httpx.HTTPError,ValueError,AttributeError):
+            raise IdentityUnavailable() from None
+
     @staticmethod
     def parse_user(data):
         try:

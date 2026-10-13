@@ -119,9 +119,12 @@ class Connections:
                 linked=db.execute('SELECT grant_id FROM saas_slots WHERE user_id=? AND platform=?',(user_id,other)).fetchone()
                 if linked:
                     other_grant=self.vault.get(db,'saas-grant',linked['grant_id'])
-                    wanted=data['account'].get('page_id') if data['platform']=='instagram' else data['account']['id']
-                    have=other_grant['payload']['account'].get('page_id') if other=='instagram' else other_grant['payload']['account']['id']
-                    if wanted!=have: raise HTTPException(409,'page_mismatch: Facebook and Instagram must share the same Page.')
+                    if other_grant is None or other_grant['expires']<=self.clock():
+                        db.execute('DELETE FROM saas_slots WHERE user_id=? AND platform=?',(user_id,other))
+                    else:
+                        wanted=data['account'].get('page_id') if data['platform']=='instagram' else data['account']['id']
+                        have=other_grant['payload']['account'].get('page_id') if other=='instagram' else other_grant['payload']['account']['id']
+                        if wanted!=have: raise HTTPException(409,'page_mismatch: Facebook and Instagram must share the same Page.')
             if data['existing_grant']:
                 grant_id=data['existing_grant']
                 existing=self.vault.get(db,'saas-grant',grant_id)

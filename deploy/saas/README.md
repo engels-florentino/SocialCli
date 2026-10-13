@@ -79,3 +79,33 @@ python scripts/build_ui_assets.py --check
 The automated tests use fictional Stripe HTTP responses and signed fixture events.
 Real test-mode API evidence is recorded separately; it does not prove webhook
 reachability, live billing approval or completion of the hosted browser checkout.
+
+## Commercial cutoff and rollback
+
+Billing-enabled SaaS startup closes anonymous legacy creation automatically.
+`SOCIALCLI_LEGACY_CUTOFF=1` can close it explicitly. The first cutoff transaction
+records existing activated connections, prior authorizations and provisional
+connections. Existing attempts may finish/activate only within the original
+600-second drain. Activated entries retain their own expiry. No version string
+or brand name grants an exception. Restarting or removing the environment flag
+cannot erase the persistent cutoff.
+
+Before routing a commercial service, add `nginx-legacy-cutoff.conf` to **each**
+public NPM host that can reach the vault (including the old hostname). Verify
+Nginx config and direct/encoded/trailing-slash creation requests. Keep the edge
+block after any rollback, and never expose the service port outside the proxy
+network. A rollback to 0.2.6 is not supported without this permanent edge block;
+prefer a compatible cutoff-aware release or maintenance mode. Do not restore an
+old database over newer payment/connection state.
+
+## Account cleanup
+
+Configure `SOCIALCLI_AUTH_ADMIN_KEY` with the private self-hosted Auth service-role
+JWT, separate from browser/agent credentials. The maintenance command now also
+processes account deletion. Requests remove local credentials/sessions and block
+new emissions immediately, then expire pending Checkout sessions, cancel owned
+subscriptions, delete the dedicated owner-verified Stripe customer as a final
+fence against an in-flight Checkout, and delete the exact Auth user. External failures remain queued;
+a generic 404 is not taken as proof of identity deletion. Stripe invoice records
+remain subject to its required retention; local free-trial eligibility markers
+retain their independently published expiry.
