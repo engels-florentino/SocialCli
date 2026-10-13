@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
+from socialctl.saas.settings import SaaSSettings
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,7 @@ class Settings:
     encryption_keys: list[bytes] = field(repr=False)
     providers: dict[str, AppCredentials] = field(default_factory=dict, repr=False)
     allow_http_local: bool = False
+    saas: SaaSSettings | None = None
 
     def __post_init__(self):
         parts = urlsplit(self.public_url)
@@ -55,4 +57,5 @@ class Settings:
         return cls(public_url=os.environ.get('SOCIALCLI_PUBLIC_URL', ''),
                    database=Path(os.environ.get('SOCIALCLI_DATABASE', '/data/connections.sqlite3')),
                    encryption_keys=keys, providers=providers,
-                   allow_http_local=os.environ.get('SOCIALCLI_ALLOW_HTTP_LOCAL') == '1')
+                   allow_http_local=os.environ.get('SOCIALCLI_ALLOW_HTTP_LOCAL') == '1',
+                   saas=SaaSSettings.from_environment())

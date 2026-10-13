@@ -1,0 +1,44 @@
+# Dedicated SocialCli identity
+
+This stack runs only Supabase Auth and PostgreSQL. It has its own network,
+volume, JWT and database credentials. It does not reuse the Rent Supabase stack.
+No host ports or public management endpoints are published. Only the SaaS
+application joins `socialcli-identity` and reaches `http://socialcli-auth:9999`.
+Set `SOCIALCLI_AUTH_INTERNAL_HTTP=1` explicitly for that private hop. The web
+browser talks to SocialCli over HTTPS; identity tokens stay on the server.
+
+Copy `auth.env.example` to private `auth.env`. Create private `database.env`
+with POSTGRES_USER=socialcli_auth, POSTGRES_DB=socialcli_auth and a long random
+POSTGRES_PASSWORD matching the Auth database URL. Set a separate random JWT
+secret. Keep both env files mode 0600, directories mode 0700, outside Git.
+Run `docker compose up -d`. `init.sql` initializes the Auth namespace and role
+required by upstream migrations on an empty dedicated database.
+
+SMTP is Stalwart at mail.florentino.pro:587 with verified STARTTLS, the dedicated
+access@socialcli.app account and display name SocialCli. The existing Stalwart
+relay configuration is preserved. The generated OTP email is served privately
+by `templates`, not exposed to the internet. It shares canonical design tokens.
+
+## Server preparation, 2026-10-13
+
+- Location: `/home/blades3/projects/socialcli-saas/auth`.
+- Containers: socialcli-auth (GoTrue v2.197.0), socialcli-auth-db (Postgres 17),
+  socialcli-auth-templates. All separate from existing services.
+- `/health` responded with GoTrue v2.197.0.
+- Stalwart v0.16.14 domain socialcli.app ID `d`; dedicated access mailbox created.
+- SMTP authentication succeeded with certificate verification; no external
+  delivery has been claimed.
+- Public DNS instructions are in `socialcli-domain-public-dns.json` on the
+  server. Configure MX, SPF and DKIM in Namecheap, then verify outbound relay
+  sender authorization before testing delivery to an external inbox.
+
+## Operations
+
+Back up this dedicated Postgres database with pg_dump and keep JWT/SMTP
+credentials separately. Restore into another isolated stack and exercise OTP
+verification before relying on a backup. Monitor Auth health and delivery errors
+without logging codes, JWTs or SMTP passwords. Pin and review Auth image updates.
+The PostgreSQL image's bootstrap owner is privileged; restrict the runtime role
+before public launch and test future Auth migrations with that role.
+
+This preparation is private infrastructure, not a completed public SaaS rollout.

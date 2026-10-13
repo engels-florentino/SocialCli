@@ -34,3 +34,5 @@ build/
 .superpowers/
 
 **/service.env
+**/auth.env
+**/database.env

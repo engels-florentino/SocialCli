@@ -1,0 +1,54 @@
+name: socialcli-identity
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: socialcli-auth-db
+    restart: unless-stopped
+    env_file: database.env
+    volumes:
+      - auth-db:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/10-auth.sql:ro
+    networks: [identity]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U socialcli_auth -d socialcli_auth']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    logging:
+      options: {max-size: 5m, max-file: '2'}
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.197.0
+    container_name: socialcli-auth
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+      templates: {condition: service_started}
+    env_file: auth.env
+    networks: [identity]
+    read_only: true
+    tmpfs: ['/tmp:size=16m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    logging:
+      options: {max-size: 5m, max-file: '2'}
+  templates:
+    image: nginx:stable-alpine
+    container_name: socialcli-auth-templates
+    restart: unless-stopped
+    volumes:
+      - ./templates:/usr/share/nginx/html:ro
+    networks: [identity]
+    read_only: true
+    tmpfs: ['/var/cache/nginx:size=8m', '/var/run:size=1m']
+    mem_limit: 32m
+    security_opt: [no-new-privileges:true]
+volumes:
+  auth-db:
+networks:
+  identity:
+    name: socialcli-identity

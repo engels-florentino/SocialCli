@@ -64,15 +64,18 @@ class CompleteAuthorization(BaseModel):
 
 
 def create_app(settings: Settings, *, store: Store | None = None,
-               provider_client: httpx.Client | None = None, clock=time.time) -> FastAPI:
+               provider_client: httpx.Client | None = None, identity_client: httpx.Client | None = None, clock=time.time) -> FastAPI:
     vault = store or Store(settings.database, settings.encryption_keys)
     client = provider_client or httpx.Client(timeout=20, follow_redirects=False)
     providers = Providers(settings, client)
     landing_tokens = LandingTokens(settings.encryption_keys)
+    auth_client = identity_client or (httpx.Client(timeout=15, follow_redirects=False) if settings.saas else None)
 
     @asynccontextmanager
     async def lifespan(app):
         yield
+        if identity_client is None and auth_client is not None:
+            auth_client.close()
         if provider_client is None:
             client.close()
 
@@ -82,10 +85,13 @@ def create_app(settings: Settings, *, store: Store | None = None,
     app.mount('/connect/assets', StaticFiles(directory=Path(__file__).parent / 'assets'), name='connection-assets')
 
     def is_browser_path(request):
-        return request.url.path.startswith('/connect/') or request.url.path.startswith('/oauth/')
+        return request.url.path.startswith(('/connect/','/oauth/','/account/'))
 
     @app.exception_handler(StarletteHTTPException)
     async def connection_error(request, exc):
+        if settings.saas and request.url.path.startswith('/account/'):
+            from socialctl.saas.pages import error
+            return HTMLResponse('' if request.method == 'HEAD' else error(str(exc.detail)),status_code=exc.status_code,headers=exc.headers)
         if is_browser_path(request):
             return HTMLResponse('' if request.method == 'HEAD' else error_page(exc.status_code),
                                 status_code=exc.status_code, headers=exc.headers)
@@ -334,5 +340,9 @@ def create_app(settings: Settings, *, store: Store | None = None,
             checked(db,'connection',connection_id,request)
             vault.delete(db,'connection',connection_id)
         return {'version':1,'status':'disconnected','provider_authorization_revoked':False}
+
+    if settings.saas:
+        from socialctl.saas.routes import install_account_routes
+        install_account_routes(app, settings, vault, auth_client, clock)
 
     return app

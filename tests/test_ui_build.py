@@ -21,6 +21,7 @@ def test_build_detects_stale_assets_and_repairs_both_targets(tmp_path):
     assert run().returncode == 0
     assert web.read_text() != old_web and wheel.read_text() != old_wheel
     assert '#123abc' in web.read_text() and '#123abc' in wheel.read_text()
+    assert '#123abc' in (tmp_path / 'deploy/auth/templates/otp.html').read_text()
     assert run('--check').returncode == 0
 
 
