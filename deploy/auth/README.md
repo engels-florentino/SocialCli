@@ -60,8 +60,10 @@ versions were reconciled into `auth.schema_migrations` (20 missing entries),
 without inventing versions or resetting tables. Auth was recreated and `/health`
 and the user-authorized `/otp` request both returned 200. There were no Auth users
 before the test. The provider accepting a request does not prove inbox delivery.
-The actual first-email test was requested by the user; receipt confirmation is
-recorded separately.
+The actual first-email test was requested by the user. The recipient confirmed
+delivery to the Gmail inbox and the expected SocialCli sign-in template with a
+10-minute expiry. The code is not retained in test evidence. This verifies real
+delivery; OTP redemption and the public browser flow still require their own test.
 
 Namecheap now serves MX `10 mail.florentino.pro`, root SPF `v=spf1 mx -all`, and
 DMARC `v=DMARC1; p=none`. SMTP2GO verified the domain's DKIM and return-path CNAMEs.
