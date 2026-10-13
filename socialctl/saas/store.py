@@ -15,7 +15,7 @@ class SaaSStore:
         with vault.transaction() as db:
             db.execute('CREATE TABLE IF NOT EXISTS saas_schema (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)')
             version = db.execute('SELECT coalesce(max(version),0) FROM saas_schema').fetchone()[0]
-            if version > 5:
+            if version > 6:
                 raise ValueError('SaaS database is newer than this release; keep commercial access closed')
             if version < 1:
                 db.execute('CREATE TABLE saas_users (id TEXT PRIMARY KEY, created REAL NOT NULL, suspended INTEGER NOT NULL DEFAULT 0, deleting INTEGER NOT NULL DEFAULT 0, session_version INTEGER NOT NULL DEFAULT 0)')
@@ -36,6 +36,10 @@ class SaaSStore:
             if version < 5:
                 db.execute("CREATE TABLE saas_deletions (user_id TEXT PRIMARY KEY,requested REAL NOT NULL,state TEXT NOT NULL DEFAULT 'pending',billing_done INTEGER NOT NULL DEFAULT 0,next_attempt REAL NOT NULL DEFAULT 0,lease TEXT,lease_until REAL NOT NULL DEFAULT 0)")
                 db.execute('INSERT INTO saas_schema(version) VALUES(5)')
+            if version < 6:
+                db.execute("CREATE TABLE saas_reminders (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,trial_end REAL NOT NULL,milestone INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'pending',next_attempt REAL NOT NULL DEFAULT 0,lease TEXT,lease_until REAL NOT NULL DEFAULT 0,UNIQUE(user_id,trial_end,milestone))")
+                db.execute('CREATE INDEX saas_reminders_due ON saas_reminders(state,next_attempt,trial_end)')
+                db.execute('INSERT INTO saas_schema(version) VALUES(6)')
 
     def user(self, db, user_id):
         return db.execute('SELECT * FROM saas_users WHERE id=?',(user_id,)).fetchone()

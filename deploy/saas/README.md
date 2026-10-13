@@ -174,3 +174,42 @@ the reviewed legacy cutoff/rollback constraints.
 References: [HTTPX timeouts](https://www.python-httpx.org/advanced/timeouts/),
 [Google token expiration](https://developers.google.com/identity/protocols/oauth2),
 and [TikTok OAuth errors](https://developers.tiktok.com/doc/oauth-error-handling/).
+
+## Trial reminders
+
+The same isolated maintenance command now owns the trial reminder outbox. Enable
+`SOCIALCLI_REMINDERS_ENABLED=1` only in the reviewed private service configuration,
+using `mail.env.example` and the existing dedicated Stalwart mailbox password.
+SMTP uses verified STARTTLS and the fixed sender `SocialCli <access@socialcli.app>`;
+credentials stay outside Git. This switch does not change Auth's OTP delivery.
+The reminder templates use the shared UI tokens and are included in the wheel.
+
+Metadata migration 6 adds one durable job per user/trial deadline/milestone.
+The 3-day reminder is valid until the 1-day window begins; delayed maintenance
+sends only the current window, never stale reminders after trial expiry. Payment,
+suspension, account deletion, a changed deadline or missing verified identity
+cancel delivery. Eligibility and the current email are checked again immediately
+before SMTP DATA, without holding a SQLite transaction during network calls.
+An account change after DATA has begun cannot recall an in-flight message.
+
+A 300-second preparation lease may be reclaimed after a crash. A durable `sending`
+marker is committed before DATA: lost acknowledgements or crashes thereafter
+become `uncertain` and are never automatically replayed. A confirmed temporary
+SMTP rejection retries after 300 seconds with the same Message-ID; confirmed
+permanent recipient/DATA rejection remains visible as `rejected`. A Message-ID
+alone is not a guarantee that an SMTP relay deduplicates submissions. `accepted`
+means SMTP acceptance, not inbox delivery. Use the private relay logs to investigate
+uncertainty; do not clear it or force a resend without proving non-delivery.
+
+Maintenance JSON exposes counts only, including delayed retries and uncertain or
+rejected jobs; these cause exit 1 for operator attention. Future scheduled jobs
+are not failures. Disabling reminder delivery still runs lease recovery, receipt
+expiry and backlog reporting; the switch stops SMTP submissions only.
+SQL stores IDs, deadlines and states, not addresses or bodies;
+recipients are read from the encrypted identity at sending time. Minimal receipts
+expire 30 days after trial end. Reminders require ASCII SMTP envelope addresses.
+The public account page remains the recovery path if mail delivery fails.
+
+No actual trial reminder or timer activation is claimed by the unit fixtures.
+Auth's separately confirmed inbox test establishes the existing route, not this
+new message's rendering across all email clients or its live delivery.

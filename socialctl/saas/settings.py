@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 import os
 from socialctl.saas.billing import BillingSettings
+from socialctl.saas.mail import MailSettings
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,7 @@ class SaaSSettings:
     allow_internal_auth: bool = False
     billing: BillingSettings | None = None
     auth_admin_key: str = field(default='',repr=False)
+    mail: MailSettings | None = None
 
     def __post_init__(self):
         url = urlsplit(self.auth_url)
@@ -28,4 +30,5 @@ class SaaSSettings:
                    auth_key=os.environ.get('SOCIALCLI_AUTH_KEY',''),
                    allow_internal_auth=os.environ.get('SOCIALCLI_AUTH_INTERNAL_HTTP') == '1',
                    billing=BillingSettings.from_environment(),
-                   auth_admin_key=os.environ.get('SOCIALCLI_AUTH_ADMIN_KEY',''))
+                   auth_admin_key=os.environ.get('SOCIALCLI_AUTH_ADMIN_KEY',''),
+                   mail=MailSettings.from_environment())

@@ -46,20 +46,22 @@ def error(message):
     return page('Please try again',f'<h1 id="page-title">Let\'s try that again</h1>{notice(message)}<a class="secondary-button" href="/account/login">Back to sign in</a>')
 
 
-def subscription(decision,entitlement,billing,csrf,*,enabled,processing=False):
+def utc_date(value):
     from datetime import datetime, timezone
-    def date(value):
-        return datetime.fromtimestamp(value,timezone.utc).strftime('%b %d, %Y at %H:%M UTC')
+    return datetime.fromtimestamp(value,timezone.utc).strftime('%b %d, %Y at %H:%M UTC')
+
+
+def subscription(decision,entitlement,billing,csrf,*,enabled,processing=False):
     reason=decision.reason
     action='';message='';heading='Your plan'
     if reason=='trial_not_started':
         message='Your 14 free days start when you connect your first social account. No card required.'
     elif reason=='trial':
-        message='Your free trial ends '+date(entitlement['trial_end'])+'. You can subscribe then; no automatic charge.'
+        message='Your free trial ends '+utc_date(entitlement['trial_end'])+'. You can subscribe then; no automatic charge.'
     elif reason=='paid':
         heading='Subscription active'
         ending=billing and billing['cancel_at_period_end'] or entitlement['subscription_status']=='canceled'
-        message=('Will not renew. Access ends ' if ending else 'Your paid access ends ')+date(decision.access_until)+'.'
+        message=('Will not renew. Access ends ' if ending else 'Your paid access ends ')+utc_date(decision.access_until)+'.'
         if not ending:message+=' Renews monthly at USD 10.'
     elif reason in {'suspended','account_unavailable'}:
         heading='Account unavailable';message='Contact support for help with access. You can still manage your billing.'

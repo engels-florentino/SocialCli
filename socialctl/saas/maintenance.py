@@ -11,6 +11,8 @@ from socialctl.saas.billing import BillingService
 from socialctl.saas.billing_reconcile import run_pending
 from socialctl.saas.auth import SupabaseAuth
 from socialctl.saas.lifecycle import AccountLifecycle,run_deletions
+from socialctl.saas.reminders import Reminders
+from socialctl.saas.mail import SMTPMailer
 
 
 def main():
@@ -27,8 +29,11 @@ def main():
         result=run_pending(billing) if billing else {'processed':0,'retry_pending':0}
         result['deletions']=run_deletions(metadata,SupabaseAuth(settings.saas,client),billing,time.time)
     AccountLifecycle(metadata,time.time).prune_expired()
+    result['reminders']=Reminders(metadata,time.time,settings.public_url).run(
+        SMTPMailer(settings.saas.mail) if settings.saas.mail else None)
     print(json.dumps(result))
-    if result['retry_pending'] or result['deletions']['pending']:
+    if (result['retry_pending'] or result['deletions']['pending']
+            or any(result['reminders'].get(key,0) for key in ('due','uncertain','rejected','retry_pending'))):
         raise SystemExit(1)
 
 
