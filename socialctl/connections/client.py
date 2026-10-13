@@ -80,7 +80,7 @@ def broker_access_token(brand,platform,client,*,refresh=True):
     metadata=brand.leer_secreto(platform)
     if metadata.get('auth_mode')!='broker' or metadata.get('version')!=1:
         raise ValueError('invalid connection metadata')
-    broker=BrokerClient(metadata.get('service_url',''),client,allow_http_local=metadata.get('development_local') is True)
+    broker=broker_for(metadata,client)
     connection_id=opaque(metadata.get('connection_id'))
     expected=opaque(metadata.get('account_id'))
     if account_id(brand,platform)!=expected:
@@ -98,3 +98,14 @@ def broker_access_token(brand,platform,client,*,refresh=True):
     if not isinstance(token,str) or not 1<=len(token)<=16384 or any(ord(c)<33 or ord(c)==127 for c in token):
         raise ValueError('invalid connection credentials')
     return token
+
+
+def broker_for(metadata,client):
+    protocol=metadata.get('protocol')
+    if protocol not in {None,'saas-v1'}:
+        raise ValueError('Unsupported connection protocol. Update SocialCli.')
+    if protocol=='saas-v1':
+        from socialctl.connections.saas_client import SaaSClient
+        factory=SaaSClient
+    else:factory=BrokerClient
+    return factory(metadata.get('service_url',''),client,allow_http_local=metadata.get('development_local') is True)

@@ -36,11 +36,11 @@ async def read_form(request,origin):
 
 def safe_next(value):
     # Installation approval paths are added by the pairing phase, never arbitrary URLs.
-    return value if value=='/account/' else '/account/'
+    return value if value=='/account/' or re.fullmatch(r'/account/pair/[A-Za-z0-9_-]{16,64}',value or '') else '/account/'
 
 
 def install_account_routes(app,settings,vault,identity_client,clock):
-    metadata=SaaSStore(vault)
+    metadata=SaaSStore(vault,settings.encryption_keys)
     identity=SupabaseAuth(settings.saas,identity_client)
     sessions=WebSessions(metadata,identity,clock)
     tokens=LandingTokens(settings.encryption_keys)
@@ -151,7 +151,17 @@ def install_account_routes(app,settings,vault,identity_client,clock):
             if exc.status_code!=401:
                 raise
             return RedirectResponse('/account/login',status_code=303)
-        return HTMLResponse(pages.account(user,csrf(request,'saas-account')))
+        from socialctl.saas.access import AccessControl
+        with vault.transaction() as db:
+            decision=AccessControl(metadata).decision(db,user.id,clock())
+            entitlement=db.execute('SELECT * FROM saas_entitlements WHERE user_id=?',(user.id,)).fetchone()
+            billing=db.execute('SELECT * FROM saas_billing WHERE user_id=?',(user.id,)).fetchone()
+        token=csrf(request,'saas-account')
+        details=pages.subscription(decision,entitlement,billing,token,
+            enabled=hasattr(app.state,'saas_billing'),processing=request.query_params.get('payment')=='processing' and not decision.allowed)
+        response=HTMLResponse(pages.account(user,token,details))
+        response.headers['Content-Security-Policy']="default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self' https://checkout.stripe.com https://billing.stripe.com; frame-ancestors 'none'; base-uri 'none'"
+        return response
 
     @app.post('/account/logout')
     async def logout(request:Request):
@@ -165,4 +175,6 @@ def install_account_routes(app,settings,vault,identity_client,clock):
 
     app.state.saas_csrf=csrf
     app.state.saas_valid_form=valid_form
+    from socialctl.saas.pairing import install_pairing_routes
+    install_pairing_routes(app,settings,metadata,sessions,clock)
     return metadata,sessions

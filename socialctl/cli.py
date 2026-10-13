@@ -106,6 +106,8 @@ register_inventory(app, content_app)
 
 from socialctl.connections.cli import register as register_connections
 register_connections(app)
+from socialctl.connections.account_cli import account_app
+app.add_typer(account_app,name="account")
 from socialctl.management.community_batch_cli import register as register_community_batches
 from socialctl.workspace import default_root
 register_community_batches(changes_app, default_root())

@@ -64,12 +64,14 @@ class CompleteAuthorization(BaseModel):
 
 
 def create_app(settings: Settings, *, store: Store | None = None,
-               provider_client: httpx.Client | None = None, identity_client: httpx.Client | None = None, clock=time.time) -> FastAPI:
+               provider_client: httpx.Client | None = None, identity_client: httpx.Client | None = None, billing_client: httpx.Client | None = None, clock=time.time) -> FastAPI:
     vault = store or Store(settings.database, settings.encryption_keys)
     client = provider_client or httpx.Client(timeout=20, follow_redirects=False)
     providers = Providers(settings, client)
     landing_tokens = LandingTokens(settings.encryption_keys)
     auth_client = identity_client or (httpx.Client(timeout=15, follow_redirects=False) if settings.saas else None)
+
+    stripe_client = billing_client or (httpx.Client(timeout=20, follow_redirects=False) if settings.saas and settings.saas.billing else None)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -78,6 +80,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
             auth_client.close()
         if provider_client is None:
             client.close()
+        if billing_client is None and stripe_client is not None:
+            stripe_client.close()
 
     app = FastAPI(title='SocialCli connection service', docs_url=None, redoc_url=None,
                   openapi_url=None, lifespan=lifespan)
@@ -100,7 +104,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
     @app.middleware('http')
     async def secure_headers(request: Request, call_next):
         try:
-            if int(request.headers.get('content-length', '0')) > 16384:
+            if int(request.headers.get('content-length', '0')) > (1048576 if request.url.path=='/api/saas/v1/billing/webhook' else 16384):
                 response = (HTMLResponse(error_page(413), status_code=413) if is_browser_path(request) else
                             JSONResponse({'detail':'request is too large'}, status_code=413))
             else:
@@ -117,6 +121,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
 
     def checked(db, kind, record_id, request):
         record = vault.get(db, kind, record_id)
+        if record and record['payload'].get('saas'):
+            raise HTTPException(404, 'connection or authorization not found')
         proof = bearer(request)
         if record is None or record['expires'] <= clock() or not hmac.compare_digest(proof, record['credential_hash']):
             raise HTTPException(404, 'connection or authorization not found')
@@ -200,6 +206,14 @@ def create_app(settings: Settings, *, store: Store | None = None,
         if (len(tokens) != 1 or not landing_tokens.valid(tokens[0], authorization_id,
                 request.cookies.get(cookie_name, ''), clock())):
             raise HTTPException(403, 'invalid or expired connection form; restart connect in SocialCli')
+        def read_owner_record():
+            with vault.transaction() as db:
+                return pending_authorization(db, authorization_id)
+        owner_record = await asyncio.to_thread(read_owner_record)
+        if owner_record['payload'].get('saas'):
+            user = await asyncio.to_thread(app.state.saas_sessions.require_user, request)
+            if user.id != owner_record['payload']['saas']['user_id']:
+                raise HTTPException(403, 'This connection belongs to another account.')
         browser_secret = secrets.token_urlsafe(32)
         def consume_authorization():
             with vault.transaction() as db:
@@ -260,6 +274,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
                     vault.put(db,'authorization',authorization_id,data,expires=current['expires'],credential_hash=current['credential_hash'])
             response = browser_page('Authorization received. No content was published.' if data['status']=='ready'
                                     else 'Authorization could not be completed. Check permissions and app configuration.', success=data['status']=='ready')
+        if data.get('saas') and data['status']=='ready':
+            response = RedirectResponse('/account/connect/'+authorization_id,status_code=303)
         response.delete_cookie('socialcli-'+authorization_id,path='/',secure=not settings.allow_http_local,httponly=True,samesite='lax')
         return response
 
@@ -344,5 +360,14 @@ def create_app(settings: Settings, *, store: Store | None = None,
     if settings.saas:
         from socialctl.saas.routes import install_account_routes
         install_account_routes(app, settings, vault, auth_client, clock)
+        from socialctl.saas.connections import install_connection_routes
+        install_connection_routes(app,settings,app.state.saas,app.state.saas_sessions,providers,clock)
+        if settings.saas.billing:
+            from socialctl.saas.billing import BillingService
+            from socialctl.saas.billing_routes import install_billing_routes
+            from socialctl.saas.webhooks import install_webhook_route
+            billing=BillingService(app.state.saas,settings.saas.billing,stripe_client,clock,settings.public_url)
+            install_billing_routes(app,billing)
+            install_webhook_route(app,billing)
 
     return app

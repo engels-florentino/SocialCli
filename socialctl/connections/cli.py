@@ -19,7 +19,7 @@ import yaml
 
 from socialctl.brands import cargar_brand
 from socialctl.connections import keychain
-from socialctl.connections.client import BrokerClient,DEFAULT_SERVICE,opaque,visible
+from socialctl.connections.client import BrokerClient,DEFAULT_SERVICE,opaque,visible,broker_for
 from socialctl.models import Platform
 from socialctl.workspace import default_root
 
@@ -118,6 +118,7 @@ def register(app):
                 replace_independent:bool=typer.Option(False,'--replace-independent',help='Explicitly permit replacing independent credentials with --yes.'),
                 management:bool=typer.Option(False,'--management',help='YouTube: metadata management; Facebook/Instagram: comments and webhook permissions.'),
                 analytics:bool=typer.Option(False,'--analytics',help='YouTube, Facebook or Instagram: request analytics read access.'),
+                timeout:float=typer.Option(600,'--timeout',min=1,max=600,help='Maximum browser connection wait in seconds.'),
                 dev_local:bool=typer.Option(False,'--dev-local',help='Development only: permit a loopback HTTP service.')):
         """Connect your own social account in the browser without developer credentials."""
         auth_id=None
@@ -131,6 +132,10 @@ def register(app):
                 raise ValueError('TikTok management permission is not available in this connection flow')
             if analytics and platform is Platform.TIKTOK:
                 raise ValueError('TikTok analytics permission is not available in this connection flow')
+            from socialctl.connections.account_cli import metadata as account_metadata,connect_saas
+            if account_metadata(brand):
+                connect_saas(brand,platform,no_browser=no_browser,account_id=account_id,replace_independent=replace_independent,management=management,analytics=analytics,timeout=timeout)
+                return
             previous=brand.leer_secreto(platform)
             if previous.get('auth_mode')=='broker':
                 raise ValueError('this platform already has a connection; disconnect it before reconnecting')
@@ -278,7 +283,7 @@ def register(app):
                     metadata=brand.leer_secreto(platform)
                     if metadata.get('auth_mode')!='broker':
                         continue
-                    broker=BrokerClient(metadata['service_url'],transport,allow_http_local=metadata.get('development_local') is True)
+                    broker=broker_for(metadata,transport)
                     secret=keychain.get(brand,platform,metadata)
                     status=broker.request('GET',f"/v1/connections/{opaque(metadata['connection_id'])}",secret=secret)
                     if status.get('platform')!=platform.value or status.get('account',{}).get('id')!=metadata['account_id']:
@@ -311,7 +316,7 @@ def register(app):
                 return
             secret=keychain.get(brand,platform,metadata)
             with http_client() as transport:
-                broker=BrokerClient(metadata['service_url'],transport,allow_http_local=metadata.get('development_local') is True)
+                broker=broker_for(metadata,transport)
                 broker.request('DELETE',f"/v1/connections/{opaque(metadata['connection_id'])}",secret=secret,allow_missing=True)
             keychain.delete(brand,platform,metadata)
             (brand.dir_secretos/f'{platform.value}.json').unlink(missing_ok=True)

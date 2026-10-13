@@ -44,3 +44,34 @@ def account(user,csrf,details=''):
 
 def error(message):
     return page('Please try again',f'<h1 id="page-title">Let\'s try that again</h1>{notice(message)}<a class="secondary-button" href="/account/login">Back to sign in</a>')
+
+
+def subscription(decision,entitlement,billing,csrf,*,enabled,processing=False):
+    from datetime import datetime, timezone
+    def date(value):
+        return datetime.fromtimestamp(value,timezone.utc).strftime('%b %d, %Y at %H:%M UTC')
+    reason=decision.reason
+    action='';message='';heading='Your plan'
+    if reason=='trial_not_started':
+        message='Your 14 free days start when you connect your first social account. No card required.'
+    elif reason=='trial':
+        message='Your free trial ends '+date(entitlement['trial_end'])+'. You can subscribe then; no automatic charge.'
+    elif reason=='paid':
+        heading='Subscription active'
+        ending=billing and billing['cancel_at_period_end'] or entitlement['subscription_status']=='canceled'
+        message=('Will not renew. Access ends ' if ending else 'Your paid access ends ')+date(decision.access_until)+'.'
+        if not ending:message+=' Renews monthly at USD 10.'
+    elif reason in {'suspended','account_unavailable'}:
+        heading='Account unavailable';message='Contact support for help with access. You can still manage your billing.'
+    else:
+        heading='Your free trial has ended'
+        message='Subscribe to continue using your connected accounts. USD 10 is charged when you confirm, then monthly. Cancel anytime.'
+        ongoing=entitlement and entitlement['subscription_status'] not in ('','canceled','incomplete_expired')
+        if ongoing:message='Your subscription needs attention. Open Manage billing to check your payment and restore access.'
+        elif enabled:
+            action=f'<form method="post" action="/account/billing/checkout" class="form-stack">{hidden("csrf",csrf)}<button type="submit" class="primary-button">Subscribe — USD 10/month</button></form>'
+    if enabled and billing and billing['customer_id']:
+        action+=f'<form method="post" action="/account/billing/portal" class="form-stack">{hidden("csrf",csrf)}<button type="submit" class="secondary-button">Manage billing</button></form>'
+    pending='<p class="status-notice" role="status">We are checking your payment. This can take a few minutes. Refresh this page to see your confirmed access.</p>' if processing else ''
+    if not enabled:message+=' Subscription checkout is not available yet.'
+    return f'<section aria-label="Subscription"><h2>{escape(heading)}</h2><p class="description">USD 10/month · One brand · Four social platforms</p><p class="status-notice">{escape(message)}</p>{pending}{action}</section>'

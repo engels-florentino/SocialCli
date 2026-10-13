@@ -12,7 +12,7 @@ USER = '11111111-1111-4111-8111-111111111111'
 EMAIL = 'creator@example.test'
 
 
-def service(tmp_path, handler=None, now=None):
+def service(tmp_path, handler=None, now=None, provider=None):
     now = now or [1000.0]
     calls = []
     def identity(request):
@@ -36,9 +36,10 @@ def service(tmp_path, handler=None, now=None):
         if request.url.path == '/logout':
             return httpx.Response(204)
         return httpx.Response(404)
+    from socialctl.connection_service.settings import AppCredentials
     settings = Settings(public_url='https://social.example', database=tmp_path/'service.sqlite3',
-        encryption_keys=[Fernet.generate_key()], saas=SaaSSettings(auth_url='https://auth.example'))
-    app = create_app(settings, clock=lambda:now[0], identity_client=httpx.Client(transport=httpx.MockTransport(identity)))
+        encryption_keys=[Fernet.generate_key()], providers={'youtube':AppCredentials('fictional-app','fictional-secret')} if provider else {}, saas=SaaSSettings(auth_url='https://auth.example'))
+    app = create_app(settings, provider_client=httpx.Client(transport=httpx.MockTransport(provider)) if provider else None, clock=lambda:now[0], identity_client=httpx.Client(transport=httpx.MockTransport(identity)))
     return TestClient(app, base_url='https://social.example'), now, calls
 
 

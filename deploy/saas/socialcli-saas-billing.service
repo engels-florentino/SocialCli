@@ -1,0 +1,11 @@
+[Unit]
+Description=SocialCli SaaS billing reconciliation (no publication jobs)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Install only after deploying the reviewed SaaS service image/configuration.
+ExecStart=/usr/bin/docker exec socialcli-connections python -m socialctl.saas.maintenance
+TimeoutStartSec=240
+UMask=0077

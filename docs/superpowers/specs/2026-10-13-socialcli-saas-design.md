@@ -202,7 +202,7 @@ El acceso se decide en el servidor al activar conexiones y al emitir tokens:
 | Suscripción activa y periodo pagado vigente | Permitido |
 | Cancelación al final del periodo | Permitido hasta terminar el periodo pagado |
 | Prueba terminada sin suscripción | Bloqueado; ofrecer checkout |
-| `incomplete`, `incomplete_expired`, `past_due`, `unpaid`, `paused` o cancelada efectiva | Bloqueado; ofrecer recuperación de pago cuando corresponda |
+| `incomplete`, `incomplete_expired`, `past_due`, `unpaid`, `paused` o cancelada sin periodo pagado vigente | Bloqueado; ofrecer recuperación de pago cuando corresponda |
 
 Consultar el estado, pagar, desconectar, revocar una instalación y solicitar la
 eliminación de cuenta siguen disponibles aunque no haya suscripción.
