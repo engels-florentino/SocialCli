@@ -322,3 +322,20 @@ def migrate(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Pa
         typer.echo(str(exc) if isinstance(exc,ValueError) else 'Could not confirm migration. Keep local credentials and check account recovery.',err=True);raise typer.Exit(1)
     finally:
         if lock is not None:os.close(lock)
+
+
+@account_app.command('rotate')
+def rotate(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),
+           cancel:bool=typer.Option(False,'--cancel')):
+    """Renew this installation before expiry; rerun to recover an interruption."""
+    lock=None
+    try:
+        brand=cargar_brand(root,brand_name);lock=acquire_brand_lock(brand,allow_rotation=True)
+        from socialctl.connections.rotation_cli import rotate_local
+        typer.echo(rotate_local(brand,cancel=cancel))
+    except Exception as exc:
+        message=str(exc) if isinstance(exc,ValueError) else 'Credential rotation could not be confirmed.'
+        typer.echo(message+' Run socialcli account rotate with the same brand to resume; use --cancel only to cancel an uncommitted rotation.',err=True)
+        raise typer.Exit(1)
+    finally:
+        if lock is not None:os.close(lock)

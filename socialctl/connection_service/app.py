@@ -371,6 +371,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
         install_account_routes(app, settings, vault, auth_client, clock)
         from socialctl.saas.connections import install_connection_routes
         install_connection_routes(app,settings,app.state.saas,app.state.saas_sessions,providers,clock)
+        from socialctl.saas.rotation import install_rotation_routes
+        install_rotation_routes(app,app.state.saas,clock)
         app.state.saas_connections.legacy=legacy
         from socialctl.saas.migration import install_migration_routes
         install_migration_routes(app,settings,app.state.saas,app.state.saas_sessions,clock)

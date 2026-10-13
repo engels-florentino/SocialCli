@@ -77,6 +77,8 @@ class BrokerClient:
 
 
 def broker_access_token(brand,platform,client,*,refresh=True):
+    if (brand.dir_secretos/'socialcli-rotation.json').exists():
+        raise ValueError('Credential rotation is pending. Run socialcli account rotate to resume.')
     metadata=brand.leer_secreto(platform)
     if metadata.get('auth_mode')!='broker' or metadata.get('version')!=1:
         raise ValueError('invalid connection metadata')

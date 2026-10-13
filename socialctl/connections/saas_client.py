@@ -38,7 +38,7 @@ class SaaSClient:
     def request(self,method,path,*,secret=None,body=None,allow_missing=False,legacy_secret=None):
         if path.startswith('/v1/connections'):
             path='/api/saas'+path
-        if not re.fullmatch(r'/api/saas/v1/(?:capabilities|installations(?:/[A-Za-z0-9_-]{1,256}(?:/(?:authorizations|attach|migrations))?)?|migrations/[A-Za-z0-9_-]{1,256}/poll|pairings/[A-Za-z0-9_-]{1,256}/(?:poll|ack)|authorizations/[A-Za-z0-9_-]{1,256}(?:/poll)?|connections/[A-Za-z0-9_-]{1,256}(?:/(?:activate|token))?)(?:\?refresh=false)?',path):
+        if not re.fullmatch(r'/api/saas/v1/(?:capabilities|installations(?:/[A-Za-z0-9_-]{1,256}(?:/(?:authorizations|attach|migrations|rotations/[A-Za-z0-9_-]{16,64}))?)?|rotations/[A-Za-z0-9_-]{16,64}/commit|migrations/[A-Za-z0-9_-]{1,256}/poll|pairings/[A-Za-z0-9_-]{1,256}/(?:poll|ack)|authorizations/[A-Za-z0-9_-]{1,256}(?:/poll)?|connections/[A-Za-z0-9_-]{1,256}(?:/(?:activate|token))?)(?:\?refresh=false)?',path):
             raise ValueError('Invalid SocialCli account endpoint.')
         headers={'Authorization':'Bearer '+secret} if secret else {}
         if legacy_secret is not None:

@@ -180,3 +180,91 @@ def test_official_one_way_migration_origin_is_allowed_and_reverse_is_rejected():
     assert check('https://social.florentino.pro/','https://socialcli.app')
     assert not check('https://socialcli.app','https://social.florentino.pro')
     assert not check('https://social.florentino.pro','https://socialcli.app.attacker.example')
+
+
+import pytest
+
+@pytest.mark.parametrize('failure',['prepare_reply','commit_reply','local_write'])
+def test_rotation_recovers_interruption_without_oauth_or_leaking_secrets(tmp_path,monkeypatch,failure):
+    server,now,ring=wire(tmp_path,monkeypatch);crear_brand(tmp_path,'MyBrand')
+    common=['--brand','MyBrand','--root',str(tmp_path)]
+    assert runner.invoke(app,['account','login',*common,'--service','https://social.example','--no-browser']).exit_code==0
+    assert runner.invoke(app,['connect','youtube',*common,'--no-browser']).exit_code==0
+    from socialctl.connections import account_cli
+    from socialctl.connections.client import broker_access_token
+    brand=cargar_brand(tmp_path,'MyBrand');old=brand.leer_secreto(Platform.YOUTUBE)
+    old_secret=keychain.get(brand,Platform.YOUTUBE,old)
+    original=account_cli.http_client;failed=[False]
+    def transport(request):
+        assert not request.url.path.endswith('/authorizations')
+        with original() as client:response=client.send(request)
+        target=('/rotations/' in request.url.path and not request.url.path.endswith('/commit')) if failure=='prepare_reply' else request.url.path.endswith('/commit')
+        if failure!='local_write' and target and not failed[0]:
+            failed[0]=True;raise httpx.ReadTimeout('never-print-secret')
+        return response
+    monkeypatch.setattr(account_cli,'http_client',lambda:httpx.Client(transport=httpx.MockTransport(transport)))
+    real_write=account_cli.atomic_bytes
+    def write(path,*args,**kwargs):
+        if failure=='local_write' and path.name=='youtube.json' and not failed[0]:
+            failed[0]=True;raise OSError('fictional disk interruption')
+        return real_write(path,*args,**kwargs)
+    monkeypatch.setattr(account_cli,'atomic_bytes',write)
+    result=runner.invoke(app,['account','rotate',*common])
+    assert result.exit_code==1 and 'rotate' in result.output,result.output
+    assert 'never-print-secret' not in result.output
+    with legacy_cli.http_client() as client:
+        with pytest.raises(ValueError,match='rotate'):broker_access_token(brand,Platform.YOUTUBE,client,refresh=False)
+    assert runner.invoke(app,['account','logout',*common]).exit_code==1
+    result=runner.invoke(app,['account','rotate',*common])
+    assert result.exit_code==0,result.output
+    brand=cargar_brand(tmp_path,'MyBrand');new=brand.leer_secreto(Platform.YOUTUBE)
+    assert new['connection_id']!=old['connection_id']
+    assert keychain.get(brand,Platform.YOUTUBE,new)!=old_secret
+    with legacy_cli.http_client() as client:
+        assert broker_access_token(brand,Platform.YOUTUBE,client,refresh=False)=='social-access'
+    assert server.post('/api/saas/v1/connections/'+old['connection_id']+'/token',headers={'Authorization':'Bearer '+old_secret}).status_code==404
+    assert not (brand.dir_secretos/'socialcli-rotation.json').exists()
+    visible=''.join(p.read_text() for p in brand.dir_secretos.glob('*.json'))+result.output
+    for secret in ring.values.values():assert secret not in visible
+
+
+def test_rotating_revoked_installation_does_not_block_new_sign_in(tmp_path,monkeypatch):
+    server,now,ring=wire(tmp_path,monkeypatch);crear_brand(tmp_path,'MyBrand')
+    common=['--brand','MyBrand','--root',str(tmp_path)]
+    assert runner.invoke(app,['account','login',*common,'--service','https://social.example','--no-browser']).exit_code==0
+    from socialctl.connections import account_cli
+    brand=cargar_brand(tmp_path,'MyBrand');saved=account_cli.metadata(brand)
+    assert server.delete('/api/saas/v1/installations/'+saved['connection_id'],headers={'Authorization':'Bearer '+keychain.get(brand,account_cli.Slot.ACCOUNT,saved)}).status_code==200
+    assert runner.invoke(app,['account','rotate',*common]).exit_code==1
+    assert not (brand.dir_secretos/'socialcli-rotation.json').exists()
+    assert runner.invoke(app,['account','login',*common,'--service','https://social.example','--no-browser']).exit_code==0
+
+
+@pytest.mark.parametrize('stage',['prepared','committed','committed_active'])
+def test_cancel_recovers_revocation_during_rotation_but_keeps_active_replacement(tmp_path,monkeypatch,stage):
+    server,now,ring=wire(tmp_path,monkeypatch);crear_brand(tmp_path,'MyBrand')
+    common=['--brand','MyBrand','--root',str(tmp_path)]
+    assert runner.invoke(app,['account','login',*common,'--service','https://social.example','--no-browser']).exit_code==0
+    assert runner.invoke(app,['connect','youtube',*common,'--no-browser']).exit_code==0
+    from socialctl.connections import account_cli
+    original=account_cli.http_client;lost=[False]
+    def transport(request):
+        with original() as client:response=client.send(request)
+        target=('/rotations/' in request.url.path and not request.url.path.endswith('/commit')) if stage=='prepared' else request.url.path.endswith('/commit')
+        if target and not lost[0]:
+            lost[0]=True;raise httpx.ReadTimeout('uncertain rotation reply')
+        return response
+    monkeypatch.setattr(account_cli,'http_client',lambda:httpx.Client(transport=httpx.MockTransport(transport)))
+    assert runner.invoke(app,['account','rotate',*common]).exit_code==1
+    if stage!='committed_active':
+        vault=server.app.state.saas.vault
+        with vault.transaction() as db:db.execute("DELETE FROM records WHERE kind='saas-installation'")
+    result=runner.invoke(app,['account','rotate',*common,'--cancel'])
+    if stage=='committed_active':
+        assert result.exit_code==1 and (cargar_brand(tmp_path,'MyBrand').dir_secretos/'socialcli-rotation.json').exists()
+        assert runner.invoke(app,['account','rotate',*common]).exit_code==0
+    else:
+        assert result.exit_code==0,result.output
+        assert not (cargar_brand(tmp_path,'MyBrand').dir_secretos/'socialcli-rotation.json').exists()
+        assert runner.invoke(app,['account','login',*common,'--service','https://social.example','--no-browser']).exit_code==0
+        assert runner.invoke(app,['account','attach','youtube',*common]).exit_code==0

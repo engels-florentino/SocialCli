@@ -127,3 +127,21 @@ The transfer must use the same vault and keys. The client permits only matching
 service origins or the fixed one-way transfer from `https://social.florentino.pro`
 to `https://socialcli.app`; arbitrary service changes cannot receive an old secret.
 Deploy the reviewed shared-vault service before attempting a real migration.
+
+## Installation credential rotation
+
+Use `socialcli account rotate --brand MyBrand` before this installation's 90-day
+expiration. This explicitly replaces its installation credential and locally
+installed SaaS capability secrets. It neither repeats provider OAuth nor extends
+the free trial or provider-grant inactivity period. Other installations keep
+working. The preparation has a 600-second window; all replacement secrets and
+an encrypted local recovery journal are saved before the server atomically
+invalidates the old installation.
+
+After an interrupted request or local write, rerun the same command. While the
+journal is present, token emission and connection changes are blocked locally.
+Use `--cancel` to abandon an uncommitted rotation. A committed active replacement
+cannot be cancelled locally; resume it. If both old and replacement credentials
+are confirmed inactive, cancellation clears only the known local credentials,
+allowing `account login` and `account attach` without new OAuth when the provider
+grant remains valid. Network uncertainty never authorizes deleting the journal.
