@@ -213,3 +213,10 @@ The public account page remains the recovery path if mail delivery fails.
 No actual trial reminder or timer activation is claimed by the unit fixtures.
 Auth's separately confirmed inbox test establishes the existing route, not this
 new message's rendering across all email clients or its live delivery.
+
+## Recovery
+
+Use the [backup and isolated restore guide](backup-restore.md) for the shared
+SQLite metadata/vault and the separate Auth database. The snapshot utility never
+restores over a live service or processes an external operation. Scheduling,
+off-host storage and recovery alerting remain rollout requirements.
