@@ -119,7 +119,7 @@ class InstagramLector(Lector):
                 pieza.especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO] = motivo_degradacion
             piezas.append(pieza)
 
-        return LecturaRed(estado=EstadoLectura.OK, cuenta=cuenta, piezas=piezas)
+        return LecturaRed(estado=EstadoLectura.OK, account_id=ig_id, cuenta=cuenta, piezas=piezas)
 
     def _pedir(self, client: httpx.Client, url: str, params: dict) -> dict:
         # Sin `raise_for_status()`, por lo mismo que en Facebook: el token

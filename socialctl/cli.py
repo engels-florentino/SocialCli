@@ -96,6 +96,46 @@ def agent_guide():
     typer.echo(files('socialctl.ui').joinpath('assets/agents.md').read_text(encoding='utf-8'))
 
 
+@app.command('report')
+def brand_report(
+    brand_nombre: str = typer.Option(..., '--brand'),
+    root: Path = typer.Option(default_root(), '--root'),
+    days: str = typer.Option('7', '--days', help='Daily comparison window, 1..365.'),
+    as_of: str | None = typer.Option(None, '--as-of', help='Last allowed snapshot date, YYYY-MM-DD.'),
+    top: str = typer.Option('5', '--top', help='Top observed items per platform, 1..50.'),
+    only: str | None = typer.Option(None, '--only'),
+    json_output: bool = typer.Option(False, '--json'),
+):
+    """Report growth and top content from saved snapshots; no network or account access."""
+    from socialctl.metricas.insights import build_report, render_report
+    from socialctl.read_reports import ReadReport, emit_report
+    exit_code = None
+    try:
+        window, limit = int(days), int(top)
+        day = date.fromisoformat(as_of) if as_of else date.today()
+        platform = Platform(only) if only else None
+        if not 1 <= window <= 365 or not 1 <= limit <= 50:
+            raise ValueError()
+    except ValueError:
+        result = ReadReport(status='error', errors=[{'code':'invalid_report_options',
+            'action':'correct_input', 'retryable':False,
+            'message':'Use days 1..365, top 1..50, a YYYY-MM-DD date and a supported platform.'}])
+        exit_code = 2
+    else:
+        try:
+            marca = cargar_brand(root, brand_nombre)
+            result = build_report(marca, days=window, as_of=day, top=limit, only=platform)
+        except (*_EXCEPCIONES_MARCA, OSError, ValueError, OverflowError):
+            result = ReadReport(status='error', errors=[{'code':'report_workspace_unavailable',
+                'action':'inspect_workspace', 'retryable':False}])
+    if json_output:
+        code = emit_report(result)
+    else:
+        typer.echo(render_report(result) if result.data else result.errors[0].get('message', result.errors[0]['code']))
+        code = 0 if result.status == 'ok' else 1
+    raise typer.Exit(exit_code if exit_code is not None else code)
+
+
 @app.command('delivery-options')
 def show_delivery_options(
     brand_nombre: str = typer.Option(..., '--brand'),

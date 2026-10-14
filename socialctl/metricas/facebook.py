@@ -319,7 +319,7 @@ class FacebookLector(Lector):
                 pieza.especificas[CLAVE_ENRIQUECIMIENTO_FALLIDO] = motivo_degradacion
             piezas.append(pieza)
 
-        return LecturaRed(estado=EstadoLectura.OK, cuenta=cuenta, piezas=piezas)
+        return LecturaRed(estado=EstadoLectura.OK, account_id=page_id, cuenta=cuenta, piezas=piezas)
 
     def _pedir(self, client: httpx.Client, url: str, params: dict) -> dict:
         # El token sale de los propios `params` porque es donde la Graph API

@@ -343,8 +343,32 @@ JSON document and progress stderr separate. Exit 1 can contain verified partial
 observations. Inspect coverage and errors; a partial empty inbox never means no
 comments. TikTok comments are unsupported. Missing metrics are unknown, not zero.
 `--since` on stats filters publication dates, not the metrics reporting window.
-The local metrics summary already includes snapshot differences; do not invent
-growth, audience peak hours or causal recommendations from insufficient samples.
+For an offline brand report from already saved snapshots:
+
+    socialcli report --brand MyBrand --days 7 --top 5 --json
+    socialcli report --brand MyBrand --days 7 --as-of 2026-10-13 --only youtube
+
+This does not refresh metrics or access accounts. It shows per-platform account
+changes, an available previous daily window, top observed lifetime views and top
+observed view changes. The actual observation timestamps and elapsed intervals
+are included; daily files do not imply reads occurred at exactly the same hour.
+A missing exact baseline is not replaced by another date. Missing values/items
+never count as zero. New content absent from the baseline has no measured change.
+Rankings cover observed items only, not a guaranteed complete account inventory.
+Counter corrections and duplicate IDs remain explicit.
+
+Account comparisons require saved matching account identity and dated observations.
+Observations whose timestamp date differs from the daily file are not silently
+assigned a timezone: the comparison stays unavailable. Existing snapshots do not
+record the collector timezone, so legitimate midnight-boundary reads may need
+explicit timezone provenance in a future format. Known values remain available.
+Legacy snapshots lacking identity still provide known current values and lifetime
+rankings, with partial status. Do not add identity retroactively from accounts.yml.
+TikTok comparisons stay unavailable if its current response does not supply an
+open_id; configured identity is not inferred as authenticated evidence. Failed,
+stale and partial sources remain explicit, and exit1 may contain useful results.
+The existing audience data has no audience-online-hours series: best posting time
+is unavailable. Do not invent peak hours or causal recommendations from top posts.
 
 For a Facebook or Instagram reply, choose the exact verified IDs and draft locally:
 

@@ -97,6 +97,7 @@ def test_facebook_lee_un_post_de_video_con_los_valores_reales_de_la_cuenta(brand
     with httpx.Client() as client:
         lectura = FacebookLector().leer(brand, client, None)
 
+    assert lectura.account_id == "987654321098765"
     assert lectura.cuenta.seguidores == 9570
     pieza = lectura.piezas[0]
     assert pieza.id == "604_2"
@@ -307,6 +308,7 @@ def test_instagram_metrica_retirada_reintenta_sin_insights_y_no_tumba_la_red(bra
         lectura = InstagramLector().leer(brand, client, None)
 
     assert lectura.estado is EstadoLectura.OK
+    assert lectura.account_id == "98765432109876543"
     assert lectura.cuenta.seguidores == 18  # la cuenta no se pierde
     assert len(lectura.piezas) == 1
     pieza = lectura.piezas[0]

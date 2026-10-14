@@ -117,6 +117,7 @@ def test_deadline_in_optional_metrics_preserves_base_data(brand, dimension):
     with httpx.Client() as client:
         lectura = leer_red(Platform.YOUTUBE, brand, client, None)
     assert lectura.estado is EstadoLectura.OK
+    assert lectura.account_id == "UC123"
     assert lectura.cuenta.seguidores == 4950
     assert [(p.id, p.acumulado.vistas) for p in lectura.piezas] == [('vid1', 254)]
     assert lectura.warnings and lectura.audiencia is None

@@ -213,6 +213,7 @@ class YouTubeLector(Lector):
 
         return LecturaRed(
             estado=EstadoLectura.OK,
+            account_id=authenticated_channel,
             cuenta=cuenta,
             piezas=piezas,
             audiencia=audiencia,

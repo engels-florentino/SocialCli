@@ -374,3 +374,16 @@ def test_un_scope_que_falta_a_media_paginacion_sigue_siendo_sin_permiso(brand):
     with httpx.Client() as client:
         with pytest.raises(SinPermiso):
             TikTokLector().leer(brand, client, None)
+
+
+@respx.mock
+@pytest.mark.parametrize('identity',[None,'fictional-user'])
+def test_preserves_only_observed_account_identity(brand,identity):
+    user={'follower_count':3}
+    if identity:user['open_id']=identity
+    brand.cuentas={'tiktok':{'open_id':'different-configured-user'}}
+    respx.get(USER_INFO).mock(return_value=httpx.Response(200,json={'data':{'user':user},'error':{'code':'ok'}}))
+    respx.post(VIDEO_LIST).mock(return_value=httpx.Response(200,json={'data':{'videos':[],'has_more':False},'error':{'code':'ok'}}))
+    with httpx.Client() as client:
+        reading=TikTokLector().leer(brand,client,None)
+    assert reading.account_id==identity

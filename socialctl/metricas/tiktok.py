@@ -128,7 +128,7 @@ class TikTokLector(Lector):
                 break
             cursor = datos.get("cursor")
 
-        return LecturaRed(estado=EstadoLectura.OK, cuenta=cuenta, piezas=piezas)
+        return LecturaRed(estado=EstadoLectura.OK, account_id=usuario.get('open_id'), cuenta=cuenta, piezas=piezas)
 
     # --- peticiones -----------------------------------------------------
 
