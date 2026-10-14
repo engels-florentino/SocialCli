@@ -1,7 +1,9 @@
-# Isolated server candidate — 13 October 2026
+# Isolated server candidate — updated 14 October 2026
 
-Current code checkpoint: `1fbaf1d`, SocialCli **0.3.0rc1**. Public SocialCli remains
+Current code checkpoint: `7fbb6a2`, SocialCli **0.3.0rc1**, schema7. Public SocialCli remains
 **0.2.6**. This is a private server deployment, not a public SaaS launch.
+The dated checkpoints below retain historical evidence; the final section records
+the current deployment and its schema-compatible recovery image.
 
 ## Deployed boundaries
 
@@ -65,7 +67,7 @@ runs exited zero with no pending/review work. Timer is enabled/active/waiting;
 private operations report is healthy. Public-service maintenance remains untouched.
 
 
-## Current private update — checkpoint1fbaf1d
+## Previous private update — checkpoint1fbaf1d
 
 Updated on14October2026 UTC (13October local server time), after a fresh encrypted
 backup pair: backup service Result=success, ExecMainStatus=0, freshness report ok.
@@ -130,11 +132,11 @@ external restore, HTTPS pilot, real signed webhooks, package publication and rea
 Muse/Grok pilots are not established by this verification.
 
 
-## Pending schema7 connection-access update — not deployed
+## Schema7 preparation checkpoint — historical, before deployment
 
 The reviewed client/service increment after340c7b8 introduces explicit installation
 connection-platform policies and schema7.2703 macOS tests and16 installed-wheel
-policy tests pass. Current server remains schema6/1fbaf1d. Before deployment,
+policy tests passed. At this checkpoint the server remained schema6/1fbaf1d. Before deployment,
 verify Linux against the new artifact, take a fresh backup, stop every older service
 and maintenance writer, then migrate. An old process already running does not
 re-evaluate startup schema guards. Rollback must use schema7-compatible code;
@@ -195,3 +197,44 @@ usable schema7-compatible recovery release, obtain a fresh paired backup, and st
 all old writers during the migration. Never use the schema6 image or restore an old
 database as a code rollback. Pilot DNS still has no A record; public HTTPS routing,
 Drive authorization/recovery and the other launch gates above remain incomplete.
+
+## Current private deployment — checkpoint7fbb6a2, schema7
+
+On14October2026 the reviewed image was deployed after the
+[compatible recovery procedure](schema7-rollout.md) passed independent review.
+The recovery wheel passed226 installed server tests and opened the already-migrated
+candidate snapshot offline with unchanged data, cutoff and successful HTTP smoke.
+The recovery image is `socialcli-saas-candidate:1fbaf1d-schema7-recovery`, ID
+`sha256:99a0bd80a3dca67251f589dcd164ceeec8f5d512c0a85d5725784f78ac11796b`.
+It retains schema7 enforcement; the original schema6 image is not a valid rollback.
+
+Fresh paired encrypted backups completed with service Result=success and exit0
+before replacement. Candidate billing/backup timers were stopped, both services
+were observed inactive with successful terminal results, and the old container
+was stopped and verified not running before recreation. No old in-container
+writer remained during the schema change. Auth and public service were not stopped.
+
+Compose now pins `socialcli-saas-candidate:7fbb6a2`; candidate build inputs also
+contain the reviewed wheel and dependency-preserving Dockerfile. Recreate used
+`--no-build --pull never`, without changing environment, state or network settings.
+
+Post-switch verification:
+
+- Running image ID matches the prepared primary image above; Docker is healthy.
+- Live database reports schema7 and preserves the persistent legacy cutoff.
+- Health, agent guide and login return200; unauthenticated account returns303.
+  The served guide includes the current inbox-draft and media-check commands.
+- Existing provider-off, reminder-off and Stripe test configuration verified.
+- Non-root UID1000, read-only root, dropped capabilities, identity-only network
+  and loopback8789 binding verified after recreation.
+- Actual systemd maintenance completed with exit0; private diagnostics report
+  status ok with no pending/overdue/review issues.
+- Billing, backup and backup-check timers are active. A post-migration encrypted
+  backup pair also completed with exit0 and freshness status ok.
+- Public container ID remained
+  `be1c2940a3a4be8e568a6c40eed5b1345b774b246a35d853466560edd55487fc`
+  and its health remained healthy. No NPM/public route changed.
+
+No fallback was needed. Recovery preserves current security/data rather than
+undoing schema7. This private update does not finish the launch gates or imply
+fine-grained per-action permissions, public package availability or real agent pilots.
