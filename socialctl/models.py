@@ -36,6 +36,8 @@ class PostStatus(str, Enum):
 
 
 class MediaAsset(BaseModel):
+    probe: dict | None = Field(default=None, exclude=True)
+    """Read-only technical observations, excluded from durable approval payloads."""
     path: Path
     kind: MediaKind
     width: int | None = None
@@ -44,6 +46,14 @@ class MediaAsset(BaseModel):
     size_bytes: int = 0
     ruta_relativa: str = ""
     """Original relative media path, including subdirectories. Empty values fall back through ruta_relativa_efectiva."""
+
+
+    def __eq__(self, other):
+        # Ephemeral inspection details are not part of durable media identity.
+        if isinstance(other, MediaAsset):
+            return BaseModel.__eq__(self.model_copy(update={"probe": None}),
+                                    other.model_copy(update={"probe": None}))
+        return NotImplemented
 
 
 class StoryPost(BaseModel):

@@ -14,7 +14,7 @@ from tests.test_scheduler import _entry
 
 @pytest.fixture
 def migration(tmp_path, monkeypatch):
-    monkeypatch.setattr("socialctl.media._ffprobe", lambda path: {"streams": [{"width": 1080, "height": 1920}], "format": {"duration": "30"}})
+    monkeypatch.setattr("socialctl.media._ffprobe", lambda path: {"streams": [{"codec_type": "video", "codec_name": "h264", "width": 1080, "height": 1920, "avg_frame_rate": "30/1", "pix_fmt": "yuv420p", "sample_aspect_ratio": "1:1"}], "format": {"duration": "30", "format_name": "mov,mp4,m4a,3gp,3g2,mj2", "tags": {"major_brand": "isom"}}})
     brand = crear_brand(tmp_path, "One")
     crear_brand(tmp_path, "Two")
     (brand.raiz / "accounts.yml").write_text("instagram:\n  ig_user_id: '123'\n  media_url_base: https://media.test\nfacebook:\n  page_id: '456'\n")

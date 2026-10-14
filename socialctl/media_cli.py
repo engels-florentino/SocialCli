@@ -177,3 +177,7 @@ def verify(bundle: str, brand: str = typer.Option(..., "--brand"), root: Path = 
             return _remote(selected, bundle, operation="verify", public=public)
         return readiness(selected, bundle, public=public)
     _run(operation)
+
+
+from socialctl.media_preflight import register as register_preflight
+register_preflight(media_app, DEFAULT_ROOT)

@@ -72,7 +72,7 @@ def _cargar_datos(fichero: Path) -> dict:
 
 
 def _construir_platform_post(
-    platform: Platform, bloque: object, dir_media: Path, fichero: Path
+    platform: Platform, bloque: object, dir_media: Path, fichero: Path, *, media_reader=None
 ) -> PlatformPost:
     if not isinstance(bloque, dict):
         raise PostInvalido(
@@ -111,7 +111,7 @@ def _construir_platform_post(
         # después: el preview, `guardar_post`, la URL de Instagram- vea
         # siempre la forma canónica, con '/' como separador.
         ruta_relativa = ruta_absoluta.relative_to(dir_media).as_posix()
-        media.append(leer_media(ruta_absoluta, ruta_relativa=ruta_relativa))
+        media.append((media_reader or leer_media)(ruta_absoluta, ruta_relativa=ruta_relativa))
 
     try:
         return PlatformPost(

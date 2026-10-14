@@ -333,6 +333,35 @@ Check the resulting `state` and notices: command completion alone does not estab
 `native_scheduled`. A missing or conflicting observation stays unresolved. Preserve
 the existing remote target; never create a second upload to repair it.
 
+## Check supplied media locally
+
+    socialcli media check POST_SLUG --brand MyBrand --json
+    socialcli media check POST_SLUG --brand MyBrand --only instagram --json
+
+This checks ordinary `post.yml` routes without credentials, network requests,
+uploads, copying or conversion. Shared files are inspected once. Read every
+platform's `assets`, `issues` and `coverage`; a missing or unreadable file does
+not discard other platform results. `passed` means the implemented local checks
+passed, not that the provider will accept or publish the file. `partial` retains
+passed platforms while others are blocked. Neither result approves publication.
+
+Issue actions distinguish installing `ffprobe`, inspecting a timed-out file,
+supplying compatible original media, configuring an account and reviewing post
+text. Each ffprobe run is capped at30seconds and can open local files only.
+The command does not download URLs or resolve remote hosting. Provider account
+eligibility, TikTok creator-specific duration/privacy, public media URL availability
+and full-file decoder integrity remain unchecked. Actual provider processing and
+visibility still require readback after an explicitly approved operation.
+
+Instagram image and Reel constraints are separate: the generic ordinary route
+checks observed codec/container/frame rate plus its applicable dimensions and
+size limits. TikTok's route also checks observed video codec/container/frame rate
+and dimensions. For Facebook/YouTube the existing configured route policy is not
+claimed to be a complete provider codec specification. Inspection metadata stays
+outside durable approval payloads; supplied bytes are never modified. Native
+manifests, Stories and group assets have their own validators and are outside
+this command's scope. Continue to show the full publication dry-run for approval.
+
 ## Read metrics and prepare engagement
 
     socialcli stats --brand MyBrand --only youtube --timeout 120 --json
@@ -518,3 +547,7 @@ to reconnect, publish, delete or replay a write.
 Revoking an installation is supported. Fine-grained, server-enforced permissions
 such as “publish but never delete” are not implemented: the current client receives
 provider tokens. Do not advertise local agent instructions as an access-control boundary.
+
+Container checks require verified MOV/MP4 brand metadata. Ambiguous Matroska/WebM
+identification is currently blocked even though TikTok supports WebM; supply an
+existing MOV/MP4 or use a separately validated route. No automatic conversion.
