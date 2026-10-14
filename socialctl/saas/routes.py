@@ -75,7 +75,7 @@ def install_account_routes(app,settings,vault,identity_client,clock):
         valid_form(request,data,'saas-login',authenticated=False)
         email=data.get('email','').strip().casefold()
         if len(email)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email):
-            return HTMLResponse(pages.login(csrf(request,'saas-login',authenticated=False),safe_next(data.get('next','')),'Enter a valid email address.'),status_code=400)
+            return HTMLResponse(pages.login(csrf(request,'saas-login',authenticated=False),safe_next(data.get('next','')),'Enter a valid email address.',input_error=True),status_code=400)
         def prepare():
             with vault.transaction() as db:
                 limits=[('email-minute:'+email,3,60),('email-hour:'+email,10,3600),
@@ -127,7 +127,7 @@ def install_account_routes(app,settings,vault,identity_client,clock):
                 raise IdentityError()
             user,access,lifetime=await asyncio.to_thread(identity.verify,payload['email'],code)
         except IdentityError:
-            return HTMLResponse(pages.verify(csrf(request,attempt,authenticated=False),attempt,payload['email'],'That code is invalid or expired. Please try again.'),status_code=400)
+            return HTMLResponse(pages.verify(csrf(request,attempt,authenticated=False),attempt,payload['email'],'That code is invalid or expired. Please try again.',input_error=True),status_code=400)
         except IdentityUnavailable:
             return HTMLResponse(pages.verify(csrf(request,attempt,authenticated=False),attempt,payload['email'],'Sign-in is temporarily unavailable. Please try again.'),status_code=503)
         def commit():

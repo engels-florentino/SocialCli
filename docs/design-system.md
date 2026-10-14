@@ -19,6 +19,10 @@ Review new states at 360, 390 and 1440px, with keyboard focus, 200% zoom,
 long account/email names, validation errors and reduced motion. Use fictional
 fixtures; snapshots alone do not prove OTP, payment or platform authorization.
 
+The development-only [account catalogue](account-ui-verification.md) renders
+25 fictional states from the current routes and views at selectable widths.
+It records source coverage separately from completed visual acceptance.
+
 ## Email and hosted billing
 
 Supabase OTP emails use the same system font, ink and primary blue as this

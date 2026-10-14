@@ -12,25 +12,28 @@ def hidden(name,value):
     return f'<input type="hidden" name="{escape(name,quote=True)}" value="{escape(value,quote=True)}">'
 
 
-def notice(message):
-    return f'<p class="status-notice" role="alert">{escape(message)}</p>' if message else ''
+def notice(message, *, field=None):
+    identifier = f' id="{escape(field, quote=True)}-error"' if field else ''
+    return f'<p{identifier} class="status-notice" role="alert">{escape(message)}</p>' if message else ''
 
 
-def login(csrf,next_path,message=''):
+def login(csrf,next_path,message='',*,input_error=False):
+    invalid = ' aria-invalid="true" aria-describedby="email-error"' if input_error and message else ''
     return page('Sign in',f'''<p class="eyebrow">WELCOME TO SOCIALCLI</p>
 <h1 id="page-title">Your social accounts.<br>Your AI assistants.</h1>
-<p class="description">Sign in with a code sent to your email. No password needed.</p>{notice(message)}
+<p class="description">Sign in with a code sent to your email. No password needed.</p>{notice(message, field="email" if invalid else None)}
 <form method="post" action="/account/login" class="form-stack">{hidden('csrf',csrf)}{hidden('next',next_path)}
-<div><label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required></div>
+<div><label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required{invalid}></div>
 <button class="primary-button" type="submit">Send sign-in code</button></form>
 <p class="expiry-note">14 days free from your first connection. Then USD 10/month.</p>''')
 
 
-def verify(csrf,attempt,email,message=''):
+def verify(csrf,attempt,email,message='',*,input_error=False):
+    invalid = ' aria-invalid="true" aria-describedby="code-error"' if input_error and message else ''
     return page('Check your email',f'''<p class="eyebrow">CHECK YOUR EMAIL</p><h1 id="page-title">Enter your sign-in code</h1>
-<p class="description">We sent a code to {escape(email)}. It expires in 10 minutes.</p>{notice(message)}
+<p class="description">We sent a code to {escape(email)}. It expires in 10 minutes.</p>{notice(message, field="code" if invalid else None)}
 <form method="post" action="/account/verify" class="form-stack">{hidden('csrf',csrf)}{hidden('attempt',attempt)}
-<div><label for="code">One-time code</label><input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{{6,8}}" minlength="6" maxlength="8" required></div>
+<div><label for="code">One-time code</label><input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{{6,8}}" minlength="6" maxlength="8" required{invalid}></div>
 <button class="primary-button" type="submit">Sign in</button></form>
 <a class="text-link" href="/account/login">Send a new code</a>''')
 

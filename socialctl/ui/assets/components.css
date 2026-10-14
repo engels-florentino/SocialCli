@@ -4,9 +4,9 @@
 .skip-link:focus{top:12px}
 label{display:block;text-align:left;font-size:14px;font-weight:600;margin:18px 0 7px}
 input:not([type=hidden]):not([type=radio]):not([type=checkbox]),select{width:100%;min-height:48px;padding:12px;border:1px solid var(--line);border-radius:var(--radius);font:inherit;background:var(--surface);color:var(--ink)}
-input[aria-invalid=true]{border-color:var(--danger)}
+input[aria-invalid=true]:not([type=hidden]):not([type=radio]):not([type=checkbox]){border-color:var(--danger)}
 .field-error{color:var(--danger);font-size:13px;text-align:left;line-height:1.5}
-.form-stack{display:grid;gap:14px;text-align:left;margin-top:24px}
+.form-stack{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;text-align:left;margin-top:24px}
 .status-notice{border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:20px 0;line-height:1.6;text-align:left;overflow-wrap:anywhere}
 .status-notice[role=alert]{border-color:var(--danger)}
 .account-list{list-style:none;padding:0;display:grid;gap:12px;text-align:left}
@@ -15,6 +15,6 @@ button:disabled{opacity:.65;cursor:wait}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 .permission-options{min-width:0;border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:0;text-align:left}
-.permission-options legend{padding:0 6px;font-size:14px;font-weight:600}
+.permission-options legend{max-width:100%;padding:0 6px;font-size:14px;font-weight:600}
 .permission-options label{display:flex;align-items:center;gap:10px;min-height:44px;margin:0}
 .permission-options input{width:18px;height:18px;margin:0;accent-color:var(--blue);flex-shrink:0}
