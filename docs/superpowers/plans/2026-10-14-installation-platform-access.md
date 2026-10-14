@@ -76,10 +76,19 @@ Ruling on review exclusions: schema7 stops older code at startup, not already-ru
 workers. Stop all older workers before applying the migration; do not roll code back
 to schema6 against this database. Cost: mixed-version operation can bypass new policy.
 Ruling on review exclusions: parent full-suite, packaging and installed acceptance
-are now verified above; latest Linux full-suite remains checkpoint15aaa05 until this
-increment is separately tested. Cost: no new Linux/deployment claim from these results.
+are verified above. Linux verification for checkpoint7fbb6a2 also passed:2703 tests
+in146.39s, exit0, using the committed source in a read-only, network-disabled
+container. A separate clean virtual environment installed the exact wheel above
+with no index or dependency downloads; installed smoke passed version, CLI help,
+workspace, encrypted credentials and packaged instructions with zero external calls.
+This verifies the Linux artifact, not deployment or live-provider eligibility.
 Final: minor (deferred): retain the reviewer's exact installation-revocation-during-
 refresh probe as a permanent regression; current regression covers policy restriction
 during refresh and reviewer separately verified revocation. No implementation defect found.
 
 This increment is not deployed or published. Existing candidate remains1fbaf1d.
+
+Linux evidence is retained on the server under
+`/home/blades3/projects/socialcli-saas/verification-7fbb6a2/linux-suite.log`.
+The completed source-test container was removed; the installed smoke container
+used automatic removal. Neither test container had networking or production data.
