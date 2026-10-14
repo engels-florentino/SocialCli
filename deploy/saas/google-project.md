@@ -30,3 +30,7 @@ This is configuration evidence, not an end-to-end OAuth test or Google approval.
 Pilot DNS/TLS, owner connection test, domain ownership verification and Google
 production/verification remain pending. No Google Drive permission was added;
 backup authorization remains a separate operational requirement.
+
+Update: owner subsequently authorized Drive backups with the separate Desktop
+client and `drive.file`. This does not add Drive to SaaS connection requests.
+See backup-restore.md for verified upload and hourly-copy evidence and limits.

@@ -164,3 +164,37 @@ old key versions while any retained recovery point depends on them. The receipt'
 `complete` status means a local backup, not a successful off-host copy.
 
 Reference: [Python SQLite online backup API](https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection.backup).
+
+## Google Drive authorization and encrypted copy — 14 October 2026
+
+The owner authorized the separate Desktop OAuth client of project `socialcli`
+with only `drive.file`. Drive API was already enabled; this scope was added to
+the consent declaration without changing the SaaS YouTube scope requests.
+An initial exchange failed because the operator obscured a client_secret field
+that rclone declares IsPassword=false. The field was corrected without exposing
+its value; retry with the same approved permission saved a refresh token.
+
+Private runtime configuration now lives in
+`/home/blades3/projects/socialcli-saas/private/drive/rclone.conf` (root0600,
+parent0700). No credentials or backup contents were downloaded to the Mac.
+
+Both repositories were copied directly from Florentino to
+`socialcli_backup:SocialCli-Backups/candidate/{data,recovery}`.
+Initial rclone checks found zero differences:82 data files and65 recovery files.
+Independent remote `restic check --read-data --no-cache` succeeded for both:
+20 snapshots each,40 data packs and23 recovery packs, no errors. This proves
+remote encrypted integrity; it is not a new application-level restore rehearsal.
+
+The reviewed existing hourly backup service now runs the four non-deleting
+copy/check steps in `systemd/drive-copy.conf` after a successful local backup.
+The dedicated token directory is writable for atomic OAuth refresh updates;
+other private directories remain protected. A complete real systemd run with
+these post-steps returned Result=success, ExecMainStatus=0; the timer is active.
+No pruning, remote deletion or public0.2.6 backup scope was introduced.
+
+Remaining limits: the Google project remains External/Testing, so grants can
+expire after seven days. Production status/verification remain deferred.
+Independent off-host recovery of the two Restic passwords, alert delivery and
+an application-level restore from Drive remain open. The existing freshness
+receipt still measures local completion only; a post-copy failure marks the
+systemd service failed but does not change that receipt to remote failure.
