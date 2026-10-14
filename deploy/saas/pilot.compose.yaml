@@ -2,7 +2,7 @@
 # Keep the private identity network from the base file. Do not publish new ports.
 services:
   candidate:
-    image: socialcli-saas-candidate:1fbaf1d
+    image: socialcli-saas-candidate:57efd47
     environment:
       SOCIALCLI_PUBLIC_URL: https://pilot.socialcli.app
       SOCIALCLI_ENABLE_YOUTUBE: '0'

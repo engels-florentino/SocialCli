@@ -11,6 +11,13 @@ these instructions as a configured proxy or successful public browser test.
 
 ## Prepared routing
 
+On 14 October 2026, the operator-authorized CNAME `pilot` → `socialcli.app`
+was saved in Namecheap and verified through public resolver 1.1.1.1.
+SSH through `florentino.pro:1384` also succeeded using the previously trusted
+server host key. DNS is complete; the pilot proxy/TLS route is not yet deployed.
+The pilot overlay now pins the already verified candidate image `57efd47`,
+avoiding a rollback to the older image previously present in that overlay.
+
 Use the existing Nginx Proxy Manager2.15.1, creating a separate Proxy Host:
 
 | Setting | Value |
