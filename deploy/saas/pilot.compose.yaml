@@ -1,0 +1,16 @@
+# Apply with candidate.compose.yaml after provisioning socialcli-pilot-edge.
+# Keep the private identity network from the base file. Do not publish new ports.
+services:
+  candidate:
+    image: socialcli-saas-candidate:1fbaf1d
+    environment:
+      SOCIALCLI_PUBLIC_URL: https://pilot.socialcli.app
+      SOCIALCLI_ENABLE_YOUTUBE: '0'
+      SOCIALCLI_ENABLE_FACEBOOK: '0'
+      SOCIALCLI_ENABLE_INSTAGRAM: '0'
+      SOCIALCLI_ENABLE_TIKTOK: '0'
+    networks: [identity, pilot_edge]
+networks:
+  pilot_edge:
+    external: true
+    name: socialcli-pilot-edge

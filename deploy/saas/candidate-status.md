@@ -1,6 +1,6 @@
 # Isolated server candidate — 13 October 2026
 
-Code checkpoint: `a5461a3`, SocialCli **0.3.0rc1**. Public SocialCli remains
+Current code checkpoint: `1fbaf1d`, SocialCli **0.3.0rc1**. Public SocialCli remains
 **0.2.6**. This is a private server deployment, not a public SaaS launch.
 
 ## Deployed boundaries
@@ -21,7 +21,7 @@ Code checkpoint: `a5461a3`, SocialCli **0.3.0rc1**. Public SocialCli remains
   bounded memory/process/log limits. Build context explicitly excludes secrets
   and state via `candidate.dockerignore` installed as `.dockerignore`.
 
-## Evidence
+## Initial deployment evidence (historical checkpoint)
 
 - Full Python suite including host backup orchestration: **2,416 passed**, one
   upstream Starlette deprecation warning. Backup orchestration runs on the host;
@@ -63,3 +63,42 @@ Candidate maintenance timer activation: configuration rechecked as Stripe test
 only, with reminder delivery and social providers disabled. Manual and systemd
 runs exited zero with no pending/review work. Timer is enabled/active/waiting;
 private operations report is healthy. Public-service maintenance remains untouched.
+
+
+## Current private update — checkpoint1fbaf1d
+
+Updated on14October2026 UTC (13October local server time), after a fresh encrypted
+backup pair: backup service Result=success, ExecMainStatus=0, freshness report ok.
+Billing maintenance timer was stopped during replacement, its current execution
+was allowed to finish, and the timer resumed afterward. Database, Auth, provider-off,
+reminder-off, Stripe test-only configuration and loopback8789 binding were preserved.
+
+- Reviewed wheel SHA256: `743262d7ccaae9bbb26fde7de70c18faba584342b2648e53130867c3d2764804`.
+- Reviewed sdist SHA256: `e2a3304eef6d82538b567d6a04cac27af21ece66136655cabd3934c3b5e32608`.
+- Current image: `socialcli-saas-candidate:1fbaf1d`, ID
+  `sha256:3c57eed7c341e5b38a95a2273c0c2c5f1771194858bf9fbcd8e10eed10d7e394`.
+- Previous image retained as `socialcli-saas-candidate:pre-1fbaf1d`, ID
+  `sha256:a14c99d178c5c5abe22a2bc4dc34e3596fac31442c8161e9e226771b2ce07592`.
+  The previous wheel is retained privately under candidate/rollback-1fbaf1d.
+- Build context was only1.379MB and used the reviewed wheel and allowlist;
+  credentials and state were excluded. No customer media was transferred.
+- **2,540 tests passed on macOS; 2,540 passed on Linux/Python3.12 in145.35s**.
+  The Linux suite ran with networking disabled in a disposable verification
+  container, against the new image's resolved dependencies. This includes
+  Pydantic2.14.1, Typer0.27.3, FastAPI0.143.0 and Starlette1.8.0.
+- Clean installed-wheel smoke in Linux passed workspace creation, encrypted
+  credentials and packaged guide. An installed offline report computed the
+  expected fictional growth10 without external calls; temporary fixtures removed.
+- After replacement, /healthz, /agents and /account/login returned200 using the
+  existing canonical Host socialcli.app; the guide contains the report command.
+- Docker reports the candidate healthy. The public container ID was unchanged
+  across replacement and its health remains healthy. The candidate billing timer
+  is active; private operations diagnostics are checked after deployment.
+
+This update includes exact customer scheduling, Linux user timers and offline
+brand insights. It does not expose those changes publicly. `pilot.socialcli.app`
+still lacks DNS; [pilot routing](pilot-proxy.md) and its Compose overlay are
+prepared, not applied. The owner has been asked for the exact A record and for
+which personal Google account or accessible Shared Drive to authorize for backup.
+Google Drive authorization, external recovery, public pilot, signed webhook
+receipt, package publication and real Muse/Grok pilots remain outstanding.
