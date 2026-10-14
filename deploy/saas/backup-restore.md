@@ -127,6 +127,13 @@ Drive OAuth or access to a Workspace Shared Drive remains pending. No encrypted
 repository has been uploaded. Service accounts cannot own Drive files; see
 [Google's upload guidance](https://developers.google.com/workspace/drive/api/guides/folder).
 
+Operator storage preference: Google Drive is the only off-host backup destination;
+do not download repositories, database dumps or recovery passwords to the Mac.
+Generate and encrypt backups on Florentino, then transfer directly from that
+server once Drive authorization is available. This preference does not establish
+that an upload has occurred or authorize deleting the existing server recovery
+sets before remote recovery is verified.
+
 ## Operational rollout still required
 
 Local scheduled backups do not establish off-host recovery or a recovery SLA.

@@ -94,15 +94,20 @@ distribution verification, not the latest candidate deployment.
 
 ## External setup checkpoint
 
-The GitHub `testpypi` environment now exists with `engels-florentino` as required
+The GitHub `testpypi` and `pypi` environments now exist with `engels-florentino` as required
 reviewer and administrator bypass disabled. Prevent-self-review remains off so
 the owner can approve a manually initiated release; agents must not approve the
-publication on the owner's behalf. Tag selection mode has been enabled, but its
-actual tag rules still need adding. No `pypi` environment or immutable-tag ruleset
-has been created yet, and no workflow was dispatched.
+publication on the owner's behalf. Both allow only tags matching `v*`, with no
+branch rules. Saved configuration was verified in Safari and the public GitHub
+REST API. No workflow was dispatched.
 
-PyPI is awaiting the owner's completion of its sign-in/recovery setup in Safari.
-No publisher was registered. The public JSON endpoints for `socialcli` on both
+The `Immutable release tags` ruleset is prepared with active enforcement, `v*`
+targeting, no bypass actors, and restrictions on updates, deletions and force
+pushes. Creation remains allowed. GitHub requested email identity verification
+at save time; the ruleset is **not saved yet** (API still returns no rulesets).
+
+PyPI sign-in is complete and the pending-publisher form is prepared in Safari.
+No publisher was registered or publishing authority granted. The public JSON endpoints for `socialcli` on both
 indexes returned404 at this checkpoint; this does not reserve the name.
 
 When dispatching the release workflow, select **the reviewed tag** in GitHub's
