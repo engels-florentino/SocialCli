@@ -179,8 +179,14 @@ def test_account_page_shows_trial_expiry_and_checkout_success_does_not_grant_acc
     assert client.post('/account/billing/checkout',data=form,headers={'Origin':'https://evil.example'}).status_code==403
     response=client.post('/account/billing/checkout',data=form,headers={'Origin':'https://social.example'},follow_redirects=False)
     assert response.status_code==303 and response.headers['location'].startswith('https://checkout.stripe.com/')
-    assert client.get('/account/?payment=processing&paid=true').status_code==200
+    processing=client.get('/account/?payment=processing&paid=true')
+    assert processing.status_code==200
+    assert 'Checking your payment' in processing.text
+    assert '/account/billing/checkout' not in processing.text
+    assert 'href="/account/"' in processing.text
+    assert '/account/billing/portal' in processing.text
     assert not AccessControl(metadata).access_for(USER,now[0]).allowed
+    assert '/account/billing/checkout' in client.get('/account/').text
     stripe.paid();billing.reconcile(USER)
     stripe.subscriptions[0]['cancel_at_period_end']=True;billing.reconcile(USER)
     page=client.get('/account/')

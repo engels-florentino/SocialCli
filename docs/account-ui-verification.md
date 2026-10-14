@@ -61,11 +61,65 @@ Screenshots and accessibility observations are recorded in the work session.
   suite passed: **2703 tests**, one existing Starlette/httpx deprecation warning,
   57.71 seconds. These checks do not replace visual acceptance.
 
+## Catalogue width review and billing follow-through — 2026-10-14
+
+At baseline `e006ab9`, native Safari review covered all 25 catalogue states at
+360, 390 and 1440 CSS pixels, including their bottom controls and footers.
+The following groups were inspected visually and against their accessibility
+content; no document-width or checked-block overflow was reported:
+
+| Group | Catalogue states reviewed at all three widths |
+| --- | --- |
+| Sign in | `login`, `email-invalid`, `code`, `code-invalid`, `code-expired` |
+| Account and pairing | `account-empty`, `assistant-approve`, `assistant-linked`, `youtube-connect`, `account-select`, `account-confirmed`, `account-connected`, `account-delete` |
+| Long values and outages | `assistant-long-name`, `email-unavailable`, `signin-unavailable`, `code-long-email` |
+| Billing | `billing-trial_not_started`, `billing-trial`, `billing-trial_expired`, `billing-paid`, `billing-canceled`, `billing-subscription_required`, `billing-processing`, `billing-suspended` |
+
+For this pass an ignored local comparison page displayed three independent
+iframes at the specified CSS widths, scaled to 50% to fit side by side. Each
+iframe expanded to its content height. Scaling the previews does not change
+their layout widths, but this is **not** physical-device or browser-zoom testing.
+Screenshots remain in the computer-use session; no PNG archive was created.
+The committed catalogue's width selector reproduces the underlying layouts.
+
+The review found presentation issues in billing, despite correct wrapping:
+
+- An existing subscription needing payment attention inherited the expired-trial
+  heading. It now says “Subscription needs attention”.
+- Returning from Checkout with unconfirmed access showed both a payment-checking
+  notice and a new Subscribe button. That return state now offers “Check account
+  status” and preserves Manage billing when a customer exists. The status link
+  removes the return hint and rereads the account; it does not grant access or
+  start payment. Normal checkout remains available when eligible. The query
+  parameter remains a presentation hint, never proof of payment.
+- A suspended account without a billing customer claimed billing management was
+  available although it had no corresponding action. That sentence now follows
+  the same availability condition as the existing portal button.
+
+All three corrected fixture states were rendered again and visually inspected
+at all three widths, with complete text/actions and no reported overflow.
+An expanded existing Checkout-return integration test failed before the change
+and passed afterward, covering absent duplicate checkout action, retained portal,
+status-link recovery and unchanged denied entitlement. Billing/auth/access/
+connection-UI checks passed: **64 tests**, one existing Starlette/httpx warning.
+A separate six-state renderer probe confirmed that a processing hint does not
+override active paid/trial, unstarted, suspended or unavailable account states.
+The generated-assets check also passed; CSS was not changed in this increment.
+One final independent read-only review found no Critical, Important or Minor
+issues in this diff and independently reran the 28 billing tests successfully.
+That review checked code and evidence boundaries; Safari inspection was performed
+by the executor.
+
+Further copy review is needed for the shared connection landing page: its
+“Return there to choose and confirm your account” wording describes the legacy
+CLI flow, whereas SaaS account selection occurs in the owner's browser. This
+finding remains open alongside provider-specific journey acceptance.
+
 ## Still required for full UI acceptance
 
-Generating the catalogue is not acceptance of every page. Review all states at
-all three widths, including the lower portions of long pages, 200% browser zoom,
-reduced motion and keyboard traversal. Complete website/pricing/installation,
+The 25-state width review does not cover every product surface or interaction.
+Complete 200% browser zoom, reduced motion and keyboard traversal for the
+catalogue. Complete website/pricing/installation,
 email-client and provider-specific fixtures plus the real authenticated journey
 through Stripe and social providers. Preserve the real journey's required owner
 approvals. Screen-reader announcement testing remains separate from inspecting

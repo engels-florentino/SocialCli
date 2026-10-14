@@ -67,16 +67,24 @@ def subscription(decision,entitlement,billing,csrf,*,enabled,processing=False):
         message=('Will not renew. Access ends ' if ending else 'Your paid access ends ')+utc_date(decision.access_until)+'.'
         if not ending:message+=' Renews monthly at USD 10.'
     elif reason in {'suspended','account_unavailable'}:
-        heading='Account unavailable';message='Contact support for help with access. You can still manage your billing.'
+        heading='Account unavailable';message='Contact support for help with access.'
+        if enabled and billing and billing['customer_id']:message+=' You can still manage your billing.'
     else:
-        heading='Your free trial has ended'
+        heading='Your free trial has ended' if reason=='trial_expired' else 'Subscription required'
         message='Subscribe to continue using your connected accounts. USD 10 is charged when you confirm, then monthly. Cancel anytime.'
         ongoing=entitlement and entitlement['subscription_status'] not in ('','canceled','incomplete_expired')
-        if ongoing:message='Your subscription needs attention. Open Manage billing to check your payment and restore access.'
+        if ongoing:
+            heading='Subscription needs attention'
+            message='Your subscription needs attention. Open Manage billing to check your payment and restore access.'
         elif enabled:
             action=f'<form method="post" action="/account/billing/checkout" class="form-stack">{hidden("csrf",csrf)}<button type="submit" class="primary-button">Subscribe — USD 10/month</button></form>'
+    checking=processing and enabled and not decision.allowed and reason in {'trial_expired','subscription_required'}
+    if checking:
+        heading='Checking your payment'
+        message='Payment confirmation can take a few minutes. Check your account status before trying to subscribe again. If access is still unavailable, check Manage billing when available or contact support.'
+        action='<a class="secondary-button" href="/account/">Check account status</a>'
     if enabled and billing and billing['customer_id']:
         action+=f'<form method="post" action="/account/billing/portal" class="form-stack">{hidden("csrf",csrf)}<button type="submit" class="secondary-button">Manage billing</button></form>'
-    pending='<p class="status-notice" role="status">We are checking your payment. This can take a few minutes. Refresh this page to see your confirmed access.</p>' if processing else ''
     if not enabled:message+=' Subscription checkout is not available yet.'
-    return f'<section aria-label="Subscription"><h2>{escape(heading)}</h2><p class="description">USD 10/month · One brand · Four social platforms</p><p class="status-notice">{escape(message)}</p>{pending}{action}</section>'
+    status=' role="status"' if checking else ''
+    return f'<section aria-label="Subscription"><h2>{escape(heading)}</h2><p class="description">USD 10/month · One brand · Four social platforms</p><p class="status-notice"{status}>{escape(message)}</p>{action}</section>'
