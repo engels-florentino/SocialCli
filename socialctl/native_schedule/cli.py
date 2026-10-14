@@ -13,6 +13,7 @@ from .approval import approval_document, hash_value, media_hashes, reject_secret
 from .cadence import ZONE, ZONE_NAME, plan_slots, reservation_day, exact_time
 from .models import NativeJob, aware
 from .store import NativeStore
+from .report import NativeReport, active_report, bind_store, capture, begin_submission
 from .inventory import validate_inventory, require_coverage
 
 native_app = typer.Typer(help='Native scheduling: prepare MANIFEST --dry-run, prepare --persist --approval-digest DIGEST, approve ID --approval-digest DIGEST. See socialcli agent-guide for complete offline input examples.')
@@ -105,7 +106,11 @@ def proposal(brand, manifest: str, *, inventory=None):
     return job,payload
 
 
-def run(operation):
+def run(operation, *, json_output=False, command=None, brand=None):
+    if json_output:
+        with NativeReport(command, brand):
+            operation()
+        return
     try:
         operation()
     except typer.Exit:
@@ -127,15 +132,24 @@ def run(operation):
 def selected(root, brand, args):
     brand_root = _validar_nombre_de_marca(root,brand)
     if is_remote(brand_root):
-        send_native(root,brand,args)
+        report = active_report.get()
+        if report is None:
+            send_native(root,brand,args)
+        else:
+            # The SSH outcome is unknown until a bound envelope is received.
+            if args[0] not in {'status', 'handoff', 'migration-prepare'}:
+                begin_submission()
+            report.remote = send_native(root,brand,[*args,'--json'])
         return None
-    return cargar_brand(root,brand)
+    chosen = cargar_brand(root,brand)
+    bind_store(NativeStore(chosen.raiz,brand=brand))
+    return chosen
 
 
 @native_app.command()
 def prepare(manifest: str, brand: str = typer.Option(...,'--brand'),
             root: Path = typer.Option(DEFAULT_ROOT), dry_run: bool = typer.Option(False,'--dry-run'),
-            persist: bool = typer.Option(False,'--persist'), approval_digest: str | None = typer.Option(None,'--approval-digest')):
+            persist: bool = typer.Option(False,'--persist'), approval_digest: str | None = typer.Option(None,'--approval-digest'), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         component(manifest)
         if dry_run == persist or (dry_run and approval_digest) or (persist and not approval_digest):
@@ -152,6 +166,7 @@ def prepare(manifest: str, brand: str = typer.Option(...,'--brand'),
             typer.echo(f'Prepared: {job.id}; approval is still required')
             return
         document = approval_document(job,payload)
+        capture(document)
         typer.echo(json.dumps(document,indent=2,ensure_ascii=False))
         typer.echo(f'Final local: {job.publish_at.astimezone(ZoneInfo(job.timezone_name)).isoformat()} {job.timezone_name}')
         typer.echo(f'Final UTC: {job.publish_at.isoformat()}')
@@ -159,12 +174,12 @@ def prepare(manifest: str, brand: str = typer.Option(...,'--brand'),
         typer.echo(f'Schedule mode: {job.schedule_mode}')
         typer.echo(f'Overflow: requested {payload["requested_publish_at"]}; final {job.publish_at.isoformat()}; item preserved')
         typer.echo(f'Approval digest: {hash_value(document)}')
-    run(operation)
+    run(operation, json_output=json_output, command='prepare', brand=brand)
 
 
 @native_app.command()
 def approve(job_id: str, approval_digest: str = typer.Option(...,'--approval-digest'),
-            brand: str = typer.Option(...,'--brand'),root: Path = typer.Option(DEFAULT_ROOT)):
+            brand: str = typer.Option(...,'--brand'),root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         component(job_id)
         chosen = selected(root,brand,['approve',job_id,'--approval-digest',approval_digest])
@@ -178,11 +193,11 @@ def approve(job_id: str, approval_digest: str = typer.Option(...,'--approval-dig
         if not store.transition(job_id,'prepared','approved',approval_digest=approval_digest):
             raise ValueError('Job changed; show a new preview')
         typer.echo(f'Approved: {job_id}')
-    run(operation)
+    run(operation, json_output=json_output, command='approve', brand=brand)
 
 
 @native_app.command()
-def status(brand: str = typer.Option(...,'--brand'),root: Path = typer.Option(DEFAULT_ROOT)):
+def status(brand: str = typer.Option(...,'--brand'),root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         chosen = selected(root,brand,['status'])
         if chosen is None:
@@ -193,7 +208,7 @@ def status(brand: str = typer.Option(...,'--brand'),root: Path = typer.Option(DE
             text = f'{job.id} | {job.platform}/{job.account_id} | {describe_native_job(job,store.get_payload(job.id))}'
             reject_secrets(text)
             typer.echo(text)
-    run(operation)
+    run(operation, json_output=json_output, command='status', brand=brand)
 
 
 
@@ -208,6 +223,7 @@ def artifact(chosen, name):
 def output(value):
     text=json.dumps(value,indent=2,ensure_ascii=False,default=str)
     reject_secrets(text)
+    capture(value)
     typer.echo(text)
 
 
@@ -238,7 +254,7 @@ def api_eligibility(chosen, job, filename):
 
 @native_app.command('submit-api')
 def submit_api(job_id: str, eligibility: str | None = typer.Option(None, '--eligibility'),
-               brand: str = typer.Option(..., '--brand'), root: Path = typer.Option(DEFAULT_ROOT)):
+               brand: str = typer.Option(..., '--brand'), root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     """Submit one approved YouTube/Facebook native schedule with operator pilot evidence."""
     def operation():
         import httpx
@@ -249,6 +265,7 @@ def submit_api(job_id: str, eligibility: str | None = typer.Option(None, '--elig
             raise ValueError('Native submission requires the local customer workspace; no media transfer to the SaaS server')
         chosen = cargar_brand(root, brand)
         store = NativeStore(chosen.raiz, brand=brand)
+        bind_store(store)
         job = store.get(job_id)
         if job is None or not job.approval_digest:
             raise ValueError('Existing job with explicit preview approval required')
@@ -259,17 +276,18 @@ def submit_api(job_id: str, eligibility: str | None = typer.Option(None, '--elig
         from .youtube import schedule_youtube
         submit = schedule_facebook if job.platform == 'facebook' else schedule_youtube
         with httpx.Client(timeout=60, follow_redirects=False) as client:
+            begin_submission()
             result = submit(job, payload, brand=chosen, store=store, client=client, eligibility=proof)
         output({'job_id': job.id, 'state': result.state, 'remote_id': result.remote_id,
                 'calendar_visible': result.calendar_visible, 'reason': result.reason,
                 'server_media_storage': False})
         if result.state != 'pending_verification':
             raise typer.Exit(1)
-    run(operation)
+    run(operation, json_output=json_output, command='submit-api', brand=brand)
 
 
 @native_app.command()
-def dispatch(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), yes: bool = typer.Option(False,'--yes')):
+def dispatch(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), yes: bool = typer.Option(False,'--yes'), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         from .dispatcher import dispatch_ready
         component(job_id)
@@ -280,11 +298,11 @@ def dispatch(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path =
         verify_approval(store.get(job_id),store.get_payload(job_id))
         dispatch_ready(datetime.now(timezone.utc),brand,store=store,job_id=job_id)
         output({'job_id':job_id,'state':store.get(job_id).state,'notices':store.get_notices(job_id)})
-    run(operation)
+    run(operation, json_output=json_output, command='dispatch', brand=brand)
 
 
 @native_app.command()
-def handoff(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT)):
+def handoff(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         from .handoff import prepare_handoff
         component(job_id)
@@ -298,11 +316,11 @@ def handoff(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = 
             output({'action':action,'upload_allowed':False,'instruction':'Submit marker BEFORE final official UI confirmation; submitted means readback only'})
         else:
             output(prepare_handoff(job,store.get_payload(job_id),store=store))
-    run(operation)
+    run(operation, json_output=json_output, command='handoff', brand=brand)
 
 
 @native_app.command('submit-marker')
-def submit_marker(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT)):
+def submit_marker(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         from .handoff import mark_ui_submit_started
         from .reconcile import mark_action_submit
@@ -314,11 +332,11 @@ def submit_marker(job_id: str, brand: str = typer.Option(...,'--brand'), root: P
         if action and action['status'] != 'confirmed': mark_action_submit(job_id,store=store)
         else: mark_ui_submit_started(job_id,store=store)
         typer.echo('Submit boundary persisted. Confirm once in official UI; then import fresh readback. Never retry blindly.')
-    run(operation)
+    run(operation, json_output=json_output, command='submit-marker', brand=brand)
 
 
 @native_app.command()
-def reconcile(job_id: str, observation: str | None = typer.Option(None,'--observation'), brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), yes: bool = typer.Option(False,'--yes')):
+def reconcile(job_id: str, observation: str | None = typer.Option(None,'--observation'), brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), yes: bool = typer.Option(False,'--yes'), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         from .models import NativeObservation
         from .reconcile import reconcile as import_readback
@@ -339,11 +357,11 @@ def reconcile(job_id: str, observation: str | None = typer.Option(None,'--observ
                 raise ValueError('Evidence must remain inside brand root outside secrets')
             import_readback(job_id,store=store,observation=obs)
         output({'job_id':job_id,'state':store.get(job_id).state,'observations':[o.model_dump(mode='json') for o in store.get_observations(job_id)],'notices':store.get_notices(job_id),'instruction':'Fresh official UI attestation required; this command never writes remotely'})
-    run(operation)
+    run(operation, json_output=json_output, command='reconcile', brand=brand)
 
 
 def _register_action(kind):
-    def command(job_id: str, yes: bool = typer.Option(False,'--yes'), publish_at: str | None = typer.Option(None,'--publish-at'), dry_run: bool = typer.Option(False,'--dry-run'), approval_digest: str | None = typer.Option(None,'--approval-digest'), brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT)):
+    def command(job_id: str, yes: bool = typer.Option(False,'--yes'), publish_at: str | None = typer.Option(None,'--publish-at'), dry_run: bool = typer.Option(False,'--dry-run'), approval_digest: str | None = typer.Option(None,'--approval-digest'), brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
         def operation():
             from .reconcile import action_preview, approve_action
             component(job_id)
@@ -357,7 +375,7 @@ def _register_action(kind):
             when=datetime.fromisoformat(publish_at.replace('Z','+00:00')) if publish_at else None
             if dry_run: output(action_preview(job_id,kind,store=store,publish_at=when))
             else: output(approve_action(job_id,approval_digest,kind=kind,store=store,publish_at=when))
-        run(operation)
+        run(operation, json_output=json_output, command=kind, brand=brand)
     native_app.command(kind)(command)
 
 
@@ -368,38 +386,38 @@ for _operation in ('cancel','reschedule'):
 @native_app.command('migration-prepare')
 def migration_prepare(brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT),
                       manifest: str = typer.Option('native-migration.json','--manifest'),
-                      dry_run: bool = typer.Option(False,'--dry-run')):
+                      dry_run: bool = typer.Option(False,'--dry-run'), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         from .migration import prepare_migration
         component(manifest)
         if not dry_run: raise ValueError('Migration preparation requires --dry-run')
         chosen=selected(root,brand,['migration-prepare','--manifest',manifest,'--dry-run'])
         if chosen is not None: output(prepare_migration(brand,root=root,manifest=manifest))
-    run(operation)
+    run(operation, json_output=json_output, command='migration-prepare', brand=brand)
 
 
 @native_app.command('migration-apply')
 def migration_apply(digest: str = typer.Option(...,'--digest'), brand: str = typer.Option(...,'--brand'),
-                    root: Path = typer.Option(DEFAULT_ROOT), manifest: str = typer.Option('native-migration.json','--manifest')):
+                    root: Path = typer.Option(DEFAULT_ROOT), manifest: str = typer.Option('native-migration.json','--manifest'), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         from .migration import apply_migration
         component(manifest)
         chosen=selected(root,brand,['migration-apply','--manifest',manifest,'--digest',digest])
         if chosen is not None: output(apply_migration(digest,brand=brand,root=root,manifest=manifest))
-    run(operation)
+    run(operation, json_output=json_output, command='migration-apply', brand=brand)
 
 
 @native_app.command('migration-recover')
-def migration_recover(digest: str = typer.Option(...,'--digest'), brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT)):
+def migration_recover(digest: str = typer.Option(...,'--digest'), brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     def operation():
         from .migration import recover_migration
         chosen=selected(root,brand,['migration-recover','--digest',digest])
         if chosen is not None: output(recover_migration(digest,brand=brand,root=root))
-    run(operation)
+    run(operation, json_output=json_output, command='migration-recover', brand=brand)
 
 
 @native_app.command('deliver')
-def deliver(brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT)):
+def deliver(brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
     """Periodic worker: approved jobs only; no graphical session on the server."""
     def operation():
         from .dispatcher import dispatch_ready
@@ -409,4 +427,4 @@ def deliver(brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(
         delivered=dispatch_ready(datetime.now(timezone.utc),brand,store=store)
         output({'delivered':delivered,'awaiting_ui':[j.id for j in store.list_jobs() if j.state=='awaiting_ui'],
                 'instruction':'Official UI handoffs require an authorized operator session; API routes remain closed unless capability is enabled.'})
-    run(operation)
+    run(operation, json_output=json_output, command='deliver', brand=brand)

@@ -100,7 +100,7 @@ def _entry(value: str) -> str:
     return value
 
 
-def _send(root: Path, brand: str, args: list[str]) -> None:
+def _send(root: Path, brand: str, args: list[str]) -> dict | None:
     try:
         _component(brand)
         brand_root = _validar_nombre_de_marca(root, brand)
@@ -120,6 +120,12 @@ def _send(root: Path, brand: str, args: list[str]) -> None:
                                 text=True, timeout=180, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
         raise ScheduleError("remote connection failed; check SSH and schedule-remote status before retrying") from exc
+    if args[0] == 'native-schedule' and args[-1] == '--json':
+        from socialctl.native_schedule.report import validate_remote
+        try:
+            return validate_remote(result.stdout, command=args[1], brand=brand, exit_code=result.returncode, request_args=args[1:-1])
+        except (ValueError, TypeError, KeyError, IndexError, RecursionError) as exc:
+            raise ScheduleError('Native remote result unverified; inspect authoritative state before any further mutation') from exc
     if preview_mode and result.returncode in {0, 1}:
         try:
             response = SchedulePreview.model_validate_json(result.stdout)
@@ -205,8 +211,11 @@ def schedule(slug: str, at: str = typer.Option(..., "--at"),
     _run(operation)
 
 
-def send_native(root: Path, brand: str, args: list[str]) -> None:
+def send_native(root: Path, brand: str, args: list[str]):
     """Bounded native command grammar; paths resolve only at authoritative root."""
+    json_output = bool(args and args[-1] == "--json")
+    if json_output:
+        args = args[:-1]
     operations={'prepare','approve','status','dispatch','reconcile','handoff','submit-marker','cancel','reschedule','migration-prepare','migration-apply','migration-recover','deliver'}
     if not args or args[0] not in operations:
         raise ScheduleError('invalid native remote command')
@@ -243,4 +252,4 @@ def send_native(root: Path, brand: str, args: list[str]) -> None:
             valid=valid and (tail==[] or (operation=='dispatch' and tail==['--yes']))
     if not valid:
         raise ScheduleError('invalid native remote arguments')
-    _send(root,brand,['native-schedule',*args])
+    return _send(root,brand,['native-schedule',*args,*(['--json'] if json_output else [])])

@@ -447,7 +447,27 @@ null before publication. Keep all returned observations after an interruption or
 persistence failure. Confirmed results are not permission to replay an uncertain
 platform; use the durable journal and provider observations for reconciliation.
 
-Other management/native-scheduling commands are not all converted to this taxonomy; inspect
+Every `native-schedule` command accepts `--json`. It produces one versioned
+`kind: native-schedule` envelope on stdout; preserve stderr for the complete local
+preview. `data` contains approval documents or operation observations, `jobs`
+contains the latest readable job snapshot, and `jobs_complete` says whether that
+snapshot completed. An error can retain earlier jobs and confirmed IDs: preserve
+them and check `errors` before acting. Checkpoint IDs are observations of an
+existing upload, never proof of a public or scheduled post.
+
+`status: ok` means the command completed, not that its jobs are public. Inspect
+job/result `state` and `next_action`: prepared needs approval, waiting needs time,
+UI handoff needs an authorized operator, and uncertain/verifying needs readback.
+Native scheduling evidence does not establish publication. The original date,
+timezone and approval document remain unchanged; JSON grants no new approval.
+
+SSH executors must support the same JSON envelope. The client validates command,
+brand, exit and safe output and never replays an invalid/lost remote response.
+For an older executor, inspect authoritative state and upgrade or use legacy
+read-only status; do not repeat a mutation to obtain a prettier response.
+Parser errors (such as missing required CLI flags) remain standard CLI usage errors.
+
+Other management commands are not all converted to this taxonomy; inspect
 their exit code, stderr and durable result as well. No action hint grants approval
 to reconnect, publish, delete or replay a write.
 
