@@ -198,3 +198,23 @@ Independent off-host recovery of the two Restic passwords, alert delivery and
 an application-level restore from Drive remain open. The existing freshness
 receipt still measures local completion only; a post-copy failure marks the
 systemd service failed but does not change that receipt to remote failure.
+
+## Restore from Drive — 14 October 2026, public SSH path
+
+After the Mac moved off LAN, operator access used `florentino.pro:1384`, with
+the existing trusted server host key explicitly retained. No host-key bypass.
+Exact paired snapshots `b2c3576bfc6e5872d3976f75ba0c28099152eefb964ef24174a7c4376db8e340`
+and `8e25b8c4cbd86f65bc6499be1401ed4320d32c2587d17833850e6e3d649fd9f3`
+were restored from Drive onto a server-only0700 disposable directory with Restic
+`restore --verify`. All restored data hashes matched the saved manifest.
+
+The installed57efd47 image authenticated the restored SQLite vault with the
+restored configuration: integrity ok, schema7,15tables,2encrypted records and
+persistent legacy cutoff. It ran with network none and read-only mounts.
+The Auth dump restored without errors into a new network-none PostgreSQL17
+container using tmpfs;27auth-schema tables,2users and75migrations were readable.
+This count is scoped to schema auth, unlike older whole-database counts.
+No live database was replaced; no SMTP, Stripe or provider operation ran.
+The disposable PostgreSQL container and restored plaintext data/configuration
+were removed; a sanitized report remains on the server. Full Auth HTTP login
+rehearsal and off-host outage monitoring are not established by these checks.
