@@ -143,9 +143,9 @@ def sync_brand_inbox(brand,*,since,budget):
             row={'platform':platform.value,'account_id':account or None,'complete':False,'scopes':[]}
             coverage.append(row)
             if platform is Platform.TIKTOK:
-                row['state']='unsupported';errors.append({'platform':'tiktok','message':'Comment inbox unsupported by the configured TikTok integration'});continue
+                row['state']='unsupported';errors.append({'platform':'tiktok','code':'unsupported_operation','message':'Comment inbox unsupported by the configured TikTok integration'});continue
             if not account:
-                row['state']='unavailable';errors.append({'platform':platform.value,'message':'No account configured'});continue
+                row['state']='unavailable';errors.append({'platform':platform.value,'code':'account_not_configured','message':'No account configured'});continue
             try:
                 share_count=pending_providers
                 pending_providers-=1
@@ -230,14 +230,15 @@ def sync_brand_inbox(brand,*,since,budget):
                     if not complete and not any(e.get('platform')==platform.value for e in errors):errors.append({'platform':platform.value,'message':'Owned content enumeration incomplete'})
             except (Exception,KeyboardInterrupt) as exc:
                 row['state']='partial' if row['scopes'] else 'error'
-                errors.append({'platform':platform.value,'message':'Read interrupted' if isinstance(exc,KeyboardInterrupt) else safe_error(str(exc))})
+                from socialctl.agent_errors import error_document
+                errors.append({**error_document(exc,read_only=True),'platform':platform.value,'message':'Read interrupted' if isinstance(exc,KeyboardInterrupt) else safe_error(str(exc))})
                 if isinstance(exc,KeyboardInterrupt):break
     covered={r['platform'] for r in coverage}
     for platform in Platform:
         if platform.value not in covered:
             coverage.append({'platform':platform.value,'account_id':(brand.cuentas.get(platform.value) or {}).get(fields[platform.value]),
                 'complete':False,'scopes':[],'state':'not_attempted'})
-            errors.append({'platform':platform.value,'message':'Not attempted after interruption'})
+            errors.append({'platform':platform.value,'code':'not_attempted','message':'Not attempted after interruption'})
     data=store.load();items=[]
     for key in observed_keys:
         item=data['items'][key];created=item.get('created_time')

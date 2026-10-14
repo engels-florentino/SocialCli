@@ -7,7 +7,9 @@ from typing import Any, Literal
 from urllib.parse import quote
 
 import typer
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from socialctl.agent_errors import error_document, error_for_code
 
 
 def safe_error(message: str, *, secrets: tuple[str, ...] = ()) -> str:
@@ -31,6 +33,36 @@ class ReadReport(BaseModel):
     errors: list[dict[str, Any]] = Field(default_factory=list)
     cursor: str | None = None
 
+    @field_validator('errors')
+    @classmethod
+    def actions(cls, rows):
+        result = []
+        for row in rows:
+            detail = error_for_code(row.get('code', 'read_partial'), read_only=True)
+            result.append({**row, **detail,
+                'message':safe_error(row.get('message', detail['message'])),
+                'guidance':detail['message']})
+        return result
+
+
+def annotate_partial_read(result):
+    """Add guidance without changing legacy items, cursor or completion fields."""
+    if not isinstance(result, dict) or result.get('complete') is not False:
+        return result
+    code = ('read_interrupted' if result.get('interrupted') is True else
+            'read_deadline' if result.get('timed_out') is True else 'read_partial')
+    return {**result, 'error_detail':error_for_code(code, read_only=True)}
+
+
+def load_read_brand(root, brand):
+    """JSON read entry points must keep a structured error before any request."""
+    from socialctl.brands import cargar_brand, BrandNoEncontrada, NombreDeMarcaInvalido, AccountsInvalido
+    try:
+        return cargar_brand(root, brand)
+    except (BrandNoEncontrada, NombreDeMarcaInvalido, AccountsInvalido, OSError):
+        emit_report(ReadReport(status='error', errors=[error_for_code('invalid_input')]))
+        raise typer.Exit(1) from None
+
 
 def emit_report(report: ReadReport) -> int:
     typer.echo(report.model_dump_json(indent=2))
@@ -41,7 +73,7 @@ def fail_read(exc: Exception, *, json_output: bool) -> None:
     message = safe_error(str(exc))
     code = 2 if message.startswith('--timeout must') else 1
     if json_output:
-        emit_report(ReadReport(status='error', errors=[{'message':message}]))
+        emit_report(ReadReport(status='error', errors=[{**error_document(exc, read_only=True), 'message':message}]))
     else:
         typer.echo(message)
     raise typer.Exit(code)

@@ -1498,7 +1498,7 @@ def stats(
     def invalid(message):
         if json_output:
             from socialctl.read_reports import ReadReport, emit_report, safe_error
-            emit_report(ReadReport(status='error', errors=[{'message':safe_error(message)}]))
+            emit_report(ReadReport(status='error', errors=[{'code':'invalid_input','message':safe_error(message)}]))
             raise typer.Exit(2)
         _fallar(message)
     try:
@@ -1542,7 +1542,7 @@ def stats(
     with read_client(budget, progress=progress) as client:
         for index, platform in enumerate(destinos):
             if interrupted:
-                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; platform not started')
+                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; platform not started', failure_code='not_attempted')
                 continue
             try:
                 with budget.share(len(destinos) - index):
@@ -1552,9 +1552,9 @@ def stats(
                     redes[platform].observed_at = datetime.now(timezone.utc)
             except KeyboardInterrupt:
                 interrupted = True
-                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; results may be incomplete')
+                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; results may be incomplete', failure_code='read_interrupted')
             except ReadDeadlineExceeded as exc:
-                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error=str(exc))
+                redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error=str(exc), failure_code='read_deadline')
 
     from socialctl.read_reports import safe_error
     for lectura in redes.values():
@@ -1609,9 +1609,9 @@ def stats(
                              'observed_at':observed.isoformat() if observed else None,
                              'source':'previous_snapshot' if p in reused else 'current_read'})
             if not complete:
-                errors.append({'platform':p.value, 'message':safe_error(r.error or '; '.join(warnings) or r.estado.value)})
+                errors.append({'platform':p.value, 'code':r.failure_code or {EstadoLectura.SIN_CREDENCIALES:'authorization_unavailable', EstadoLectura.SIN_PERMISO:'permissions_required'}.get(r.estado,'read_partial'), 'message':safe_error(r.error or '; '.join(warnings) or r.estado.value)})
         if persistence_error:
-            errors.append({'operation':'persistence', 'message':safe_error(str(persistence_error))})
+            errors.append({'operation':'persistence', 'code':'persistence_failed', 'message':safe_error(str(persistence_error))})
         successes = sum(r.estado is EstadoLectura.OK for r in redes.values())
         status = 'ok' if not errors else ('partial' if successes else 'error')
         data = {'brand':marca.nombre, 'snapshot_path':str(ruta) if ruta else None,

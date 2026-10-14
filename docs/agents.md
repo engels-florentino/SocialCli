@@ -395,8 +395,23 @@ documents with `error.code`, `error.action`, `error.retryable` and a fixed diagn
 `reconcile` checks an uncertain operation; `sign_in` concerns the installation;
 `reconnect` requires explicit user authorization for that social account. A 409 or
 network failure alone is never proof of revoked provider access. Unknown failures
-require inspection, not automatic retries. Legacy commands are not all converted
-to this taxonomy; inspect their exit code, stderr and durable result as well.
+require inspection, not automatic retries.
+
+With explicit `--json`, `stats` and unified `inbox` preserve verified observations
+and expose each diagnostic in `errors[]` with `code`, `action`, `retryable`,
+`requires_user_action`, sanitized `message` and fixed `guidance`. Legacy comments
+and YouTube community partial dictionaries retain items, cursors and flags and add
+`error_detail`; do not assume they have the same envelope as `stats`. A missing
+workspace also produces a structured error in these explicit JSON read modes.
+`adjust_read` means reduce scope or adjust the budget, not repeat unchanged.
+`unsupported` cannot be repaired by reconnecting. Generic authentication failure
+requests account review; it does not prove revoked access. A token-refresh POST
+with uncertain delivery must not become a safe read retry. Some legacy adapters
+wrap typed causes, so their conservative fallback is inspection or account review.
+
+Legacy publish/mutation commands are not all converted to this taxonomy; inspect
+their exit code, stderr and durable result as well. No action hint grants approval
+to reconnect, publish, delete or replay a write.
 
 Revoking an installation is supported. Fine-grained, server-enforced permissions
 such as “publish but never delete” are not implemented: the current client receives

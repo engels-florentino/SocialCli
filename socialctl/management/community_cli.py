@@ -36,14 +36,15 @@ def register(content_app, default_root):
     content_app.add_typer(community, name="youtube-community")
 
     def read(root, brand, callback, timeout, json_output):
-        selected = _brand(root, brand)
+        from socialctl.read_reports import load_read_brand, annotate_partial_read
+        selected = load_read_brand(root, brand) if json_output else _brand(root, brand)
         try:
             with bounded_read(timeout), make_http_client() as http:
                 result = callback(YouTubeCommunityClient(selected, http))
         except (ChangeError, OSError, ValueError, httpx.HTTPError) as exc:
             from socialctl.read_reports import fail_read
             fail_read(exc, json_output=json_output)
-        typer.echo(_json(result))
+        typer.echo(_json(annotate_partial_read(result)))
         if isinstance(result, dict) and result.get("complete") is False:
             raise typer.Exit(1)
 

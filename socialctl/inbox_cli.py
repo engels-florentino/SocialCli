@@ -24,7 +24,7 @@ def register(app,default_root):
             start=resolve_since(since,zone,datetime.now(timezone.utc))
             budget=ReadBudget(timeout)
         except (ValueError,OSError,yaml.YAMLError,BrandNoEncontrada,NombreDeMarcaInvalido,AccountsInvalido) as exc:
-            if json_output:emit_report(ReadReport(status='error',errors=[{'message':safe_error(str(exc))}]))
+            if json_output:emit_report(ReadReport(status='error',errors=[{'code':'invalid_input','message':safe_error(str(exc))}]))
             else:typer.echo(safe_error(str(exc)),err=True)
             raise typer.Exit(2)
         report=sync_brand_inbox(selected,since=start,budget=budget)

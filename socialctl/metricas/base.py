@@ -130,13 +130,17 @@ def leer_red(
     except AuthError as e:
         return LecturaRed(
             estado=EstadoLectura.SIN_CREDENCIALES,
+            failure_code='authorization_unavailable',
             error=_redactar_url_por_patron(str(e)),
         )
     except SinPermiso as e:
         return LecturaRed(
             estado=EstadoLectura.SIN_PERMISO,
+            failure_code='permissions_required',
             error=_redactar_url_por_patron(str(e)),
         )
     except Exception as e:  # noqa: BLE001 - un lector roto no tumba a los demás
+        from socialctl.agent_errors import error_document
         error = f"{type(e).__name__}: {e}"
-        return LecturaRed(estado=EstadoLectura.ERROR, error=_redactar_url_por_patron(error))
+        return LecturaRed(estado=EstadoLectura.ERROR, error=_redactar_url_por_patron(error),
+                          failure_code=error_document(e, read_only=True)['code'])
