@@ -220,3 +220,9 @@ Use the [backup and isolated restore guide](backup-restore.md) for the shared
 SQLite metadata/vault and the separate Auth database. The snapshot utility never
 restores over a live service or processes an external operation. Scheduling,
 off-host storage and recovery alerting remain rollout requirements.
+
+After an installation logout or expiry, sign in again and use `account attach`
+to restore the same approved account without repeating OAuth. Existing local
+capabilities are replaced only after their installation is confirmed inactive.
+While any connection recovery is pending, finish `account recover PLATFORM`
+before changing that brand or signing out.

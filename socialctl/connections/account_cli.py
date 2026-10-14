@@ -214,8 +214,8 @@ def finalize_local(brand,platform,client,result):
         if activation_started and (not isinstance(exc,ServiceRejected) or exc.status>=500):
             raise ValueError('Activation could not be confirmed. Run socialcli account recover '+platform.value+' before any other connection change.') from None
         restore_local(brand,platform,journal)
-        keychain.delete(brand,platform,saved);keychain.delete(brand,recovery_slot(platform),saved)
-        recovery_path(brand,platform).unlink(missing_ok=True)
+        keychain.delete(brand,platform,saved)
+        forget_recovery(brand,platform,saved)
         raise
     clear_recovery(brand,platform,journal)
     return saved
@@ -232,7 +232,18 @@ def clear_recovery(brand,platform,journal):
     saved=journal['metadata'];old=journal['previous_metadata']
     if old.get('auth_mode')=='broker' and old.get('connection_id')!=saved['connection_id']:
         keychain.delete(brand,platform,old)
-    keychain.delete(brand,recovery_slot(platform),saved);recovery_path(brand,platform).unlink(missing_ok=True)
+    forget_recovery(brand,platform,saved)
+
+
+def forget_recovery(brand,platform,saved):
+    # Keep the journal available until its pointer is durably gone. A failed
+    # unlink must remain recoverable; a leftover unreferenced secret is harmless.
+    path=recovery_path(brand,platform)
+    path.unlink(missing_ok=True)
+    directory=os.open(path.parent,os.O_RDONLY)
+    try:os.fsync(directory)
+    finally:os.close(directory)
+    keychain.delete(brand,recovery_slot(platform),saved)
 
 
 @account_app.command('recover')
@@ -240,7 +251,7 @@ def recover(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Pa
     """Resolve an interrupted local install without repeating OAuth or publication."""
     lock=None
     try:
-        brand=cargar_brand(root,brand_name);lock=acquire_brand_lock(brand)
+        brand=cargar_brand(root,brand_name);lock=acquire_brand_lock(brand,allow_recovery=True)
         saved=json.loads(recovery_path(brand,platform).read_text())
         journal=json.loads(keychain.get(brand,recovery_slot(platform),saved));secret=keychain.get(brand,platform,saved)
         with http_client() as transport:
@@ -249,7 +260,7 @@ def recover(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Pa
             except ServiceRejected as exc:
                 if exc.status>=500: raise
                 restore_local(brand,platform,journal);keychain.delete(brand,platform,saved)
-                keychain.delete(brand,recovery_slot(platform),saved);recovery_path(brand,platform).unlink(missing_ok=True)
+                forget_recovery(brand,platform,saved)
                 typer.echo('Pending activation was rejected. Previous local credentials restored.');return
         bind_account(brand,platform,saved['account']);atomic_bytes(brand.dir_secretos/(platform.value+'.json'),json.dumps(saved).encode())
         clear_recovery(brand,platform,journal);typer.echo('Connection recovered. No OAuth or publication was repeated.')
@@ -288,14 +299,28 @@ def attach(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Pat
     try:
         brand=cargar_brand(root,brand_name);lock=acquire_brand_lock(brand)
         if recovery_path(brand,platform).exists():raise ValueError('Resolve pending connection recovery first.')
-        if brand.leer_secreto(platform):raise ValueError('A local connection already exists. Review it before replacing it.')
+        previous=brand.leer_secreto(platform)
         saved=metadata(brand)
         if not saved:raise ValueError('Run socialcli account login first.')
+        if previous and (previous.get('auth_mode')!='broker' or previous.get('protocol')!='saas-v1'
+                         or previous.get('service_url')!=saved['service_url']):
+            raise ValueError('A local connection already exists. Review it before replacing it.')
         keychain.ensure_available(brand)
         with http_client() as transport:
             client=SaaSClient(saved['service_url'],transport,allow_http_local=saved.get('development_local') is True)
+            if previous:
+                try:
+                    client.request('GET','/api/saas/v1/connections/'+opaque(previous['connection_id']),
+                        secret=keychain.get(brand,platform,previous))
+                except ServiceRejected as exc:
+                    # Only an authenticated capability whose installation is
+                    # confirmed inactive may be replaced without another OAuth.
+                    if exc.status!=401 or exc.code not in {'installation_revoked','installation_expired'}:raise
+                else:raise ValueError('A local connection already exists. Review it before replacing it.')
             result=client.request('POST','/api/saas/v1/installations/'+opaque(saved['connection_id'])+'/attach',
                 secret=keychain.get(brand,Slot.ACCOUNT,saved),body={'platform':platform.value,'brand':brand.nombre})
+            if previous and result.get('account',{}).get('id')!=previous.get('account_id'):
+                raise ValueError('The approved account changed. Review it before replacing this local connection.')
             finalize_local(brand,platform,client,result)
         typer.echo(platform.value+' attached for '+visible(brand.nombre)+'. No OAuth or publication was repeated.')
     except Exception as exc:

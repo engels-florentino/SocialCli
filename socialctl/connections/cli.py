@@ -49,7 +49,7 @@ def atomic_bytes(path:Path,content:bytes,mode=0o600):
         Path(name).unlink(missing_ok=True)
 
 
-def acquire_brand_lock(brand,*,allow_rotation=False):
+def acquire_brand_lock(brand,*,allow_rotation=False,allow_recovery=False):
     brand.dir_secretos.mkdir(exist_ok=True,mode=0o700)
     brand.dir_secretos.chmod(0o700)
     fd=os.open(brand.dir_secretos/'connection.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW,0o600)
@@ -61,6 +61,11 @@ def acquire_brand_lock(brand,*,allow_rotation=False):
     if not allow_rotation and (brand.dir_secretos/'socialcli-rotation.json').exists():
         os.close(fd)
         raise ValueError('Credential rotation is pending. Run socialcli account rotate to resume.')
+    if not allow_recovery:
+        for platform in Platform:
+            if (brand.dir_secretos/('socialcli-recovery-'+platform.value+'.json')).exists():
+                os.close(fd)
+                raise ValueError('Connection recovery is pending. Run socialcli account recover '+platform.value+' before changing this brand.')
     return fd
 
 

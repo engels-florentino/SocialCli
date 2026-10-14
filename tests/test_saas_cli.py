@@ -105,6 +105,11 @@ def test_lost_activation_response_recovers_without_repeating_oauth(tmp_path,monk
     assert account_cli.recovery_path(brand,Platform.YOUTUBE).exists()
     with server.app.state.saas.vault.transaction() as db:
         before=db.execute("SELECT count(*) FROM records WHERE kind='authorization'").fetchone()[0]
+    # The journal snapshots accounts.yml for the whole brand. No second
+    # platform or sign-out may change its binding while recovery is pending.
+    for args in (['connect','tiktok','--no-browser'],['account','attach','tiktok'],['account','logout']):
+        blocked=runner.invoke(app,[*args,*common])
+        assert blocked.exit_code==1 and 'recover youtube' in blocked.output,blocked.output
     result=runner.invoke(app,['account','recover','youtube',*common])
     assert result.exit_code==0 and 'recovered' in result.output.lower()
     assert not account_cli.recovery_path(brand,Platform.YOUTUBE).exists()
@@ -183,6 +188,47 @@ def test_official_one_way_migration_origin_is_allowed_and_reverse_is_rejected():
 
 
 import pytest
+
+
+@pytest.mark.parametrize('rejected',[False,True])
+def test_recovery_pointer_cleanup_failure_keeps_journal_recoverable(tmp_path,monkeypatch,rejected):
+    from contextlib import contextmanager
+    from pathlib import Path
+    from socialctl.connections import account_cli
+    server,_,_=wire(tmp_path,monkeypatch);brand=crear_brand(tmp_path,'MyBrand')
+    common=['--brand','MyBrand','--root',str(tmp_path)]
+    assert runner.invoke(app,['account','login',*common,'--service','https://social.example','--no-browser']).exit_code==0
+    factory=account_cli.http_client
+    class ActivationClient:
+        def __enter__(self):self.client=factory();return self
+        def __exit__(self,*args):self.client.close()
+        @contextmanager
+        def stream(self,method,url,**kwargs):
+            if rejected and url.endswith('/activate'):
+                yield httpx.Response(409,json={'detail':'connection_changed: fictional rejection'})
+            else:
+                with self.client.stream(method,url,**kwargs) as response:yield response
+    monkeypatch.setattr(account_cli,'http_client',ActivationClient)
+    original=Path.unlink;interrupt=[True]
+    def unlink(path,*args,**kwargs):
+        if path.name=='socialcli-recovery-youtube.json' and interrupt[0]:
+            interrupt[0]=False
+            raise OSError('fictional cleanup interruption')
+        return original(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'unlink',unlink)
+    result=runner.invoke(app,['connect','youtube',*common,'--no-browser'])
+    assert result.exit_code==1
+    pointer=account_cli.recovery_path(brand,Platform.YOUTUBE)
+    saved=json.loads(pointer.read_text())
+    assert keychain.get(brand,account_cli.recovery_slot(Platform.YOUTUBE),saved) is not None
+    result=runner.invoke(app,['account','recover','youtube',*common])
+    assert result.exit_code==0,result.output
+    assert not pointer.exists()
+    assert keychain.get(brand,account_cli.recovery_slot(Platform.YOUTUBE),saved) is None
+    if rejected:
+        assert brand.leer_secreto(Platform.YOUTUBE)=={}
+    else:
+        assert runner.invoke(app,['connections',*common,'--json']).exit_code==0
 
 @pytest.mark.parametrize('failure',['prepare_reply','commit_reply','local_write'])
 def test_rotation_recovers_interruption_without_oauth_or_leaking_secrets(tmp_path,monkeypatch,failure):

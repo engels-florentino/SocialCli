@@ -162,3 +162,31 @@ def test_forged_cookie_and_missing_origin_are_rejected(tmp_path):
     client.cookies.set('socialcli-session','forged-session-with-valid-length')
     assert client.get('/account/',follow_redirects=False).status_code == 303
     assert not calls
+
+
+def test_account_actions_work_after_preauth_window_until_session_expiry(tmp_path):
+    import time
+    client, now, _ = service(tmp_path)
+    login(client)
+    now[0] += 1900
+    # Emulate browser expiry of cookies 31 minutes after sign-in.
+    cutoff = time.time() + 1900
+    for cookie in list(client.cookies.jar):
+        if cookie.expires is not None and cookie.expires <= cutoff:
+            client.cookies.jar.clear(cookie.domain, cookie.path, cookie.name)
+    page = client.get('/account/', follow_redirects=False)
+    assert page.status_code == 200
+    reply = client.post('/account/logout', data=fields(page),
+                        headers={'Origin':'https://social.example'}, follow_redirects=False)
+    assert reply.status_code == 303
+    assert client.get('/account/', follow_redirects=False).status_code == 303
+
+
+def test_authenticated_forms_do_not_require_auxiliary_login_cookie(tmp_path):
+    client, _, _ = service(tmp_path)
+    login(client)
+    client.cookies.delete('socialcli-browser')
+    page = client.get('/account/')
+    assert page.status_code == 200
+    assert client.post('/account/logout', data=fields(page),
+                       headers={'Origin':'https://social.example'}, follow_redirects=False).status_code == 303

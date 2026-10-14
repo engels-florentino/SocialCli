@@ -1,5 +1,6 @@
 """Actual encrypted backend for agent installation, pairing and rotation secrets."""
 import json
+import pytest
 from cryptography.fernet import Fernet
 from typer.testing import CliRunner
 from socialctl.cli import app
@@ -93,3 +94,60 @@ def test_lost_pair_ack_resumes_then_allows_backend_migration(tmp_path,monkeypatc
     result=runner.invoke(app,['credentials','migrate','--to','encrypted-file',*storage,*common,'--yes'])
     assert result.exit_code==0,result.output
     assert runner.invoke(app,['account','status',*common]).exit_code==0
+
+
+@pytest.mark.parametrize('encrypted',[False,True])
+def test_logout_login_reattaches_existing_grant_without_oauth(tmp_path,monkeypatch,encrypted):
+    from socialctl.models import Platform
+    brand,common,storage,ring=setup(tmp_path,monkeypatch)
+    if encrypted:
+        assert runner.invoke(app,['credentials','configure','--backend','encrypted-file',*storage,*common,'--yes']).exit_code==0
+    login(common)
+    assert runner.invoke(app,['connect','youtube',*common,'--no-browser']).exit_code==0
+    old=brand.leer_secreto(Platform.YOUTUBE)
+    assert runner.invoke(app,['account','logout',*common]).exit_code==0
+    login(common)
+    result=runner.invoke(app,['account','attach','youtube',*common])
+    assert result.exit_code==0,result.output
+    current=brand.leer_secreto(Platform.YOUTUBE)
+    assert current['account_id']==old['account_id']
+    assert current['connection_id']!=old['connection_id']
+    assert keychain.get(brand,Platform.YOUTUBE,old) is None
+    assert runner.invoke(app,['connections',*common,'--json']).exit_code==0
+
+
+def test_attach_preserves_active_local_connection(tmp_path,monkeypatch):
+    from socialctl.models import Platform
+    brand,common,_,_=setup(tmp_path,monkeypatch);login(common)
+    assert runner.invoke(app,['connect','youtube',*common,'--no-browser']).exit_code==0
+    old=brand.leer_secreto(Platform.YOUTUBE);secret=keychain.get(brand,Platform.YOUTUBE,old)
+    result=runner.invoke(app,['account','attach','youtube',*common])
+    assert result.exit_code==1
+    assert brand.leer_secreto(Platform.YOUTUBE)==old
+    assert keychain.get(brand,Platform.YOUTUBE,old)==secret
+
+
+@pytest.mark.parametrize('failure',['timeout','unrecognized_401'])
+def test_attach_preserves_connection_when_retirement_is_not_proven(tmp_path,monkeypatch,failure):
+    from contextlib import contextmanager
+    import httpx
+    from socialctl.models import Platform
+    brand,common,_,_=setup(tmp_path,monkeypatch);login(common)
+    assert runner.invoke(app,['connect','youtube',*common,'--no-browser']).exit_code==0
+    old=brand.leer_secreto(Platform.YOUTUBE);secret=keychain.get(brand,Platform.YOUTUBE,old)
+    factory=account_cli.http_client
+    class UncertainStatus:
+        def __enter__(self):self.client=factory();return self
+        def __exit__(self,*args):self.client.close()
+        @contextmanager
+        def stream(self,method,url,**kwargs):
+            if method=='GET' and '/connections/' in url:
+                if failure=='timeout':raise httpx.ReadTimeout('fictional connection uncertainty')
+                yield httpx.Response(401,json={'detail':'unknown_identity_failure'})
+            else:
+                with self.client.stream(method,url,**kwargs) as response:yield response
+    monkeypatch.setattr(account_cli,'http_client',UncertainStatus)
+    assert runner.invoke(app,['account','attach','youtube',*common]).exit_code==1
+    assert brand.leer_secreto(Platform.YOUTUBE)==old
+    assert keychain.get(brand,Platform.YOUTUBE,old)==secret
+    assert not account_cli.recovery_path(brand,Platform.YOUTUBE).exists()

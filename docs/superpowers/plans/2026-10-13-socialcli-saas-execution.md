@@ -57,3 +57,8 @@ Approved master: `2026-10-13-socialcli-saas.md`. Execute natively in an isolated
 - Google production and live billing remain a separate, explicitly deferred phase.
 
 A green unit suite or local package does not mark these external requirements done.
+
+- Whole-branch review: four Important session/recovery defects reproduced and
+  fixed; follow-up found no outstanding issues in the fixes. Full suite2416passed.
+  Offline NPM cutoff/rollback rehearsal passed52cases; real public configuration
+  and shared-vault cutover are still pending. See deploy/saas/branch-review.md.
