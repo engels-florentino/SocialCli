@@ -43,8 +43,11 @@ Approved master: `2026-10-13-socialcli-saas.md`. Execute natively in an isolated
   adapter OTP/lookup/idempotent deletion with a fictional user. No new real mail.
 - Vault: consistent SQLite online snapshot and restored application boundaries;
   protected key separation documented. Candidate/Auth encrypted hourly backups
-  now active, exact local snapshot pair restored offline. Drive off-host access,
-  independent off-host password recovery, retention and stale alerts remain.
+  now active. Exact pairs were restored offline from local storage and Google
+  Drive. Both recovery passwords are independently stored and verified in
+  1Password. Private English failure/stale alerts now monitor local and Drive
+  receipts every five minutes; a real full backup and SMTP test passed.
+  Retention pruning and independent server-outage monitoring remain.
 - Candidate distribution: 0.3.0rc1, packaged `/agents`, explicit version discovery,
   protected OIDC workflow, archive allowlist/verifier and clean-install smoke work.
   Headless storage revealed installation-slot and backend migration gaps; fixed
@@ -55,6 +58,19 @@ Approved master: `2026-10-13-socialcli-saas.md`. Execute natively in an isolated
   TestPyPI/PyPI publisher setup and downloaded artifact verification; real Muse/Grok
   pilot; final whole-branch review and approved public rollout.
 - Google production and live billing remain a separate, explicitly deferred phase.
+
+### 14 October rollout checkpoint
+
+- Pilot CNAME is saved and publicly resolves to `socialcli.app`; HTTPS proxy is
+  still pending. NPM login is open in the operator's Safari through a loopback-only
+  SSH tunnel to `florentino.pro`, with the known server host key retained.
+- English-only product language is now an explicit repository rule. Scanned SaaS
+  UI/email/public-page sources contain no Spanish copy. Spanish input recognition
+  and comment-language detection are functional data, not UI translation defects.
+- Backup alert increment passed independent review after one deduplication fix;
+  full suite: 2769 passed, one existing Starlette TestClient deprecation warning.
+- The earlier Spanish test email was received. The new English test was accepted
+  by SMTP; end-recipient receipt of that second message is not yet confirmed.
 
 A green unit suite or local package does not mark these external requirements done.
 
