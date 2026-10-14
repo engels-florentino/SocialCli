@@ -157,7 +157,7 @@ def cargar_brand(raiz_social: Path, nombre: str) -> Brand:
         )
         raise BrandNoEncontrada(
             f"brand does not exist: '{nombre}' in {raiz_social}. "
-            f"Marcas disponibles: {', '.join(disponibles) or 'none'}"
+            f"Available brands: {', '.join(disponibles) or 'none'}"
         )
 
     fichero_voz = raiz / "brand.md"
