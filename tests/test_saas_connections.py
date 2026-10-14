@@ -162,3 +162,38 @@ def test_verified_other_user_cannot_select_or_attach_connection_by_shared_brand_
     reply=other.post('/api/saas/v1/installations/'+other_cap['installation_id']+'/attach',json={'platform':'youtube','brand':'MyBrand'},headers={'Authorization':'Bearer '+other_cap['installation_secret']})
     assert reply.status_code==402  # no owned activated trial/grant
     assert token(client,result).status_code==200
+
+
+def test_signed_out_connection_resumes_after_email_login_without_consuming_oauth(tmp_path):
+    from tests.test_saas_auth import begin
+    client, now, cap = setup(tmp_path)
+    value, proof = start(client, cap)
+    client.cookies.clear()
+    path = urlsplit(value['browser_url']).path
+    page = client.get(path, follow_redirects=False)
+    assert page.status_code == 303
+    assert parse_qs(urlsplit(page.headers['location']).query)['next'] == [path]
+    assert selected(client, value, proof)['status'] == 'pending'
+    form = begin(client, next_path=path); form['code'] = '123456'
+    result = client.post('/account/verify', data=form, headers={'Origin':'https://social.example'}, follow_redirects=False)
+    assert result.headers['location'] == path
+    assert select(client, value).status_code == 200
+
+
+def test_session_expiring_after_connection_preview_redirects_without_consuming(tmp_path):
+    client, now, cap = setup(tmp_path)
+    value, proof = start(client, cap)
+    page = client.get(value['browser_url']); form = fields(page)
+    client.cookies.delete('socialcli-session')
+    result = client.post(value['browser_url'], data=form, headers={'Origin':'https://social.example'}, follow_redirects=False)
+    assert result.status_code == 303
+    assert parse_qs(urlsplit(result.headers['location']).query)['next'] == [urlsplit(value['browser_url']).path]
+    assert selected(client, value, proof)['status'] == 'pending'
+
+
+def test_connection_return_paths_reject_external_or_malformed_targets():
+    from socialctl.saas.routes import safe_next
+    for path in ['/connect/'+'a'*24, '/account/connect/'+'a'*24]:
+        assert safe_next(path) == path
+    for path in ['//evil.example/connect/'+'a'*24, '/connect/'+'a'*24+'?next=https://evil.example', '/connect/../account/', '/connect/short']:
+        assert safe_next(path) == '/account/'

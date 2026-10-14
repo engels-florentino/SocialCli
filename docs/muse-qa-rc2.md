@@ -47,3 +47,19 @@ Focused verification: 107 passed; 24 Muse QA regression cases passed independent
 The rebuilt wheel and source archive passed release-content checks; installed-wheel
 smoke testing passed without external calls. Live connection acceptance and protected
 publication remain separate, as described above.
+
+## Browser sign-in recovery found during live QA
+
+Live owner attempts returned HTTP 401 before provider authorization. The connection
+start required an existing SocialCli browser session and rendered a generic error
+when that session was absent or expired. The isolated CLI installation remained
+authenticated, which does not establish a browser session.
+
+The server now redirects missing/expired browser sessions to email sign-in with
+an exact allowlisted local return path. After sign-in, the owner returns to the
+pending connection. Expiry, owner identity and CSRF checks remain enforced; the
+redirect does not start OAuth or consume its pending state. Three regressions
+failed before the fix and passed afterward. Sanitized operational diagnostics
+record status or exception type/source locations without request links, headers,
+exception messages or credentials. This is a server patch after the immutable
+rc2 package; it does not alter the published TestPyPI artifacts.

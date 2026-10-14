@@ -241,3 +241,20 @@ def test_meta_optional_scopes_survive_service_authorization_roundtrip(tmp_path, 
     scopes = set(parse_qs(urlsplit(redirect.headers['location']).query)['scope'][0].split(','))
     assert expected <= scopes
     assert client.delete('/v1/authorizations/'+value['authorization_id'], headers={'Authorization':'Bearer '+secret}).status_code == 200
+
+
+def test_unexpected_browser_failure_logs_safe_diagnostic_without_secrets(tmp_path, monkeypatch, caplog):
+    from socialctl.connection_service import app as service
+    client, _ = make_service(tmp_path)
+    value, _ = start(client)
+    def broken_page(*args, **kwargs):
+        raise RuntimeError('private-provider-token-and-cookie')
+    monkeypatch.setattr(service, 'landing_page', broken_page)
+    with caplog.at_level('ERROR', logger='socialcli.connection_service'):
+        result = client.get(value['browser_url'])
+    assert result.status_code == 503
+    assert 'connection_request_failed' in caplog.text
+    assert 'RuntimeError' in caplog.text
+    assert 'private-provider-token-and-cookie' not in caplog.text
+    assert value['authorization_id'] not in caplog.text
+    assert 'private-provider-token-and-cookie' not in result.text

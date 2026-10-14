@@ -6,6 +6,8 @@ import asyncio
 import hmac
 import secrets
 import time
+import logging
+import traceback
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
@@ -99,6 +101,9 @@ def create_app(settings: Settings, *, store: Store | None = None,
             from socialctl.saas.pages import error
             return HTMLResponse('' if request.method == 'HEAD' else error(str(exc.detail)),status_code=exc.status_code,headers=exc.headers)
         if is_browser_path(request):
+            logging.getLogger('socialcli.connection_service').warning(
+                'connection_browser_rejected status=%d', exc.status_code,
+            )
             return HTMLResponse('' if request.method == 'HEAD' else error_page(exc.status_code),
                                 status_code=exc.status_code, headers=exc.headers)
         return await http_exception_handler(request, exc)
@@ -111,7 +116,18 @@ def create_app(settings: Settings, *, store: Store | None = None,
                             JSONResponse({'detail':'request is too large'}, status_code=413))
             else:
                 response = await call_next(request)
-        except Exception:
+        except Exception as exc:
+            # Never log exception messages, request URLs, headers or locals: they
+            # may contain OAuth codes, single-use links or provider credentials.
+            frames = traceback.extract_tb(exc.__traceback__)
+            locations = ','.join(
+                f'{Path(frame.filename).name}:{frame.lineno}'
+                for frame in frames if '/socialctl/' in frame.filename
+            )
+            logging.getLogger('socialcli.connection_service').error(
+                'connection_request_failed type=%s locations=%s',
+                type(exc).__name__, locations or 'unavailable',
+            )
             response = (HTMLResponse(error_page(503), status_code=503) if is_browser_path(request) else
                         JSONResponse({'detail':'connection service unavailable'}, status_code=503))
         response.headers.update({'Cache-Control':'no-store', 'Pragma':'no-cache',
@@ -182,6 +198,16 @@ def create_app(settings: Settings, *, store: Store | None = None,
     def browser_landing(authorization_id: str, request: Request):
         with vault.transaction() as db:
             record = pending_authorization(db, authorization_id)
+        if record['payload'].get('saas'):
+            try:
+                user = app.state.saas_sessions.require_user(request)
+            except HTTPException as exc:
+                if exc.status_code != 401:
+                    raise
+                from socialctl.saas.routes import connection_sign_in
+                return connection_sign_in('/connect/' + authorization_id)
+            if user.id != record['payload']['saas']['user_id']:
+                raise HTTPException(403, 'This connection belongs to another account.')
         cookie_name = 'socialcli-form-' + authorization_id
         cookie = request.cookies.get(cookie_name, '')
         if not 16 <= len(cookie) <= 512:
@@ -227,7 +253,13 @@ def create_app(settings: Settings, *, store: Store | None = None,
                 return pending_authorization(db, authorization_id)
         owner_record = await asyncio.to_thread(read_owner_record)
         if owner_record['payload'].get('saas'):
-            user = await asyncio.to_thread(app.state.saas_sessions.require_user, request)
+            try:
+                user = await asyncio.to_thread(app.state.saas_sessions.require_user, request)
+            except HTTPException as exc:
+                if exc.status_code != 401:
+                    raise
+                from socialctl.saas.routes import connection_sign_in
+                return connection_sign_in('/connect/' + authorization_id)
             if user.id != owner_record['payload']['saas']['user_id']:
                 raise HTTPException(403, 'This connection belongs to another account.')
         browser_secret = secrets.token_urlsafe(32)

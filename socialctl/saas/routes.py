@@ -3,7 +3,7 @@ import asyncio
 import hmac
 import re
 import secrets
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from socialctl.connection_service.landing import LandingTokens
@@ -35,8 +35,12 @@ async def read_form(request,origin):
 
 
 def safe_next(value):
-    # Installation approval paths are added by the pairing phase, never arbitrary URLs.
-    return value if value=='/account/' or re.fullmatch(r'/account/(?:pair|migrate)/[A-Za-z0-9_-]{16,64}',value or '') else '/account/'
+    # Only exact local handoff paths; never arbitrary URLs or query strings.
+    return value if value=='/account/' or re.fullmatch(r'/(?:connect|account/(?:pair|migrate|connect))/[A-Za-z0-9_-]{16,64}',value or '') else '/account/'
+
+
+def connection_sign_in(path):
+    return RedirectResponse('/account/login?' + urlencode({'next':safe_next(path)}),status_code=303)
 
 
 def install_account_routes(app,settings,vault,identity_client,clock):
