@@ -1,9 +1,9 @@
 # SocialCli for AI agents — Candidate 0.3.0rc1
 
-Status: this is the private SaaS candidate guide. Public PyPI availability,
-hosted SaaS deployment and Muse/Grok pilot completion are not yet confirmed.
-Do not claim that an installation command succeeded without checking its result.
-The public 0.2.6 service remains separate until the operator completes rollout.
+Status: public SaaS pilot, Candidate 0.3.0rc1. Use the exact candidate below;
+do not replace an existing 0.2.6 installation or migrate its credentials silently.
+Stripe remains in test mode. Google is in testing and permits configured test users.
+Real-agent acceptance is performed by the owner; do not claim it from installation.
 
 SocialCli gives terminal-enabled agents tools for creator-owned social accounts.
 You need a persistent shell workspace, Python 3.11+, macOS or Linux, and protected
@@ -12,24 +12,32 @@ availability depends on account eligibility; Google production is still pending.
 
 ## Install the reviewed candidate
 
-For an operator-supplied wheel whose SHA256 you have verified:
+Use the official TestPyPI release metadata:
+https://test.pypi.org/pypi/socialcli/0.3.0rc1/json
 
-    uv tool install --python 3.12 /absolute/path/socialcli-0.3.0rc1-py3-none-any.whl
-    socialcli --version
-    socialcli --help
+1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc1`. If this
+   release is unavailable, stop and report it; do not install a similarly named package.
+2. Select exactly `socialcli-0.3.0rc1-py3-none-any.whl` from `urls`. Download its
+   HTTPS `url` and verify the file against that entry's `digests.sha256`.
+3. Install that verified local wheel into an isolated environment. Resolve
+   dependencies from normal PyPI, not TestPyPI. For example:
 
-Without uv, create a virtual environment and install the same reviewed wheel:
+       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc1-py3-none-any.whl[headless-credentials]'
+       socialcli --version
+       socialcli agent-guide
 
-    python3 -m venv .venv
-    .venv/bin/python -m pip install /absolute/path/socialcli-0.3.0rc1-py3-none-any.whl
-    .venv/bin/socialcli --version
+   Without uv, use a new Python virtual environment and its `python -m pip install`
+   with the same local wheel and `headless-credentials` extra. Do not use system pip.
+   If an existing SocialCli tool is installed, use a separate virtual environment
+   for this pilot and its absolute executable; do not upgrade it automatically.
 
-After a stable release is actually available on PyPI, the normal command will be
-`uv tool install socialcli`; do not use it as proof this candidate is published.
-For headless agents install the `headless-credentials` extra on the reviewed wheel,
-then explicitly configure encrypted-file storage with an external 0600 key in a
-0700 directory. Never silently fall back to plaintext storage. The operator keeps
-key backups separate. The protected storage procedure is documented at
+Verify the installed version is exactly 0.3.0rc1 before continuing. The stable
+`uv tool install socialcli` command is not the installation path for this pilot.
+
+For headless agents, configure encrypted-file storage with an external0600 key in
+a0700 directory before login. Keep the key outside the workspace and preserve both
+across conversations. Never fall back to plaintext storage. Follow the protected
+storage procedure at:
 https://socialcli.app/connections.html#headless-encrypted-capability-storage.
 
 If uv is missing, use the virtual-environment route or its official installation
@@ -41,11 +49,12 @@ must be resolved before a video submission. Never generate or reencode media.
 
 ## Authorize the installation, then the social account
 
+Use `https://pilot.socialcli.app` for this pilot. The main site is the human landing.
 Ask for the brand name; never infer it. Replace MyBrand below with that exact name.
 Keep the workspace outside the application repository:
 
     socialcli brand new MyBrand
-    socialcli account login --brand MyBrand --no-browser --label "My AI assistant"
+    socialcli account login --brand MyBrand --service https://pilot.socialcli.app --no-browser --label "My AI assistant"
 
 Give the printed URL directly to the user. Do not open, fetch, preview or follow
 it yourself. Keep the process alive with a runner timeout longer than 30 minutes.
