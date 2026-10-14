@@ -72,12 +72,12 @@ def test_google_rejects_ambiguous_channel_identity(tmp_path):
 def test_tiktok_inbox_permissions_and_profile_identity(tmp_path):
     def handler(r):
         if r.url.path == '/v2/oauth/token/':
-            return httpx.Response(200, json={'access_token':'a', 'refresh_token':'r', 'expires_in':86400, 'refresh_expires_in':31536000, 'scope':'user.info.basic,video.upload', 'open_id':'creator-one'})
+            return httpx.Response(200, json={'access_token':'a', 'refresh_token':'r', 'expires_in':86400, 'refresh_expires_in':31536000, 'scope':'user.info.basic,video.upload,user.info.stats,video.list', 'open_id':'creator-one'})
         assert r.url.path == '/v2/user/info/'
         return httpx.Response(200, json={'data':{'user':{'open_id':'creator-one','display_name':'Example'}}, 'error':{'code':'ok'}})
     p = setup(tmp_path, handler)
     params = parse_qs(urlsplit(p.authorization_url('tiktok', 'state', 'verifier')).query)
-    assert params['scope'] == ['user.info.basic,video.upload']
+    assert params['scope'] == ['user.info.basic,video.upload,user.info.stats,video.list']
     grant = p.exchange('tiktok', 'code', 'verifier')
     assert grant['accounts'] == [{'id':'creator-one','name':'Example'}]
 
@@ -251,3 +251,13 @@ def test_meta_management_exchange_validates_requested_permissions(tmp_path, plat
         result = provider.exchange(platform, 'code', 'verifier', management=True, analytics=True)
         assert set(result['grant']['granted_scopes']) == set(required)
         assert result['accounts'][0]['id'] == ('123' if platform == 'facebook' else '456')
+
+
+def test_tiktok_new_connection_rejects_missing_metrics_consent(tmp_path):
+    p = setup(tmp_path, lambda r: httpx.Response(200, json={
+        'access_token': 'a', 'refresh_token': 'r', 'expires_in': 86400,
+        'refresh_expires_in': 31536000, 'scope': 'user.info.basic,video.upload',
+        'open_id': 'creator-one'}))
+    from socialctl.connection_service.providers import PermissionsChanged
+    with pytest.raises(PermissionsChanged):
+        p.exchange('tiktok', 'code', 'verifier')

@@ -65,7 +65,7 @@ class Providers:
             raise ValueError('analytics permission is available for YouTube, Facebook and Instagram')
         scopes = {
             'youtube': [GOOGLE_READ, GOOGLE_UPLOAD],
-            'tiktok': ['user.info.basic', 'video.upload'],
+            'tiktok': ['user.info.basic', 'video.upload', 'user.info.stats', 'video.list'],
             'facebook': ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'],
             'instagram': ['pages_show_list', 'pages_read_engagement', 'instagram_basic', 'instagram_content_publish'],
         }.get(platform)
