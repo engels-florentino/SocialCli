@@ -4,7 +4,7 @@ import secrets
 from html import escape
 from fastapi import HTTPException,Request
 from fastapi.responses import HTMLResponse,RedirectResponse
-from socialctl.saas import pages
+from socialctl.saas import pages, permissions
 from socialctl.saas.auth import IdentityError,IdentityUnavailable
 from socialctl.saas.routes import read_form
 from socialctl.saas.budget import using_budget
@@ -98,8 +98,8 @@ class AccountLifecycle:
             elif kind=='saas-installation':
                 label=escape(data['label']);rid=escape(record_id,quote=True)
                 expired=' · Expired' if record['expires']<=self.clock() else ''
-                installations.append(f'<li><strong>{label}{expired}</strong><form method="post" action="/account/installations/{rid}/revoke">{pages.hidden("csrf",csrf)}<button class="secondary-button" type="submit">Revoke assistant</button></form></li>')
-        return '<section aria-label="Connected accounts"><h2>Connected accounts</h2>'+('<ul class="account-list">'+''.join(connections)+'</ul>' if connections else '<p class="description">No social accounts connected yet. Ask your assistant to connect your account.</p>')+'</section><section aria-label="Assistants"><h2>Assistants</h2>'+('<ul class="account-list">'+''.join(installations)+'</ul>' if installations else '<p class="description">No assistants linked yet.</p>')+'</section><a class="text-link" href="/account/delete">Delete my account</a>'
+                installations.append(f'<li><strong>{label}{expired}</strong>{permissions.summary_html(data)}<form method="post" action="/account/installations/{rid}/revoke">{pages.hidden("csrf",csrf)}<button class="secondary-button" type="submit">Revoke assistant</button></form></li>')
+        return '<section aria-label="Connected accounts"><h2>Connected accounts</h2>'+('<ul class="account-list">'+''.join(connections)+'</ul>' if connections else '<p class="description">No social accounts connected yet. Ask your assistant to connect your account.</p>')+'</section><section aria-label="Assistants"><h2>Assistants</h2>'+('<ul class="account-list">'+''.join(installations)+'</ul>' if installations else '<p class="description">No assistants linked yet.</p>')+'<p class="expiry-note">Selections control access to SocialCli connections. They do not narrow provider permissions, including permissions for linked accounts or individual actions. Previously issued provider tokens may remain usable until they expire or are revoked at the provider. To change an assistant’s selected platforms, revoke it and link it again.</p></section><a class="text-link" href="/account/delete">Delete my account</a>'
 
 
 def run_deletions(metadata,identity,billing,clock,limit=100,*,budget=None):

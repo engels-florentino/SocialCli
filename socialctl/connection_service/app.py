@@ -169,6 +169,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
         if record is None or record['expires'] <= clock():
             raise HTTPException(404, 'authorization expired or unavailable; restart connect in SocialCli')
         legacy.require(db,'authorization',authorization_id,record)
+        if record['payload'].get('saas'):
+            app.state.saas_connections.authorization(db,authorization_id)
         if record['payload']['status'] != 'pending' or 'state' in record['payload']:
             raise HTTPException(409, 'this authorization has already started; restart connect in SocialCli')
         return record
@@ -260,6 +262,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
                     or not hmac.compare_digest(state,data.get('state',''))
                     or not cookie or not hmac.compare_digest(digest(cookie),data.get('browser_hash',''))):
                 raise HTTPException(400, 'invalid authorization callback')
+            if data.get('saas'):
+                app.state.saas_connections.authorization(db,authorization_id)
             # Consume state before contacting the provider. An uncertain exchange
             # is never retried with the same authorization code.
             data.pop('state',None)
@@ -282,6 +286,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
                 current = vault.get(db,'authorization',authorization_id)
                 if current is not None and current['expires'] > clock():
                     legacy.require(db,'authorization',authorization_id,current)
+                    if current['payload'].get('saas'):
+                        app.state.saas_connections.authorization(db,authorization_id)
                     vault.put(db,'authorization',authorization_id,data,expires=current['expires'],credential_hash=current['credential_hash'])
             response = browser_page('Authorization received. No content was published.' if data['status']=='ready'
                                     else 'Authorization could not be completed. Check permissions and app configuration.', success=data['status']=='ready')

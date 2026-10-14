@@ -2,6 +2,8 @@
 from socialctl.connections.saas_client import MESSAGES, ServiceRejected, TransportFailure
 
 _ACTIONS = {
+    'platform_not_allowed': 'user_action',
+    'installation_permissions_invalid': 'user_action',
     'provider_authorization_expired': 'reconnect',
     'provider_permissions_changed': 'reconnect',
     'renewal_uncertain': 'reconcile',

@@ -149,7 +149,7 @@ def test_unstarted_trial_never_creates_reminder_and_schema_upgrade_preserves_ide
     from socialctl.saas.store import SaaSStore
     metadata,now=setup(tmp_path)
     with metadata.vault.transaction() as db:
-        db.execute('DROP TABLE saas_reminders');db.execute('DELETE FROM saas_schema WHERE version=6')
+        db.execute('DROP TABLE saas_reminders');db.execute('DELETE FROM saas_schema WHERE version>=6')
     upgraded=SaaSStore(metadata.vault,metadata.eligibility_keys)
     assert Reminders(upgraded,lambda:now[0],'https://social.example').run(Mailbox())['accepted']==0
     assert states(upgraded)==[]

@@ -42,7 +42,7 @@ def inspect_status(database,keys,*,now=None):
             db.row_factory=sqlite3.Row
             db.set_progress_handler(lambda:int(budget.expired()),1000)
             db.execute('BEGIN')
-            if db.execute('SELECT max(version) FROM saas_schema').fetchone()[0]!=6:
+            if db.execute('SELECT max(version) FROM saas_schema').fetchone()[0]!=7:
                 return {'status':'attention','issues':['schema_incompatible'],'counts':{}}
             queries={
                 'billing_events_due':("SELECT count(*) FROM saas_billing_events WHERE state='pending' AND next_attempt<=?",(now,)),

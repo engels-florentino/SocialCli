@@ -16,6 +16,8 @@ class ServiceRejected(ValueError):
 
 
 MESSAGES={
+    'platform_not_allowed':'The owner has not approved this assistant for that SocialCli connection. Review the selected platforms with the owner; do not reconnect automatically.',
+    'installation_permissions_invalid':'This installation has invalid permissions. Ask the owner to revoke it and link the assistant again.',
     'renewal_required':'Provider token needs renewal by an explicitly authorized operation.',
     'renewal_pending':'Provider renewal is pending. Try again later.',
     'renewal_uncertain':'Provider renewal could not be confirmed. Check your SocialCli account.',

@@ -12,7 +12,7 @@ from socialctl.saas.auth import digest
 from socialctl.saas.pairing import proof,INSTALLATION_SECONDS
 from socialctl.saas.routes import read_form
 from socialctl.saas.access import AccessControl
-from socialctl.saas import renewal
+from socialctl.saas import renewal, permissions
 from socialctl.connection_service.providers import RefreshFailure
 
 OAUTH_SECONDS=600
@@ -50,6 +50,11 @@ class Connections:
             raise HTTPException(401,'account_unavailable: Sign in to SocialCli again.')
         return user_id
 
+    def require_platform(self,db,installation_id,platform):
+        self.owner(db,installation_id)
+        installation=self.vault.get(db,'saas-installation',installation_id)
+        permissions.require(installation['payload'],platform)
+
     def allowed(self,db,user_id,*,new=False):
         decision=self.access.decision(db,user_id,self.clock())
         if not decision.allowed and not (new and decision.reason=='trial_not_started'):
@@ -69,11 +74,13 @@ class Connections:
         if request is not None and not hmac.compare_digest(record['credential_hash'],proof(request)):
             raise HTTPException(404,'Authorization unavailable.')
         owner=self.owner(db,record['payload']['saas']['installation_id'])
+        self.require_platform(db,record['payload']['saas']['installation_id'],record['payload']['platform'])
         if owner!=record['payload']['saas']['user_id'] or user is not None and owner!=user.id:
             raise HTTPException(403,'This connection belongs to another account.')
         return record
 
     def candidate(self,db,installation_id,user_id,platform,label,account,*,grant=None,existing=None,expected=None):
+        self.require_platform(db,installation_id,platform)
         connection_id,secret=secrets.token_urlsafe(24),secrets.token_urlsafe(32)
         data={'installation_id':installation_id,'user_id':user_id,'platform':platform,'brand':label,
               'account':safe_account(account),'expected_grant':expected,'existing_grant':existing}
@@ -82,7 +89,7 @@ class Connections:
         return {'version':1,'connection_id':connection_id,'connection_secret':secret,'platform':platform,
                 'account':data['account'],'granted_scopes':grant['granted_scopes'] if grant else [],'status':'selected'}
 
-    def capability(self,db,connection_id,request,*,require_slot=True):
+    def capability(self,db,connection_id,request,*,require_slot=True,require_access=True):
         record=self.vault.get(db,'saas-capability',connection_id)
         if record is None:
             candidate=self.vault.get(db,'saas-candidate',connection_id)
@@ -94,6 +101,7 @@ class Connections:
         data=record['payload']
         if self.owner(db,data['installation_id'])!=data['user_id']:
             raise HTTPException(403,'Connection ownership mismatch.')
+        if require_access:self.require_platform(db,data['installation_id'],data['platform'])
         slot=db.execute('SELECT * FROM saas_slots WHERE user_id=? AND platform=?',(data['user_id'],data['platform'])).fetchone()
         if require_slot and (slot is None or slot['grant_id']!=data['grant_id']):
             raise HTTPException(409,'connection_replaced: Select the current connection in your SocialCli account.')
@@ -109,6 +117,7 @@ class Connections:
             if candidate is None or candidate['expires']<=self.clock() or not hmac.compare_digest(candidate['credential_hash'],proof(request)):
                 raise HTTPException(404,'Connection activation expired.')
             data=candidate['payload'];user_id=self.owner(db,data['installation_id'])
+            self.require_platform(db,data['installation_id'],data['platform'])
             if user_id!=data['user_id']: raise HTTPException(403,'Connection ownership mismatch.')
             self.allowed(db,user_id,new=True)
             brand=self.brand(db,user_id,data['brand'])
@@ -176,6 +185,7 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
         auth_id=secrets.token_urlsafe(24)
         with vault.transaction() as db:
             installation=connections.installations.require(db,installation_id,request)
+            connections.require_platform(db,installation_id,body.platform)
             user_id=installation['payload']['user_id']
             connections.allowed(db,user_id,new=True);connections.brand(db,user_id,body.brand)
             if not metadata.admit(db,'oauth-installation:'+installation_id,clock(),limit=5):
@@ -191,6 +201,7 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
     def attach(installation_id:str,body:AttachRequest,request:Request):
         with vault.transaction() as db:
             installation=connections.installations.require(db,installation_id,request)
+            connections.require_platform(db,installation_id,body.platform)
             user_id=installation['payload']['user_id'];connections.allowed(db,user_id);connections.brand(db,user_id,body.brand)
             slot=db.execute('SELECT grant_id FROM saas_slots WHERE user_id=? AND platform=?',(user_id,body.platform)).fetchone()
             grant=vault.get(db,'saas-grant',slot['grant_id']) if slot else None
@@ -258,7 +269,7 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
     @app.get('/api/saas/v1/connections/{connection_id}')
     def status(connection_id:str,request:Request):
         with vault.transaction() as db:
-            cap=connections.capability(db,connection_id,request);data=cap['payload']
+            cap=connections.capability(db,connection_id,request,require_access=False);data=cap['payload']
             grant=vault.get(db,'saas-grant',data['grant_id'])
             if grant is None or grant['expires']<=clock():
                 raise HTTPException(409,'connection_inactive: This SocialCli connection expired after inactivity.')

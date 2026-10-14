@@ -15,7 +15,7 @@ class SaaSStore:
         with vault.transaction() as db:
             db.execute('CREATE TABLE IF NOT EXISTS saas_schema (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)')
             version = db.execute('SELECT coalesce(max(version),0) FROM saas_schema').fetchone()[0]
-            if version > 6:
+            if version > 7:
                 raise ValueError('SaaS database is newer than this release; keep commercial access closed')
             if version < 1:
                 db.execute('CREATE TABLE saas_users (id TEXT PRIMARY KEY, created REAL NOT NULL, suspended INTEGER NOT NULL DEFAULT 0, deleting INTEGER NOT NULL DEFAULT 0, session_version INTEGER NOT NULL DEFAULT 0)')
@@ -40,6 +40,15 @@ class SaaSStore:
                 db.execute("CREATE TABLE saas_reminders (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,trial_end REAL NOT NULL,milestone INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'pending',next_attempt REAL NOT NULL DEFAULT 0,lease TEXT,lease_until REAL NOT NULL DEFAULT 0,UNIQUE(user_id,trial_end,milestone))")
                 db.execute('CREATE INDEX saas_reminders_due ON saas_reminders(state,next_attempt,trial_end)')
                 db.execute('INSERT INTO saas_schema(version) VALUES(6)')
+            if version < 7:
+                from socialctl.saas.permissions import policy, PLATFORMS
+                for row in db.execute("SELECT id FROM records WHERE kind='saas-installation'").fetchall():
+                    record = self.vault.get(db, 'saas-installation', row['id'])
+                    if 'platform_access' not in record['payload']:
+                        record['payload']['platform_access'] = policy(PLATFORMS, source='legacy_approval')
+                        self.vault.put(db, 'saas-installation', row['id'], record['payload'],
+                                       expires=record['expires'], credential_hash=record['credential_hash'])
+                db.execute('INSERT INTO saas_schema(version) VALUES(7)')
 
     def user(self, db, user_id):
         return db.execute('SELECT * FROM saas_users WHERE id=?',(user_id,)).fetchone()

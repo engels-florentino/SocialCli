@@ -128,3 +128,15 @@ The deployed candidate remains1fbaf1d and public remains0.2.6. The latest DNS
 lookup still returns no A record for pilot.socialcli.app. Drive authorization and
 external restore, HTTPS pilot, real signed webhooks, package publication and real
 Muse/Grok pilots are not established by this verification.
+
+
+## Pending schema7 connection-access update — not deployed
+
+The reviewed client/service increment after340c7b8 introduces explicit installation
+connection-platform policies and schema7.2703 macOS tests and16 installed-wheel
+policy tests pass. Current server remains schema6/1fbaf1d. Before deployment,
+verify Linux against the new artifact, take a fresh backup, stop every older service
+and maintenance writer, then migrate. An old process already running does not
+re-evaluate startup schema guards. Rollback must use schema7-compatible code;
+never restore an old database simply to downgrade code. No new customer access,
+provider revocation or fine-grained action permissions are claimed by this change.

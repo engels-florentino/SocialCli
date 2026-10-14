@@ -38,6 +38,7 @@ def install_migration_routes(app,settings,metadata,sessions,clock):
         if record is None or record['expires']<=clock() or request is not None and not hmac.compare_digest(record['credential_hash'],proof(request)):
             raise HTTPException(404,'migration_expired: Request a new migration link.')
         data=record['payload'];owner=connections.owner(db,data['installation_id'])
+        connections.require_platform(db,data['installation_id'],data['platform'])
         if owner!=data['user_id'] or user is not None and owner!=user.id:
             raise HTTPException(403,'This migration belongs to another account.')
         return record
@@ -48,6 +49,7 @@ def install_migration_routes(app,settings,metadata,sessions,clock):
         if not 16<=len(secret)<=512:raise HTTPException(404,'legacy_unavailable: The old connection is unavailable.')
         with vault.transaction() as db:
             installation=connections.installations.require(db,installation_id,request)
+            connections.require_platform(db,installation_id,body.platform)
             user_id=installation['payload']['user_id']
             if not metadata.admit(db,'migration-installation:'+installation_id,clock(),limit=5):
                 raise HTTPException(429,'Too many migration attempts. Wait a minute.')

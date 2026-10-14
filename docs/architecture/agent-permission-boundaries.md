@@ -1,7 +1,9 @@
 # Agent permission boundaries — verified 14 October 2026
 
-Status: architectural requirement still open; this document records evidence,
-not implemented fine-grained enforcement or provider approval.
+Status: fine-grained action enforcement remains open. The candidate now implements
+owner-selected SocialCli connection platforms per installation, enforced by the
+credential broker with schema7 and explicit legacy approval migration. This does
+not attenuate provider scopes or prove provider approval.
 
 ## Current implementation
 

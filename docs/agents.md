@@ -551,3 +551,21 @@ provider tokens. Do not advertise local agent instructions as an access-control 
 Container checks require verified MOV/MP4 brand metadata. Ambiguous Matroska/WebM
 identification is currently blocked even though TikTok supports WebM; supply an
 existing MOV/MP4 or use a separately validated route. No automatic conversion.
+
+## Installation connection access
+
+When the owner links an assistant, the browser lets them select its SocialCli
+connections by platform. The service checks this selection before OAuth, attaching
+an existing grant, migration, activation and token delivery. `account status --json`
+can include `platform_access` from installation status. Existing installations
+keep their previously approved access after the schema upgrade.
+
+`platform_not_allowed` and `installation_permissions_invalid` require owner review;
+never retry by silently reconnecting, choosing another brand or another installation.
+The account page shows the selection. To change it, the owner revokes the old
+installation and explicitly links a new one.
+
+This is a connection-broker boundary. It does not narrow provider tokens, which may
+carry permissions for linked accounts and additional actions. Per-action restrictions
+remain unavailable. Previously delivered provider tokens can remain valid after
+SocialCli revocation until they expire or are separately revoked at the provider.
