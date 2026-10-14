@@ -174,3 +174,18 @@ Server rollback copies: private/pre-meta-tiktok-service.env and
 private/pre-meta-tiktok-compose.yaml (secrets stay server-side). Existing matched
 local/Drive backup receipts were checked before deployment, maintenance timers
 restored afterwards, and a new encrypted backup was started.
+
+## Provider scope alignment — 2026-10-14
+
+Server image socialcli-saas-candidate:4f49d1b requests TikTok
+user.info.basic, video.upload, user.info.stats and video.list for new connections.
+Missing read consent fails closed; legacy refresh uses its stored scope contract.
+TDD: two failures before fix; 33 provider tests and full 2773-test suite passed.
+Fresh review found no important issues. Production TikTok remains Draft with
+read scopes documented; sandbox read scopes applied and persisted. No review
+submission or Direct Post activation. Google owner approved force-ssl for
+Histopast; exact channel verified and one comment thread read completely.
+A different video returned 403 and remains an explicit per-video limitation.
+Server deployment checked matching Drive backup receipts and resumed maintenance
+timers. Health passed and running TikTok authorization scope set verified.
+Public TestPyPI candidate remains immutable; this is a server-only scope fix.
