@@ -23,6 +23,9 @@ _ACTIONS = {
 # Only fixed internal codes acquire action semantics. Provider text is diagnostic,
 # never a command, an expiry signal or evidence that a write was not accepted.
 _CATALOG = {
+    'approval_mismatch': ('user_action', 'The supplied approval does not match this exact preview. Obtain the owner approval before applying.'),
+    'approval_required': ('user_action', 'Show the complete preview and obtain explicit approval of its exact fingerprint.'),
+    'operation_cancelled': ('inspect', 'Approval was cancelled. No write was started by this command.'),
     'operation_failed': ('inspect', 'Inspect the current state before taking another action.'),
     'service_rejected': ('inspect', 'Review account status and service availability.'),
     'invalid_local_state': ('user_action', 'Review arguments, local account state and protected credential storage.'),

@@ -24,6 +24,7 @@ from socialctl.management.meta_comment_inbox import (
 )
 from socialctl.models import Platform
 from socialctl.publication_steps import PublicationStore, retry_first_comment
+from socialctl.operation_output import OperationOutput
 
 comments_app = typer.Typer(help="Durable Facebook/Instagram comments on owned media; Instagram does not allow text editing.")
 
@@ -202,47 +203,46 @@ def apply_draft(media_id: str, comment_id: str,
                 brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                 max_replies: int = typer.Option(10, "--max-replies", min=1,
                     help="Maximum reply intentions within window and account."),
-                window_seconds: int = typer.Option(3600, "--window-seconds", min=1)):
+                window_seconds: int = typer.Option(3600, "--window-seconds", min=1),
+                json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr.")):
     """Display preview and apply only after entering exact fingerprint."""
-    selected = _brand(root, brand)
-    try:
+    with OperationOutput(json_output) as output:
+        selected = output.brand(root, brand)
         record = _inbox_record(selected, platform, media_id, comment_id)
         if not record.change_id:
             raise ChangeError("comment has no draft")
         change = CommentStore(selected.raiz).load(record.change_id)
-        typer.echo(render_draft_preview(record, change))
-        digest = typer.prompt("Enter the exact fingerprint to approve")
-        if digest != change.fingerprint:
-            _fail("approval does not match exact fingerprint")
+        digest = output.approve(change, render_draft_preview(record, change))
         with make_http_client() as http:
-            result = apply_inbox_draft(MetaCommentsClient(selected, platform, http),
+            client = MetaCommentsClient(selected, platform, http)
+            output.begin_write()
+            result = apply_inbox_draft(client,
                 CommentStore(selected.raiz), CommentInboxStore(selected.raiz),
                 media_id=media_id, comment_id=comment_id, approval_digest=digest,
                 max_replies=max_replies, window_seconds=window_seconds)
-    except (ChangeError, OSError) as exc:
-        _fail(str(exc))
-    typer.echo(_json(result.model_dump(mode="json")))
-    if result.status != "respondido":
-        raise typer.Exit(1)
+        output.emit(result)
+        if result.status != "respondido":
+            raise typer.Exit(1)
 
 
 @comments_app.command("reconcile-draft")
 def reconcile_draft(media_id: str, comment_id: str,
                     platform: Platform = typer.Option(..., "--platform"),
                     brand: str = typer.Option(..., "--brand"),
-                    root: Path = typer.Option(DEFAULT_ROOT, "--root")):
+                    root: Path = typer.Option(DEFAULT_ROOT, "--root"),
+                    json_output: bool = typer.Option(False, "--json", help="JSON result with recovery action; no remote writes.")):
     """GET only: reconcile uncertain outcome and never repeat POST."""
-    selected = _brand(root, brand)
-    try:
+    with OperationOutput(json_output, read_only=True) as output:
+        selected = output.brand(root, brand)
+        record = _inbox_record(selected, platform, media_id, comment_id)
+        output.change_id = record.change_id
         with make_http_client() as http:
             result = reconcile_inbox_draft(MetaCommentsClient(selected, platform, http),
                 CommentStore(selected.raiz), CommentInboxStore(selected.raiz),
                 media_id=media_id, comment_id=comment_id)
-    except (ChangeError, OSError) as exc:
-        _fail(str(exc))
-    typer.echo(_json(result.model_dump(mode="json")))
-    if result.status != "respondido":
-        raise typer.Exit(1)
+        output.emit(result)
+        if result.status != "respondido":
+            raise typer.Exit(1)
 
 
 @comments_app.command("prepare")
@@ -269,52 +269,49 @@ def prepare(media_id: str, platform: Platform = typer.Option(..., "--platform"),
 def status(change_id: str, brand: str = typer.Option(..., "--brand"),
            root: Path = typer.Option(DEFAULT_ROOT, "--root"), json_output: bool = typer.Option(False, "--json", help="Explicit JSON mode (already the default).")):
     """Display complete ChangeSet and journal without accessing Meta."""
-    selected = _brand(root, brand)
-    try:
+    with OperationOutput(json_output, read_only=True) as output:
+        selected = output.brand(root, brand)
         change = CommentStore(selected.raiz).load(change_id)
-    except ChangeError as exc:
-        _fail(str(exc))
-    typer.echo(_json(change.model_dump(mode="json")))
+        output.emit(change)
 
 
 @comments_app.command("apply")
 def apply(change_id: str, brand: str = typer.Option(..., "--brand"),
-          root: Path = typer.Option(DEFAULT_ROOT, "--root")):
+          root: Path = typer.Option(DEFAULT_ROOT, "--root"),
+          json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr.")):
     """Display full preview and require exact fingerprint entry; uncertain POST is never repeated."""
-    selected = _brand(root, brand)
-    store = CommentStore(selected.raiz)
-    try:
+    with OperationOutput(json_output) as output:
+        selected = output.brand(root, brand)
+        store = CommentStore(selected.raiz)
         change = store.load(change_id)
+        output.change_id = change.id
         if _inbox_record_for_change(selected, change):
-            _fail("this ChangeSet belongs to inbox; use comments apply-draft to preserve state and frequency")
-        typer.echo(render_comment_preview(change))
-        digest = typer.prompt("Enter the exact fingerprint to approve")
-        if digest != change.fingerprint:
-            _fail("approval does not match exact fingerprint")
+            raise ChangeError("this ChangeSet belongs to inbox; use comments apply-draft to preserve state and frequency")
+        digest = output.approve(change, render_comment_preview(change))
         with make_http_client() as http:
-            result = apply_comment(MetaCommentsClient(selected, Platform(change.platform), http), store, change_id, digest)
-    except (ChangeError, OSError) as exc:
-        _fail(str(exc))
-    typer.echo(_json(result.model_dump(mode="json")))
-    if result.status != "verified":
-        raise typer.Exit(1)
+            client = MetaCommentsClient(selected, Platform(change.platform), http)
+            output.begin_write()
+            result = apply_comment(client, store, change_id, digest)
+        output.emit(result)
+        if result.status != "verified":
+            raise typer.Exit(1)
 
 
 @comments_app.command("reconcile")
 def reconcile(change_id: str, brand: str = typer.Option(..., "--brand"),
-              root: Path = typer.Option(DEFAULT_ROOT, "--root")):
+              root: Path = typer.Option(DEFAULT_ROOT, "--root"),
+              json_output: bool = typer.Option(False, "--json", help="JSON result with recovery action; no remote writes.")):
     """Remote GET only: identical candidates do not prove creation; never POST."""
-    selected = _brand(root, brand)
-    store = CommentStore(selected.raiz)
-    try:
+    with OperationOutput(json_output, read_only=True) as output:
+        selected = output.brand(root, brand)
+        store = CommentStore(selected.raiz)
         change = store.load(change_id)
+        output.change_id = change.id
         if _inbox_record_for_change(selected, change):
-            _fail("this ChangeSet belongs to inbox; use comments reconcile-draft")
+            raise ChangeError("this ChangeSet belongs to inbox; use comments reconcile-draft")
         with make_http_client() as http:
             result = reconcile_comment(MetaCommentsClient(selected, Platform(change.platform), http), store, change_id)
-    except (ChangeError, OSError) as exc:
-        _fail(str(exc))
-    typer.echo(_json(result.model_dump(mode="json")))
+        output.emit(result)
 
 
 @comments_app.command("publication-status")

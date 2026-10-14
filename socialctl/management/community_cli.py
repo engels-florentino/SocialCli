@@ -8,6 +8,7 @@ import typer
 from socialctl.read_budget import active_read_budget, bounded_read, read_client
 
 from socialctl.management.changes import ChangeError
+from socialctl.operation_output import OperationOutput
 from socialctl.management.community_schema import load_edit
 from socialctl.management.community_changes import CommunityStore, prepare_community, apply_community, reconcile_community
 from socialctl.management.youtube_community import YouTubeCommunityClient
@@ -102,38 +103,36 @@ def register(content_app, default_root):
         typer.echo(render_preview(change))
 
     @community.command("status")
-    def status(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root")):
-        selected = _brand(root, brand)
-        try:
+    def status(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root"),
+               json_output: bool = typer.Option(False, "--json", help="JSON result with recovery action.")):
+        with OperationOutput(json_output, read_only=True) as output:
+            selected = output.brand(root, brand)
             change = CommunityStore(selected.raiz).load(change_id)
-        except ChangeError as exc:
-            _fail(str(exc))
-        typer.echo(_json(change.model_dump(mode="json")))
+            output.emit(change)
 
     @community.command("apply")
-    def apply(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root")):
-        selected = _brand(root, brand)
-        store = CommunityStore(selected.raiz)
-        try:
+    def apply(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root"),
+              json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr.")):
+        with OperationOutput(json_output) as output:
+            selected = output.brand(root, brand)
+            store = CommunityStore(selected.raiz)
             change = store.load(change_id)
-            typer.echo(render_preview(change))
-            approval = typer.prompt("Enter the exact fingerprint to approve")
-            if approval != change.fingerprint:
-                _fail("approval does not match exact fingerprint")
+            approval = output.approve(change, render_preview(change))
             with make_http_client() as http:
-                result = apply_community(YouTubeCommunityClient(selected, http), store, change_id, approval)
-        except (ChangeError, OSError) as exc:
-            _fail(str(exc))
-        typer.echo(_json(result.model_dump(mode="json")))
-        if result.status != "verified":
-            raise typer.Exit(1)
+                client = YouTubeCommunityClient(selected, http)
+                output.begin_write()
+                result = apply_community(client, store, change_id, approval)
+            output.emit(result)
+            if result.status != "verified":
+                raise typer.Exit(1)
 
     @community.command("reconcile")
-    def reconcile(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root")):
-        selected = _brand(root, brand)
-        try:
+    def reconcile(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root"),
+                  json_output: bool = typer.Option(False, "--json", help="JSON result with recovery action; no remote writes.")):
+        with OperationOutput(json_output, read_only=True) as output:
+            selected = output.brand(root, brand)
+            store = CommunityStore(selected.raiz)
+            output.change_id = store.load(change_id).id
             with make_http_client() as http:
-                result = reconcile_community(YouTubeCommunityClient(selected, http), CommunityStore(selected.raiz), change_id)
-        except (ChangeError, OSError) as exc:
-            _fail(str(exc))
-        typer.echo(_json(result.model_dump(mode="json")))
+                result = reconcile_community(YouTubeCommunityClient(selected, http), store, change_id)
+            output.emit(result)

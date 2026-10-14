@@ -409,7 +409,23 @@ requests account review; it does not prove revoked access. A token-refresh POST
 with uncertain delivery must not become a safe read retry. Some legacy adapters
 wrap typed causes, so their conservative fallback is inspection or account review.
 
-Legacy publish/mutation commands are not all converted to this taxonomy; inspect
+Meta `comments apply/reconcile/status/apply-draft/reconcile-draft` and YouTube
+`content youtube-community apply/reconcile/status` support explicit `--json`.
+Keep stdout and stderr separate: the complete preview and exact fingerprint prompt
+are on stderr; stdout is one result/error document. JSON does not approve anything.
+Show the complete preview to the owner before supplying their approved fingerprint.
+There is no `--yes` shortcut for these operations. EOF or a mismatched fingerprint
+stops before the mutation service.
+
+Successful results keep their existing fields. Nonverified durable results add
+`error_detail`; inspect their status, IDs and journal even if a legacy reconcile
+command exits 0. Failures before returning a durable result use `error`, plus
+`change_id` when known. A failure after entering the apply service conservatively
+requires reconciliation, including a failed journal save or interruption; it never
+means the write was rejected. Use the corresponding reconcile/status command,
+not a fresh proposal or another apply to retry a possibly completed write.
+
+Other publish/mutation commands are not all converted to this taxonomy; inspect
 their exit code, stderr and durable result as well. No action hint grants approval
 to reconnect, publish, delete or replay a write.
 
