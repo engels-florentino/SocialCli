@@ -218,3 +218,16 @@ No live database was replaced; no SMTP, Stripe or provider operation ran.
 The disposable PostgreSQL container and restored plaintext data/configuration
 were removed; a sanitized report remains on the server. Full Auth HTTP login
 rehearsal and off-host outage monitoring are not established by these checks.
+
+## Independent recovery passwords — 14 October 2026
+
+Both Restic passwords are now stored as separate concealed Password items in
+the owner's 1Password Personal vault: **SocialCli — Backup data recovery key**
+and **SocialCli — Backup configuration recovery key**. Each saved item was read
+back and compared in memory with its server password; both matched. Values
+travelled through captured SSH/stdin directly to the authenticated 1Password CLI,
+without appearing in chat, command arguments, shell history or plaintext files
+on the Mac. The owner enabled the desktop integration and authorized access.
+The vault items include repository paths and isolation/reconciliation instructions.
+This establishes independent password storage, not a test of losing access to
+the owner's Google or 1Password accounts; preserve those account recovery methods.
