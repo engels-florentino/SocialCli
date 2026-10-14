@@ -61,9 +61,9 @@ Approved master: `2026-10-13-socialcli-saas.md`. Execute natively in an isolated
 
 ### 14 October rollout checkpoint
 
-- Pilot CNAME is saved and publicly resolves to `socialcli.app`; HTTPS proxy is
-  still pending. NPM login is open in the operator's Safari through a loopback-only
-  SSH tunnel to `florentino.pro`, with the known server host key retained.
+- Pilot CNAME, public TLS, forced HTTPS, legacy-create cutoff and legal redirects
+  are verified. The owner completed real email OTP in Safari and reached the
+  authenticated English account page. The existing main service remains unchanged.
 - English-only product language is now an explicit repository rule. Scanned SaaS
   UI/email/public-page sources contain no Spanish copy. Spanish input recognition
   and comment-language detection are functional data, not UI translation defects.
@@ -85,3 +85,13 @@ native scheduling release gates are explicit there; they are not silently marked
   fixed; follow-up found no outstanding issues in the fixes. Full suite2416passed.
   Offline NPM cutoff/rollback rehearsal passed52cases; real public configuration
   and shared-vault cutover are still pending. See deploy/saas/branch-review.md.
+
+
+### Public account and direct billing acceptance
+
+Real owner email OTP succeeded in Safari. The permanent14-event Stripe test
+webhook received a signed direct HTTPS event, and actual maintenance changed it
+pending→done. Real resend found a delivery-counter/hash defect, reproduced by two
+regression tests and fixed in054bfd1. Full suite2772passed; independent review
+clean. Deployed resend: Stripe Workbench200 Delivered/Recovered, one done row.
+Hosted payment return and external agent onboarding remain separate acceptance gates.

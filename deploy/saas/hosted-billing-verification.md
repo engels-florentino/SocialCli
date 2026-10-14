@@ -140,3 +140,22 @@ verification and the original encrypted audit record, while accepting equivalent
 JSON content with a changed delivery counter. All other event-content differences
 remain rejected. Regression cases failed before the fix and pass afterwards.
 Deployment and successful Stripe redelivery must be recorded separately below.
+
+
+The fix passed all2772tests (one existing Starlette deprecation warning) and an
+independent incremental review with no findings. Image054bfd1 was built offline
+from the previous verified candidate dependencies and deployed after a successful
+local/Drive backup. No schema or public-main service change was required.
+
+A second manual resend after deployment was observed in Stripe Workbench as
+**HTTP200, Delivered, Recovered**, with response `{"received":true}`. SQLite still
+contained exactly one matching event in done state. The original failing attempts
+remain visible as historical evidence. This verifies direct HTTPS delivery and
+real Stripe redelivery, without duplicate processing. Fresh encrypted backups were
+requested after activation to protect the permanent webhook configuration.
+
+Still open: hosted Checkout/Portal return through the pilot origin, 3DS recovery,
+merchant identity separation (shared account still FloRent), real agent onboarding,
+and production provider/live-billing approval. The old return-URL404 paragraph above
+is historical; current pilot routes and real OTP are verified, but that alone does
+not establish the hosted payment return journey.

@@ -115,3 +115,14 @@ No account/API route is redirected to the main site. Nginx syntax verification
 passed after the final changes, and the existing socialcli.app remains200.
 Safari displayed the English sign-in page at the verified HTTPS origin.
 This completes public proxy activation, not OTP/checkout/provider acceptance.
+
+
+## Account and webhook acceptance — 14 October 2026
+
+Current candidate image: `socialcli-saas-candidate:054bfd1` (see pilot.compose.yaml).
+Real Safari OTP reached the authenticated English account page after the account
+Referrer-Policy correction in c19e811. A permanent test-only Stripe webhook now
+receives signed HTTPS events and systemd maintenance processes the durable queue.
+Actual Stripe redelivery exposed and then verified the fix in054bfd1: Workbench
+shows200 Delivered/Recovered, with exactly one done row retained. Full suite2772
+passed; independent incremental review was clean. Provider flags remain disabled.
