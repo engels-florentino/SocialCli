@@ -97,6 +97,7 @@ def render_preview(
     post: Post,
     errores: dict[Platform, list[ValidationError]],
     *,
+    brand: Brand | None = None,
     destinos: list[Platform] | None = None,
     motivo_exclusion: str = "not requested with --only",
 ) -> str:
@@ -119,6 +120,14 @@ def render_preview(
             else ""
         )
         lineas.append(f"--- {platform.value.upper()} ---{marca_exclusion}")
+        if platform is Platform.TIKTOK:
+            mode = (brand.cuentas.get('tiktok') or {}).get('mode', 'inbox') if brand else None
+            if mode == 'inbox':
+                lineas.append('Delivery: creator review — finish publishing in TikTok; not automatically scheduled.')
+            elif mode == 'direct':
+                lineas.append('Delivery: direct public publication after approval and provider checks; not automatically scheduled.')
+            else:
+                lineas.append('Delivery: TikTok mode unverified; inspect the explicit brand accounts.yml before approval.')
         if pp.title:
             lineas.append(f"Title: {pp.title}")
         if spec.valores_privacidad is not None:

@@ -21,7 +21,10 @@ def test_installed_agent_runs_from_external_workspace(tmp_path, monkeypatch, uv_
     home.mkdir()
     monkeypatch.setattr("socialctl.cli.Path.home", lambda: home)
     # Avoid loading an actual launchd agent; inspect and execute its real command.
-    monkeypatch.setattr("socialctl.cli.shutil.which", lambda name: "/unused/uv" if uv_available and name == "uv" else None)
+    monkeypatch.setattr("socialctl.cli.shutil.which", lambda name: '/test/launchctl' if name == 'launchctl' else "/unused/uv" if uv_available and name == "uv" else None)
+    real_run = subprocess.run
+    monkeypatch.setattr(subprocess, 'run', lambda argv, **kwargs:
+        subprocess.CompletedProcess(argv, 0, '', '') if argv[0] == '/test/launchctl' else real_run(argv, **kwargs))
     result = CliRunner().invoke(app, ["schedule-install", "--brand", "ExampleBrand", "--root", str(workspace)])
     assert result.exit_code == 0, result.output
     plist = home / "Library" / "LaunchAgents" / "com.socialctl.examplebrand.run-due.plist"

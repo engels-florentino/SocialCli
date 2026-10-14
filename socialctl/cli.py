@@ -64,6 +64,7 @@ from socialctl.metricas.piezas import PiezasIlegibles, actualizar_piezas
 from socialctl.metricas.resumen import escribir_resumen
 from socialctl.metricas.slugs import asignar_slugs
 from socialctl.models import Platform, Post, PostStatus
+from socialctl.workspace import default_root
 from socialctl.postfile import PostNoEncontrado, cargar_post
 from socialctl.publication_status import describe_result_with_observation
 from socialctl.publisher import (
@@ -86,6 +87,30 @@ from socialctl.scheduler import (
 )
 
 app = typer.Typer(help="Publish already produced content on YouTube, Facebook, Instagram and TikTok.")
+
+
+@app.command('agent-guide')
+def agent_guide():
+    """Read the packaged agent guide offline, without an account or workspace."""
+    from importlib.resources import files
+    typer.echo(files('socialctl.ui').joinpath('assets/agents.md').read_text(encoding='utf-8'))
+
+
+@app.command('delivery-options')
+def show_delivery_options(
+    brand_nombre: str = typer.Option(..., '--brand'),
+    root: Path = typer.Option(default_root(), '--root'),
+    json_output: bool = typer.Option(False, '--json'),
+):
+    """Explain delivery modes and limits; does not authenticate or send media."""
+    from socialctl.delivery_options import delivery_options
+    result = delivery_options(_cargar_marca(root, brand_nombre))
+    if json_output:
+        typer.echo(json.dumps(result, indent=2))
+    else:
+        typer.echo('SocialCli does not store customer media on its SaaS server.')
+        for platform, row in result['platforms'].items():
+            typer.echo(f"{platform}: {row['selected_delivery']} — {row['instruction']}")
 
 
 def _show_version(value: bool):
@@ -123,12 +148,9 @@ register_connections(app)
 from socialctl.connections.account_cli import account_app
 app.add_typer(account_app,name="account")
 from socialctl.management.community_batch_cli import register as register_community_batches
-from socialctl.workspace import default_root
 register_community_batches(changes_app, default_root())
 from socialctl.inbox_cli import register as register_inbox
 register_inbox(app, default_root())
-
-from socialctl.workspace import default_root
 
 RAIZ_POR_DEFECTO = default_root()
 
@@ -330,6 +352,7 @@ def _publicar_impl(
     typer.echo(
         render_preview(
             post, errores,
+            brand=brand,
             destinos=destinos if only is not None else None,
             motivo_exclusion=motivo_exclusion,
         )
@@ -662,7 +685,7 @@ def schedule(
     except ScheduleError as exc:
         _fallar(str(exc))
     errores = validar_todo(post, brand)
-    preview = render_preview(post, errores, destinos=destinos, motivo_exclusion="not requested for this schedule")
+    preview = render_preview(post, errores, brand=brand, destinos=destinos, motivo_exclusion="not requested for this schedule")
     bloqueantes = [p for p in destinos if errores.get(p)]
     if preview_json:
         from socialctl.schedule_remote import SchedulePreview
@@ -802,6 +825,7 @@ def schedule_batch(
             render_preview(
                 post,
                 errores,
+                brand=brand,
                 destinos=plataformas,
                 motivo_exclusion='not included in this batch entry',
             )
@@ -1030,6 +1054,10 @@ def schedule_install(
         ScheduleStore(brand.raiz).assert_ready()
     except ScheduleError as exc:
         _fallar(str(exc))
+    launchctl = shutil.which("launchctl")
+    if not launchctl:
+        _fallar('No launchd supervisor is available. Nothing was installed. On Linux, configure a persistent '
+                'executor for run-due and check schedule-doctor; an ephemeral agent cannot guarantee delivery.')
     agent_dir = Path.home() / "Library" / "LaunchAgents"
     agent_dir.mkdir(parents=True, exist_ok=True)
     label = f"com.socialctl.{brand.nombre.lower()}.run-due"
@@ -1048,15 +1076,57 @@ def schedule_install(
         "ProcessType": "Background",
     }
     plist_path.write_bytes(plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=False))
-    launchctl = shutil.which("launchctl")
     if launchctl:
         domain = f"gui/{os.getuid()}"
         subprocess.run([launchctl, "bootout", f"{domain}/{label}"], check=False, capture_output=True)
         result = subprocess.run([launchctl, "bootstrap", domain, str(plist_path)], check=False, capture_output=True)
         if result.returncode != 0:
-            typer.echo("Warning: the plist was saved, but launchd could not load it; check the system log.")
+            _fallar('The plist was saved, but launchd could not load it. The scheduler is not installed; check the system log.')
     typer.echo(f"Agent installed: {plist_path}")
     typer.echo("launchd will run it every 60 seconds; the Mac must be powered on and awake.")
+
+
+@app.command('schedule-doctor')
+def schedule_doctor(
+    brand_nombre: str = typer.Option(..., '--brand'),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO),
+    json_output: bool = typer.Option(False, '--json'),
+):
+    """Check local executor evidence. A heartbeat cannot prove future availability."""
+    from socialctl.executor import health
+    brand = _cargar_marca(root, brand_nombre)
+    if is_remote(brand.raiz):
+        result = {'version': 1, 'status': 'attention_required', 'server_media_storage': False,
+                  'persistent_supervision': 'unverified', 'unattended_delivery_guaranteed': False,
+                  'error': {'code': 'remote_executor_unverified', 'action': 'user_action',
+                            'message': 'Inspect the configured customer-owned remote executor; this command does not transfer media.'}}
+    else:
+        try:
+            observation = health(ScheduleStore(brand.raiz), now_utc())
+        except ScheduleError:
+            observation = {'state': 'unreadable', 'stale': True}
+        if observation.get('state') == 'error':
+            diagnostic = {'code': 'executor_error', 'action': 'user_action',
+                          'message': 'The executor reported an error; inspect its log before relying on the queue.'}
+        elif observation['stale']:
+            diagnostic = {'code': 'executor_unverified', 'action': 'user_action',
+                          'message': 'No recent executor evidence.'}
+        else:
+            diagnostic = {'code': 'supervision_unverified', 'action': 'user_action',
+                          'message': 'A recent execution was observed; persistent supervision still needs verification.'}
+        result = {'version': 1, 'brand': brand.nombre, 'status': 'attention_required',
+                  'heartbeat': observation, 'persistent_supervision': 'unverified',
+                  'unattended_delivery_guaranteed': False, 'server_media_storage': False,
+                  'error': diagnostic,
+                  'instruction': 'Keep the original files, credentials and a supervised executor available on '
+                      'the customer-owned machine. Use schedule-install on macOS; on Linux configure run-due '
+                      'with a persistent supervisor. Do not promise delivery from an ephemeral Muse/Grok session.'}
+    if json_output:
+        typer.echo(json.dumps(result, indent=2))
+    else:
+        typer.echo(result['error']['message'])
+        typer.echo(result.get('instruction', ''))
+    raise typer.Exit(1)
 
 
 @app.command("schedule-uninstall")

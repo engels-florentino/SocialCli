@@ -55,6 +55,82 @@ def test_prepare_readonly_stable_approve_and_changed_media(tmp_path):
     assert NativeStore(brand, brand='Histopast').get('clip').state == 'approved'
 
 
+def test_submit_api_without_pilot_never_claims_or_sends(tmp_path, monkeypatch):
+    brand, data = fixture(tmp_path)
+    data['route'] = 'api'
+    (brand / 'native.json').write_text(json.dumps(data))
+    d = digest(invoke(tmp_path, 'prepare', 'native.json', '--dry-run').output)
+    assert invoke(tmp_path, 'prepare', 'native.json', '--persist', '--approval-digest', d).exit_code == 0
+    assert invoke(tmp_path, 'approve', 'clip', '--approval-digest', d).exit_code == 0
+    import httpx
+    monkeypatch.setattr(httpx.Client, 'request', lambda *a, **kw: pytest.fail('network without eligibility'))
+    result = invoke(tmp_path, 'submit-api', 'clip')
+    assert result.exit_code == 1, result.output
+    report = json.loads(result.stdout)
+    assert report['state'] == 'ui_required'
+    assert report['calendar_visible'] is False
+    assert NativeStore(brand, brand='Histopast').get_attempts('clip') == []
+
+
+def test_submit_api_rejects_fabricated_or_foreign_eligibility(tmp_path):
+    brand, data = fixture(tmp_path)
+    data['route'] = 'api'
+    (brand / 'native.json').write_text(json.dumps(data))
+    d = digest(invoke(tmp_path, 'prepare', 'native.json', '--dry-run').output)
+    invoke(tmp_path, 'prepare', 'native.json', '--persist', '--approval-digest', d)
+    invoke(tmp_path, 'approve', 'clip', '--approval-digest', d)
+    (brand / 'pilot.json').write_text(json.dumps({'version': 1, 'platform': 'facebook',
+        'account_id': 'another-page', 'api_enabled': True, 'page_pilot_verified': 'true',
+        'evidence_ref': 'missing-evidence.txt'}))
+    result = invoke(tmp_path, 'submit-api', 'clip', '--eligibility', 'pilot.json')
+    assert result.exit_code == 1
+    assert 'eligibility' in result.output.lower()
+    assert NativeStore(brand, brand='Histopast').get_attempts('clip') == []
+
+
+def test_submit_api_after_interruption_reports_checkpoint_without_new_requests(tmp_path, monkeypatch):
+    from socialctl.native_schedule import facebook
+    import httpx
+    from zoneinfo import ZoneInfo
+    brand, data = fixture(tmp_path)
+    now = datetime.now(timezone.utc)
+    data.update(route='api', dispatch_after=(now - timedelta(minutes=1)).isoformat(),
+        publish_at=(now.astimezone(ZoneInfo('America/New_York')) + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0).isoformat())
+    (brand / 'native.json').write_text(json.dumps(data))
+    inventory = json.loads((brand / 'native-calendar.json').read_text())
+    inventory.update(coverage_start=(now - timedelta(days=1)).isoformat(), coverage_end=(now + timedelta(days=7)).isoformat())
+    (brand / 'native-calendar.json').write_text(json.dumps(inventory))
+    (brand / 'pilot.txt').write_text('Fictional HTTP test evidence only')
+    (brand / 'pilot.json').write_text(json.dumps(dict(version=1, platform='facebook', account_id='page-1',
+        api_enabled=True, page_pilot_verified=True, evidence_ref='pilot.txt')))
+    d = digest(invoke(tmp_path, 'prepare', 'native.json', '--dry-run').output)
+    assert invoke(tmp_path, 'prepare', 'native.json', '--persist', '--approval-digest', d).exit_code == 0
+    assert invoke(tmp_path, 'approve', 'clip', '--approval-digest', d).exit_code == 0
+    monkeypatch.setattr(facebook, 'obtener_token', lambda *args: 'fictional')
+    calls = []
+    def request(client, method, url, **kwargs):
+        calls.append((method, url))
+        req = httpx.Request(method, url)
+        if method == 'GET':
+            return httpx.Response(200, json={'id': 'page-1'}, request=req)
+        if 'rupload.facebook.com' in url:
+            return httpx.Response(200, json={'success': True}, request=req)
+        if kwargs['data']['upload_phase'] == 'START':
+            return httpx.Response(200, json={'video_id': 'video-123',
+                'upload_url': 'https://rupload.facebook.com/video-upload/v26.0/video-123'}, request=req)
+        raise httpx.ReadTimeout('Fictional lost FINISH response', request=req)
+    monkeypatch.setattr(httpx.Client, 'request', request)
+    first = invoke(tmp_path, 'submit-api', 'clip', '--eligibility', 'pilot.json')
+    assert first.exit_code == 1, first.output
+    assert json.loads(first.stdout)['remote_id'] == 'video-123'
+    count = len(calls)
+    again = invoke(tmp_path, 'submit-api', 'clip', '--eligibility', 'pilot.json')
+    assert again.exit_code == 1, again.output
+    assert json.loads(again.stdout)['remote_id'] == 'video-123'
+    assert json.loads(again.stdout)['state'] == 'uncertain'
+    assert len(calls) == count
+
+
 def test_digest_full_binding(tmp_path):
     brand, data = fixture(tmp_path)
     from socialctl.native_schedule.cli import proposal

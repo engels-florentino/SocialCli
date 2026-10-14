@@ -87,6 +87,22 @@ def test_api_gate_rejects_unpiloted_format_without_write(tmp_path):
     assert store.get(job.id).state == "blocked"
 
 
+def test_immediate_delivery_pilot_cannot_unlock_native_scheduling(tmp_path):
+    store, job = api_job(tmp_path)
+    payload = store.get_payload(job.id) | {'delivery_mode': 'native_schedule'}
+    changed = _replace(job, content_hash=hash_value(payload))
+    changed = _replace(changed, approval_digest=native_digest(changed, payload))
+    with store._db(write=True) as db:
+        store._save(db, changed)
+        db.execute('UPDATE jobs SET payload=? WHERE id=?', (json.dumps(payload), job.id))
+    adapter = Success()
+    result = dispatch_ready(WHEN - timedelta(hours=1), store.brand, store=store,
+        adapters={'facebook': adapter}, capabilities=CAPABILITY)
+    assert result == []
+    assert adapter.calls == 0
+    assert store.get(job.id).state == 'blocked'
+
+
 def test_concurrent_api_dispatch_has_one_mutating_call(tmp_path):
     store, job = api_job(tmp_path)
     adapter = Success()

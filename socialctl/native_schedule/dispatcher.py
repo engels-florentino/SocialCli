@@ -53,7 +53,9 @@ def dispatch_ready(now: datetime, brand: str, *, store: NativeStore,
         if job.route == 'api':
             capability = (capabilities or {}).get(job.platform, {})
             adapter = (adapters or {}).get(job.platform)
-            if delivery_route(job, capability, payload.get('options', {}).get('format')) != 'api' or adapter is None:
+            native_unverified = (delivery_mode == 'native_schedule'
+                and capability.get('verified_delivery_mode') != 'native_schedule')
+            if native_unverified or delivery_route(job, capability, payload.get('options', {}).get('format')) != 'api' or adapter is None:
                 store.transition(job.id,job.state,'blocked',now=now)
                 store.notice(job.id,'API capability/account unverified or adapter absent; new approval required',now=now)
                 continue

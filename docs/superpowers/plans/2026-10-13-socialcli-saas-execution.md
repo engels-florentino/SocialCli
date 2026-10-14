@@ -58,6 +58,13 @@ Approved master: `2026-10-13-socialcli-saas.md`. Execute natively in an isolated
 
 A green unit suite or local package does not mark these external requirements done.
 
+## Approved product follow-up
+
+See [agent readiness and all eight critique points](2026-10-13-socialcli-agent-readiness.md)
+for the no-server-media policy, per-platform launch modes, native API candidate,
+headless guide, scheduler diagnosis and error actions. Remaining critique items and
+native scheduling release gates are explicit there; they are not silently marked done.
+
 - Whole-branch review: four Important session/recovery defects reproduced and
   fixed; follow-up found no outstanding issues in the fixes. Full suite2416passed.
   Offline NPM cutoff/rollback rehearsal passed52cases; real public configuration

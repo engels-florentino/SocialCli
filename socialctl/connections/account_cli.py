@@ -142,6 +142,9 @@ def login(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(defa
     except (KeyboardInterrupt,typer.Abort):
         typer.echo('Sign-in interrupted. Run the same command to resume.',err=True);raise typer.Exit(1)
     except Exception as exc:
+        if json_output:
+            from socialctl.agent_errors import emit_error
+            emit_error(exc, read_only=False)
         typer.echo(str(exc) if isinstance(exc,ValueError) else 'Could not sign in safely. Your pending sign-in can be resumed.',err=True);raise typer.Exit(1)
     finally:
         if lock is not None:os.close(lock)
@@ -158,6 +161,9 @@ def status(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(def
             result=client.request('GET','/api/saas/v1/installations/'+opaque(saved['connection_id']),secret=keychain.get(brand,Slot.ACCOUNT,saved))
         output({**result,'status':'signed_in'},json_output)
     except Exception as exc:
+        if json_output:
+            from socialctl.agent_errors import emit_error
+            emit_error(exc, read_only=True)
         typer.echo(str(exc) if isinstance(exc,ValueError) else 'Could not read SocialCli installation status.',err=True);raise typer.Exit(1)
 
 

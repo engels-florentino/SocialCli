@@ -1,0 +1,114 @@
+"""Agent-facing delivery choices must not promise unattended cloud publishing."""
+import json
+
+from typer.testing import CliRunner
+
+from socialctl.brands import crear_brand
+from socialctl.cli import app
+from socialctl.models import CampaignType, Platform, PlatformPost, Post
+from socialctl.publisher import render_preview
+
+
+runner = CliRunner()
+
+
+def test_installed_guide_is_available_without_workspace_or_network(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ['agent-guide'])
+    assert result.exit_code == 0, result.output
+    assert 'socialcli account login' in result.stdout
+    assert 'socialcli publish' in result.stdout
+    assert 'socialcli inbox' in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_packaged_native_examples_support_preview_and_local_reconciliation(tmp_path):
+    """Exercise the guide's schemas using fictional evidence, with no remote writes."""
+    import hashlib
+    import re
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+    from socialctl.native_schedule.store import NativeStore
+    guide = runner.invoke(app, ['agent-guide']).stdout
+    def example(name):
+        section = guide.split(f'Example `{name}`', 1)[1]
+        return json.loads(section.split('```json\n', 1)[1].split('```', 1)[0])
+    brand = crear_brand(tmp_path, 'Example')
+    (brand.raiz / 'accounts.yml').write_text('facebook:\n  page_id: page-example\n')
+    (brand.raiz / 'clip.mp4').write_bytes(b'Fictional fixture, never uploaded')
+    now = datetime.now(timezone.utc)
+    inventory = example('native-calendar.json')
+    inventory.update(observed_at=now.isoformat(), coverage_start=(now-timedelta(days=1)).isoformat(),
+                     coverage_end=(now+timedelta(days=7)).isoformat())
+    manifest = example('native.json')
+    manifest.update(dispatch_after=(now-timedelta(minutes=1)).isoformat(),
+        publish_at=(now.astimezone(ZoneInfo('America/New_York'))+timedelta(days=2)).replace(hour=9,minute=0,second=0,microsecond=0).isoformat())
+    for name, data in [('native-calendar.json', inventory), ('native.json', manifest),
+                       ('operator-pilot.json', example('operator-pilot.json'))]:
+        (brand.raiz / name).write_text(json.dumps(data))
+    (brand.raiz / 'operator-pilot-evidence.txt').write_text('Fictional disabled pilot')
+    def invoke(*args):
+        return runner.invoke(app, ['native-schedule', *args, '--brand', 'Example', '--root', str(tmp_path)])
+    preview = invoke('prepare', 'native.json', '--dry-run')
+    assert preview.exit_code == 0, preview.output
+    approval = re.search(r'Approval digest: ([a-f0-9]{64})', preview.stdout)[1]
+    assert invoke('prepare', 'native.json', '--persist', '--approval-digest', approval).exit_code == 0
+    assert invoke('approve', manifest['id'], '--approval-digest', approval).exit_code == 0
+    blocked = invoke('submit-api', manifest['id'], '--eligibility', 'operator-pilot.json')
+    assert json.loads(blocked.stdout)['state'] == 'ui_required'
+    store = NativeStore(brand.raiz, brand='Example')
+    assert store.get_attempts(manifest['id']) == []
+    job = store.claim(manifest['id'], 'approved')
+    store.mark_api_submitted(job.id, job.attempt_id, 'fictional-remote-id')
+    evidence = b'Fictional calendar evidence for schema test only'
+    (brand.raiz / 'calendar-evidence.png').write_bytes(evidence)
+    observation = example('calendar-observation.json')
+    observation.update(job_id=job.id, content_hash=job.content_hash, approval_digest=approval,
+        remote_ref='fictional-remote-id', publish_at=job.publish_at.isoformat(),
+        observed_at=datetime.now(timezone.utc).isoformat(), evidence_sha256=hashlib.sha256(evidence).hexdigest())
+    (brand.raiz / 'calendar-observation.json').write_text(json.dumps(observation))
+    result = invoke('reconcile', job.id, '--observation', 'calendar-observation.json')
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)['state'] == 'native_scheduled'
+
+
+def test_delivery_choices_distinguish_tiktok_inbox_from_audited_direct(tmp_path):
+    brand = crear_brand(tmp_path, 'Example')
+    (brand.raiz / 'accounts.yml').write_text('tiktok:\n  open_id: creator-one\n')
+    common = ['--brand', 'Example', '--root', str(tmp_path), '--json']
+    result = runner.invoke(app, ['delivery-options', *common])
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert report['server_media_storage'] is False
+    tiktok = report['platforms']['tiktok']
+    assert tiktok['selected_delivery'] == 'creator_review'
+    assert tiktok['automatic_native_schedule'] is False
+    assert tiktok['direct_post_enabled'] is False
+    assert report['platforms']['instagram']['automatic_native_schedule'] is False
+    assert report['platforms']['facebook']['native_schedule_status'] == 'pilot_required'
+    (brand.raiz / 'accounts.yml').write_text('tiktok:\n  open_id: creator-one\n  mode: direct\n  auditada: true\n')
+    result = runner.invoke(app, ['delivery-options', *common])
+    row = json.loads(result.stdout)['platforms']['tiktok']
+    assert row['selected_delivery'] == 'direct_post'
+    assert row['direct_post_enabled'] is True
+    assert row['authorization_verified'] is False
+
+
+def test_tiktok_complete_preview_discloses_human_finish_in_inbox(tmp_path):
+    brand = crear_brand(tmp_path, 'Example')
+    post = Post(slug='clip', brand='Example', campaign=CampaignType.CLIP_VERTICAL,
+                platforms={Platform.TIKTOK: PlatformPost(platform=Platform.TIKTOK, body='Approved caption')})
+    preview = render_preview(post, {}, brand=brand)
+    assert 'creator review' in preview
+    assert 'finish publishing in TikTok' in preview
+    assert 'not automatically scheduled' in preview
+
+
+def test_tiktok_direct_preview_cannot_look_like_inbox(tmp_path):
+    brand = crear_brand(tmp_path, 'Example')
+    brand.cuentas['tiktok'] = {'mode': 'direct', 'auditada': True}
+    post = Post(slug='clip', brand='Example', campaign=CampaignType.CLIP_VERTICAL,
+                platforms={Platform.TIKTOK: PlatformPost(platform=Platform.TIKTOK, body='Approved caption')})
+    preview = render_preview(post, {}, brand=brand)
+    assert 'direct public publication' in preview
+    assert 'creator review' not in preview

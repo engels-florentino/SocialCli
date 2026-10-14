@@ -14,7 +14,7 @@ from .models import NativeJob, aware
 from .store import NativeStore
 from .inventory import validate_inventory, require_coverage
 
-native_app = typer.Typer(help='Native scheduling: prepare MANIFEST --dry-run, prepare --persist --approval-digest DIGEST, approve ID --approval-digest DIGEST. See NATIVE-SCHEDULING.md.')
+native_app = typer.Typer(help='Native scheduling: prepare MANIFEST --dry-run, prepare --persist --approval-digest DIGEST, approve ID --approval-digest DIGEST. See socialcli agent-guide for complete offline input examples.')
 ACCOUNT_KEYS = {'youtube':'channel_id','facebook':'page_id','instagram':'ig_user_id','tiktok':'open_id'}
 
 
@@ -42,7 +42,7 @@ def proposal(brand, manifest: str, *, inventory=None):
     reject_secrets(raw)
     required = {'id','platform','account_id','publish_at','dispatch_after','route','payload'}
     if not isinstance(raw, dict) or set(raw) != required:
-        raise ValueError('Invalid native manifest schema; see NATIVE-SCHEDULING.md')
+        raise ValueError('Invalid native manifest schema; see socialcli agent-guide')
     component(raw['id'])
     platform = raw['platform']
     if platform not in ACCOUNT_KEYS or raw['account_id'] != (brand.cuentas.get(platform) or {}).get(ACCOUNT_KEYS[platform]):
@@ -187,6 +187,63 @@ def output(value):
     text=json.dumps(value,indent=2,ensure_ascii=False,default=str)
     reject_secrets(text)
     typer.echo(text)
+
+
+def api_eligibility(chosen, job, filename):
+    from .facebook import FacebookEligibility
+    from .youtube import YouTubeEligibility
+    kind = {'facebook': FacebookEligibility, 'youtube': YouTubeEligibility}.get(job.platform)
+    if kind is None:
+        raise ValueError('Native API scheduling is not supported for this platform; no upload attempted')
+    if filename is None:
+        return kind()
+    path = artifact(chosen, filename)
+    if path.stat().st_size > 16384:
+        raise ValueError('Invalid eligibility file')
+    data = json.loads(path.read_text())
+    flags = ({'api_enabled', 'page_pilot_verified'} if job.platform == 'facebook'
+             else {'api_enabled', 'project_verified', 'studio_pilot_verified'})
+    if (not isinstance(data, dict) or set(data) != flags | {'version', 'platform', 'account_id', 'evidence_ref'}
+            or type(data['version']) is not int or data['version'] != 1 or data['platform'] != job.platform
+            or data['account_id'] != job.account_id or any(type(data[k]) is not bool for k in flags)):
+        raise ValueError('Invalid or mismatched native API eligibility')
+    reject_secrets(data)
+    evidence = data['evidence_ref']
+    if not isinstance(evidence, str) or not artifact(chosen, evidence).is_file() or not artifact(chosen, evidence).stat().st_size:
+        raise ValueError('Native API eligibility requires the operator-recorded pilot evidence')
+    return kind(**{k: v for k, v in data.items() if k not in {'version', 'platform'}})
+
+
+@native_app.command('submit-api')
+def submit_api(job_id: str, eligibility: str | None = typer.Option(None, '--eligibility'),
+               brand: str = typer.Option(..., '--brand'), root: Path = typer.Option(DEFAULT_ROOT)):
+    """Submit one approved YouTube/Facebook native schedule with operator pilot evidence."""
+    def operation():
+        import httpx
+        from socialctl.brands import cargar_brand
+        component(job_id)
+        # Media must stay on the client's executor. No implicit SSH or copying.
+        if is_remote(_validar_nombre_de_marca(root, brand)):
+            raise ValueError('Native submission requires the local customer workspace; no media transfer to the SaaS server')
+        chosen = cargar_brand(root, brand)
+        store = NativeStore(chosen.raiz, brand=brand)
+        job = store.get(job_id)
+        if job is None or not job.approval_digest:
+            raise ValueError('Existing job with explicit preview approval required')
+        payload = store.get_payload(job_id)
+        verify_approval(job, payload)
+        proof = api_eligibility(chosen, job, eligibility)
+        from .facebook import schedule_facebook
+        from .youtube import schedule_youtube
+        submit = schedule_facebook if job.platform == 'facebook' else schedule_youtube
+        with httpx.Client(timeout=60, follow_redirects=False) as client:
+            result = submit(job, payload, brand=chosen, store=store, client=client, eligibility=proof)
+        output({'job_id': job.id, 'state': result.state, 'remote_id': result.remote_id,
+                'calendar_visible': result.calendar_visible, 'reason': result.reason,
+                'server_media_storage': False})
+        if result.state != 'pending_verification':
+            raise typer.Exit(1)
+    run(operation)
 
 
 @native_app.command()

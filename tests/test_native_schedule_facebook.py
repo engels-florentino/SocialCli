@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -114,3 +114,47 @@ def test_gate_rejects_changed_payload_before_ui_handoff(tmp_path):
         schedule_facebook(
             job, changed, brand=brand, store=store, client=client
         )
+
+
+def test_eligible_reel_records_remote_id_but_requires_calendar_evidence(tmp_path, monkeypatch):
+    from socialctl.native_schedule import facebook
+    from socialctl.native_schedule.store import _replace
+    from zoneinfo import ZoneInfo
+    job, payload, brand, store = setup_job(tmp_path, format='reel')
+    job = _replace(job, publish_at=(datetime.now(ZoneInfo('America/New_York')) + timedelta(days=2)).replace(hour=9, minute=0, second=0))
+    # Native Graph schedules use integer seconds, explicitly approved as such.
+    job = _replace(job, publish_at=job.publish_at.replace(microsecond=0))
+    job = _replace(job, approval_digest=native_digest(job, payload))
+    with store._db(write=True) as db:
+        store._save(db, job)
+    monkeypatch.setattr(facebook, 'obtener_token', lambda *args: 'test-token')
+    writes = []
+    def network(request):
+        if request.method == 'GET' and request.url.path.endswith('/me'):
+            return httpx.Response(200, json={'id': 'page-123'})
+        if request.method == 'GET':
+            return httpx.Response(200, json={'id': 'video-123', 'from': {'id': 'page-123'},
+                'description': 'Approved copy', 'published': False,
+                'scheduled_publish_time': job.publish_at.isoformat()})
+        writes.append(request.url.host)
+        if request.url.host == 'rupload.facebook.com':
+            assert request.read() == b'image'
+            return httpx.Response(200, json={'success': True})
+        form = dict(httpx.QueryParams(request.read().decode()))
+        if form['upload_phase'] == 'START':
+            return httpx.Response(200, json={'video_id': 'video-123',
+                'upload_url': 'https://rupload.facebook.com/video-upload/v26.0/video-123'})
+        assert form['video_state'] == 'SCHEDULED'
+        return httpx.Response(200, json={'success': True})
+    client = httpx.Client(transport=httpx.MockTransport(network))
+    eligibility = facebook.FacebookEligibility(account_id='page-123', api_enabled=True,
+        page_pilot_verified=True, evidence_ref='fictional-pilot')
+    result = schedule_facebook(job, payload, brand=brand, store=store, client=client, eligibility=eligibility)
+    assert result.state == 'pending_verification'
+    assert result.calendar_visible is False
+    assert store.get(job.id).state == 'verifying'
+    assert store.get(job.id).remote_id == 'video-123'
+    assert len(writes) == 3
+    again = schedule_facebook(store.get(job.id), payload, brand=brand, store=store, client=client, eligibility=eligibility)
+    assert again.state == 'uncertain'
+    assert len(writes) == 3
