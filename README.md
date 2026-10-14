@@ -4,7 +4,7 @@
 
 **A social media CLI for AI agents and the people who supervise them.** Use a terminal-enabled assistant to inspect your accounts, draft posts and prepare user-approved actions on YouTube, Facebook, Instagram and TikTok. SocialCli provides concrete commands, validation, previews and local records for creators and teams.
 
-[Website and documentation](https://engels-florentino.github.io/SocialCli/) · [AI agent guide](docs/ai-agents.md) · [Setup](SETUP.md) · [Security](SECURITY.md) · [TikTok limitations](docs/tiktok-review.md)
+[Website and documentation](https://socialcli.app/) · [AI agent guide](docs/ai-agents.md) · [Setup](SETUP.md) · [Security](SECURITY.md) · [TikTok limitations](docs/tiktok-review.md)
 
 ## Work with your AI agent
 
@@ -18,14 +18,22 @@ Install SocialCli where your agent can run shell commands, point it at your crea
 
 [The AI agent guide](docs/ai-agents.md) includes the commands behind these prompts, workspace instructions and the approval workflow. JSON is available on supported diagnostics and inventory commands. SocialCli runs through the agent's shell; it does not include an AI model or an MCP server. Your agent must keep credentials private and preserve the distinction between confirmed, pending and uncertain results.
 
-## SaaS candidate
+## Public SaaS pilot
 
-This branch prepares **0.3.0rc1** with email sign-in, agent pairing, a 14-day trial
-and a USD 10/month subscription in Stripe test mode. It has not been published to
-PyPI or deployed over the public 0.2.6 service. Use the reviewed candidate wheel
-for testing; see [the candidate agent guide](docs/agents.md) and
-[release procedure](deploy/saas/release.md). `socialcli --version` reports the
-version in the agent's actual installed environment.
+Copy this line into your terminal-enabled AI assistant:
+
+> Install SocialCli: https://socialcli.app/agents
+
+Candidate **0.3.0rc1** is published on [TestPyPI](https://test.pypi.org/project/socialcli/0.3.0rc1/).
+The guide verifies the exact download and uses https://pilot.socialcli.app for
+email sign-in, assistant approval and account connections. Install separately from
+existing0.2.6 workspaces. The hosted pilot currently enables YouTube for configured
+Google test users; Meta and TikTok are not enabled on this SaaS service. Stripe
+uses test mode. Planned access costs USD10/month after14free days from the first
+successful connection. No real subscriptions are collected in this pilot.
+
+See [pilot testing](docs/pilot-testing.md). The operator/legacy examples below are
+not a replacement for the candidate's sign-in and pairing instructions.
 
 ## Install
 

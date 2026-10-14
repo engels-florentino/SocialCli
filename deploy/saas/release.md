@@ -121,3 +121,30 @@ When dispatching the release workflow, select **the reviewed tag** in GitHub's
 “Use workflow from” selector, as well as entering that same tag in the `tag` input.
 Checking out a tag inside a workflow started from `main` does not make that run a
 tag deployment; the environment tag policy applies to the workflow run ref.
+
+
+## Published pilot — 14 October 2026
+
+Owner explicitly requested publication and approved the protected TestPyPI deployment.
+Tag `v0.3.0rc1` points to `4dfb65149c7d7a3784a4fee6a1268623d3ef66cc`.
+[Release run38594828306](https://github.com/engels-florentino/SocialCli/actions/runs/38594828306)
+completed successfully: build/full tests, Linux and macOS clean-wheel smoke, and OIDC
+publication. The independent CI matrices also passed Python3.11,3.12and3.13.
+The downloaded GitHub artifacts and actual TestPyPI wheel matched these SHA256s:
+
+- Wheel: `7ea4495e81a6937e6f1689055e9374be66b4391e11f08983ba655cbaa99b509a`.
+- Sdist: `2e0a408edf41e9b96bbfefaa6128fae7e768d14e81c38f24aad7ec828aca2bc0`.
+
+Downloaded the wheel from TestPyPI release metadata, checked its hash, installed it
+in a clean Python3.12 environment outside the checkout with dependencies from normal
+PyPI, and passed the installed smoke for version/help/workspace/encrypted credentials/
+packaged guide. The human landing at https://socialcli.app and plain-text /agents
+both return200; Safari verified the live copy button. The guide explicitly uses
+the pilot origin and never directs agents to fetch single-use authorization links.
+Candidate image4dfb651 is healthy with only YouTube enabled. GoogleTesting and
+Stripe test-mode restrictions remain. Existing public0.2.6 connections are unchanged.
+
+This is a published test candidate, not a stable PyPI release or proof of actual
+Muse/Grok/Dots completion. The owner will perform those real-agent tests.
+The separate GitHub Pages deployment hit an external deployment timeout; the
+self-hosted socialcli.app deployment and all package release jobs succeeded.
