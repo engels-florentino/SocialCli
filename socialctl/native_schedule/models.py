@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator, model_serializer
 
 Digest = Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
 Nonempty = Annotated[str, Field(min_length=1, pattern=r'.*\S.*')]
@@ -40,6 +40,7 @@ class NativeJob(StrictModel):
     content_hash: Digest
     publish_at: datetime
     timezone_name: str
+    schedule_mode: Literal['legacy_daily', 'exact'] = 'legacy_daily'
     dispatch_after: datetime
     approval_digest: Digest | None = None
     route: Literal['api', 'ui', 'blocked']
@@ -50,6 +51,14 @@ class NativeJob(StrictModel):
     reconcile_after: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_serializer(mode='wrap')
+    def compatible_document(self, handler):
+        document = handler(self)
+        # Schema-2 clients forbid unknown fields; legacy-only writes stay readable.
+        if self.schedule_mode == 'legacy_daily':
+            document.pop('schedule_mode', None)
+        return document
 
     @field_validator('timezone_name')
     @classmethod

@@ -11,8 +11,8 @@ from pathlib import Path
 import sqlite3
 from uuid import uuid4
 
-from .cadence import reservation_day, ZONE
-from .inventory import validate_inventory, date
+from .cadence import reservation_key, slot_day, slots_conflict, ZONE
+from .inventory import validate_inventory, date, reschedule_inventory
 from .models import NativeJob, NativeObservation, aware
 from .verification import evidence_matches, verify
 
@@ -62,7 +62,7 @@ class NativeStore:
                 db.execute('PRAGMA synchronous=FULL')
                 db.execute('BEGIN IMMEDIATE')
                 version = db.execute('PRAGMA user_version').fetchone()[0]
-                if version not in (0, 1, 2):
+                if version not in (0, 1, 2, 3):
                     raise ValueError('Unsupported native ledger schema')
                 if version == 0:
                     for statement in (
@@ -74,9 +74,9 @@ class NativeStore:
                         db.execute(statement)
                     db.execute('INSERT INTO context VALUES (?)', (self.brand,))
                     db.execute('PRAGMA user_version=1')
-            if db.execute('PRAGMA user_version').fetchone()[0] not in (1, 2):
+            if db.execute('PRAGMA user_version').fetchone()[0] not in (1, 2, 3):
                 raise ValueError('Unsupported native ledger schema')
-            if db.execute('PRAGMA user_version').fetchone()[0] == 2:
+            if db.execute('PRAGMA user_version').fetchone()[0] in (2, 3):
                 for table in ('calendar_inventory','external_reservations'):
                     if not db.execute('SELECT 1 FROM sqlite_master WHERE type="table" AND name=?',(table,)).fetchone():
                         raise ValueError('Calendar reservation ledger missing; keep writers stopped and recover evidence')
@@ -86,7 +86,8 @@ class NativeStore:
                 db.execute('CREATE INDEX IF NOT EXISTS external_slot ON external_reservations(platform,account_id,day)')
                 # Old native writers must reject this ledger rather than ignore
                 # the external reservations they do not know how to enforce.
-                db.execute('PRAGMA user_version=2')
+                if db.execute('PRAGMA user_version').fetchone()[0] < 2:
+                    db.execute('PRAGMA user_version=2')
                 db.execute('CREATE TABLE IF NOT EXISTS action_events (job_id TEXT NOT NULL, data TEXT NOT NULL)')
                 db.execute('CREATE TABLE IF NOT EXISTS actions (job_id TEXT PRIMARY KEY, data TEXT NOT NULL)')
                 db.execute('CREATE TABLE IF NOT EXISTS holds (job_id TEXT PRIMARY KEY, platform TEXT NOT NULL, account_id TEXT NOT NULL, day TEXT NOT NULL, UNIQUE(platform,account_id,day))')
@@ -146,18 +147,41 @@ class NativeStore:
             self._record_inventory(db,inventory)
 
     @staticmethod
-    def _external_occupied(db, platform, account_id, day, *, remote_ref=None, publish_at=None):
-        if remote_ref is not None and publish_at is not None:
-            return db.execute(
-                'SELECT 1 FROM external_reservations WHERE platform=? AND account_id=? AND day=? AND NOT (remote_ref=? AND publish_at=?)',
-                (platform,account_id,day,remote_ref,publish_at.isoformat())).fetchone() is not None
-        return db.execute('SELECT 1 FROM external_reservations WHERE platform=? AND account_id=? AND day=?',
-                          (platform,account_id,day)).fetchone() is not None
+    def _external_occupied(db, platform, account_id, key, *, remote_ref=None, publish_at=None):
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='external_reservations'").fetchone():
+            return False
+        column, value = ('publish_at', key[3:]) if key.startswith('at:') else ('day', key)
+        # Column is selected only from the two constants above.
+        rows = db.execute(f'SELECT remote_ref,publish_at FROM external_reservations WHERE platform=? AND account_id=? AND {column}=?',
+                          (platform, account_id, value))
+        return any(not (remote_ref is not None and publish_at is not None
+                        and row['remote_ref'] == remote_ref and row['publish_at'] == publish_at.isoformat())
+                   for row in rows)
 
     @classmethod
     def _check_external(cls, db, job):
-        if cls._external_occupied(db,job.platform,job.account_id,reservation_day(job.publish_at,job.timezone_name)):
+        if cls._external_occupied(db,job.platform,job.account_id,reservation_key(job)):
             raise ValueError('Slot reserved by external calendar evidence; reconcile before delivery')
+
+    @staticmethod
+    def _check_internal(db, job, *, exclude_id=None):
+        key = reservation_key(job)
+        for row in db.execute('SELECT id,day FROM jobs WHERE platform=? AND account_id=?',
+                              (job.platform,job.account_id)):
+            if row['id'] != exclude_id and slots_conflict(row['day'],key):
+                raise sqlite3.IntegrityError('Destination slot occupied by an existing job')
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='holds'").fetchone():
+            for row in db.execute('SELECT job_id,day FROM holds WHERE platform=? AND account_id=?',
+                                  (job.platform,job.account_id)):
+                if row['job_id'] != exclude_id and slots_conflict(row['day'],key):
+                    raise ValueError('Slot reserved by pending remote action')
+
+    def assert_available(self, job):
+        """Read-only preview check; admission rechecks atomically when persisted."""
+        with self._db() as db:
+            if db is not None:
+                self._check_external(db,job)
+                self._check_internal(db,job)
 
     def prepare(self, job: NativeJob, *, payload: dict, now: datetime | None = None, inventory: dict | None = None) -> NativeJob:
         now = _now(now)
@@ -168,7 +192,7 @@ class NativeStore:
             raise ValueError('Only new prepared jobs for this explicit brand may be inserted')
         if job.publish_at <= now:
             raise ValueError('Cannot prepare a past publication')
-        day = reservation_day(job.publish_at, job.timezone_name)
+        day = reservation_key(job)
         serialized_payload = json.dumps(payload, allow_nan=False)
         # Commit learned occupancy first, even if a competing admission rejects
         # this job. The following write transaction rechecks all reservations.
@@ -176,8 +200,10 @@ class NativeStore:
             self.record_inventory(inventory)
         with self._db(write=True) as db:
             self._check_external(db,job)
-            if db.execute('SELECT 1 FROM holds WHERE platform=? AND account_id=? AND day=?', (job.platform,job.account_id,day)).fetchone():
-                raise ValueError('Slot reserved by pending remote action')
+            self._check_internal(db,job)
+            if job.schedule_mode == 'exact':
+                # Older clients must reject these instant keys instead of ignoring them.
+                db.execute('PRAGMA user_version=3')
             db.execute('INSERT INTO jobs VALUES (?,?,?,?,?,?,?)',
                 (job.id, job.legacy_entry_id, job.platform, job.account_id, day,
                  job.model_dump_json(), serialized_payload))
@@ -349,7 +375,7 @@ class NativeStore:
                              or observation.observed_at > job.reconcile_after)
             mutable = job.state not in {'cancelled', 'published'}
             calendar_conflict = self._external_occupied(db,job.platform,job.account_id,
-                reservation_day(job.publish_at,job.timezone_name),
+                reservation_key(job),
                 remote_ref=observation.remote_ref,publish_at=observation.publish_at)
             valid = (historical_valid and target_matches and not calendar_conflict and delivery_started and current
                      and after_barrier and mutable)
@@ -397,7 +423,7 @@ class NativeStore:
                 days |= {row[0] for row in db.execute('SELECT day FROM holds WHERE platform=? AND account_id=?',(platform,account_id))}
             if db.execute("SELECT 1 FROM sqlite_master WHERE name='external_reservations'").fetchone():
                 days |= {row[0] for row in db.execute('SELECT day FROM external_reservations WHERE platform=? AND account_id=?',(platform,account_id))}
-            return days
+            return {slot_day(key) for key in days}
 
     def get_action(self, job_id):
         with self._db() as db:
@@ -406,7 +432,7 @@ class NativeStore:
             row=db.execute('SELECT data FROM actions WHERE job_id=?',(job_id,)).fetchone()
             return json.loads(row[0]) if row else None
 
-    def save_action(self, job, action):
+    def save_action(self, job, action, *, now=None):
         with self._db(write=True) as db:
             if self._get(db,job.id) != job:
                 raise ValueError('Job changed; review a new preview')
@@ -415,10 +441,11 @@ class NativeStore:
                 raise ValueError('An action already owns this job; reconcile it')
             if action['kind']=='reschedule':
                 target=NativeJob.model_validate_json(action['job'])
+                if target.schedule_mode == 'exact':
+                    self._record_inventory(db,reschedule_inventory(self.path.parent,target,now=_now(now)))
                 self._check_external(db,target)
-                day=reservation_day(target.publish_at,target.timezone_name)
-                if db.execute('SELECT 1 FROM jobs WHERE platform=? AND account_id=? AND day=? AND id<>?',(job.platform,job.account_id,day,job.id)).fetchone():
-                    raise ValueError('Destination slot occupied')
+                day=reservation_key(target)
+                self._check_internal(db,target,exclude_id=job.id)
                 db.execute('INSERT INTO holds VALUES (?,?,?,?)',(job.id,job.platform,job.account_id,day))
             db.execute('INSERT OR REPLACE INTO actions VALUES (?,?)',(job.id,json.dumps(action)))
             db.execute('INSERT INTO action_events VALUES (?,?)',(job.id,json.dumps(action)))
@@ -431,12 +458,16 @@ class NativeStore:
             action=json.loads(row[0]) if row else None
             if not action or action['status'] != 'approved':
                 raise ValueError('Approved action required; submitted actions cannot be retried')
-            if job.model_dump(mode='json') != action['preview']['before']:
+            prior_job = NativeJob.model_validate_json(json.dumps(action['preview']['before']))
+            if job != prior_job:
                 raise ValueError('Job changed since action approval; reconcile before submission')
             if action['kind']=='reschedule' and NativeJob.model_validate_json(action['job']).publish_at <= now:
                 raise ValueError('Destination date expired; no remote write authorized')
             if action['kind']=='reschedule':
-                self._check_external(db,NativeJob.model_validate_json(action['job']))
+                target=NativeJob.model_validate_json(action['job'])
+                if target.schedule_mode == 'exact':
+                    self._record_inventory(db,reschedule_inventory(self.path.parent,target,now=now))
+                self._check_external(db,target)
             action.update(status='submitted',submitted_at=now.isoformat())
             db.execute('UPDATE actions SET data=? WHERE job_id=?',(json.dumps(action),job_id))
             db.execute('INSERT INTO action_events VALUES (?,?)',(job_id,json.dumps(action)))
@@ -473,7 +504,7 @@ class NativeStore:
                 and observation.publish_at==target.publish_at
                 and ((action['kind']=='cancel' and observation.state=='cancelled')
                      or (action['kind']=='reschedule' and verify(target,observation,now=now))))
-            if action['kind']=='reschedule' and self._external_occupied(db,target.platform,target.account_id,reservation_day(target.publish_at,target.timezone_name),remote_ref=observation.remote_ref,publish_at=observation.publish_at):
+            if action['kind']=='reschedule' and self._external_occupied(db,target.platform,target.account_id,reservation_key(target),remote_ref=observation.remote_ref,publish_at=observation.publish_at):
                 valid = False
             db.execute('INSERT INTO observations(job_id,data,verified) VALUES (?,?,?)',(job.id,observation.model_dump_json(),int(valid)))
             if not valid:
@@ -487,7 +518,7 @@ class NativeStore:
             updated=_replace(target,state='cancelled' if action['kind']=='cancel' else 'native_scheduled',
                 remote_id=observation.remote_ref,updated_at=now,observation_watermark=observation.observed_at,reconcile_after=job.reconcile_after)
             if action['kind']=='reschedule':
-                db.execute('UPDATE jobs SET day=? WHERE id=?',(reservation_day(target.publish_at,target.timezone_name),job.id))
+                db.execute('UPDATE jobs SET day=? WHERE id=?',(reservation_key(target),job.id))
             self._save(db,updated)
             db.execute('DELETE FROM holds WHERE job_id=?',(job.id,))
             action['status']='confirmed'

@@ -3,10 +3,11 @@ from datetime import datetime, timezone
 import json
 from uuid import uuid4
 from .approval import hash_value, native_digest, verify_approval
-from .cadence import reservation_day
+from .cadence import reservation_day, exact_time
 from .handoff import _target, record_observation
 from .models import NativeJob, NativeObservation, aware
 from .store import NativeStore
+from .inventory import reschedule_inventory
 
 
 def action_preview(job_id, kind, *, store: NativeStore, publish_at=None, now=None):
@@ -24,9 +25,14 @@ def action_preview(job_id, kind, *, store: NativeStore, publish_at=None, now=Non
     if kind=='reschedule':
         if publish_at is None or aware(publish_at) <= now:
             raise ValueError('Future destination timestamp required')
-        reservation_day(publish_at,job.timezone_name)
+        if job.schedule_mode == 'exact':
+            publish_at = exact_time(publish_at, job.timezone_name)
+        else:
+            reservation_day(publish_at,job.timezone_name)
         target=NativeJob.model_validate(job.model_dump() | {'publish_at':aware(publish_at)})
         target=NativeJob.model_validate(target.model_dump() | {'approval_digest':native_digest(target,payload)})
+        if target.schedule_mode == 'exact':
+            reschedule_inventory(store.path.parent,target,now=now)
     elif publish_at is not None:
         raise ValueError('Cancel has no destination timestamp')
     document={'kind':kind,'job_id':job.id,'remote_ref':job.remote_id,'account_id':job.account_id,
@@ -44,7 +50,7 @@ def approve_action(job_id, digest, *, store, kind, publish_at=None, now=None):
     action={'id':str(uuid4()),'kind':kind,'digest':digest,'status':'approved',
         'job':NativeJob.model_validate_json(json.dumps(preview['document']['after'])).model_dump_json(),
         'preview':preview['document']}
-    store.save_action(job,action)
+    store.save_action(job,action,now=now)
     return action
 
 

@@ -3,13 +3,14 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
+from zoneinfo import ZoneInfo
 
 import typer
 
 from socialctl.brands import cargar_brand, _validar_nombre_de_marca
 from socialctl.schedule_remote import DEFAULT_ROOT, is_remote, send_native
 from .approval import approval_document, hash_value, media_hashes, reject_secrets, validate_payload, verify_approval
-from .cadence import ZONE, ZONE_NAME, plan_slots, reservation_day
+from .cadence import ZONE, ZONE_NAME, plan_slots, reservation_day, exact_time
 from .models import NativeJob, aware
 from .store import NativeStore
 from .inventory import validate_inventory, require_coverage
@@ -41,7 +42,7 @@ def proposal(brand, manifest: str, *, inventory=None):
     raw = json.loads(path.read_text())
     reject_secrets(raw)
     required = {'id','platform','account_id','publish_at','dispatch_after','route','payload'}
-    if not isinstance(raw, dict) or set(raw) != required:
+    if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {'schedule'}:
         raise ValueError('Invalid native manifest schema; see socialcli agent-guide')
     component(raw['id'])
     platform = raw['platform']
@@ -64,23 +65,43 @@ def proposal(brand, manifest: str, *, inventory=None):
         if not Path(item['path']).is_relative_to(brand.raiz.resolve()) or '.secrets' in Path(item['path']).parts:
             raise ValueError('Media must remain inside brand root outside .secrets')
     validate_payload(platform, payload)
-    requested = aware(datetime.fromisoformat(raw['publish_at'].replace('Z','+00:00')))
-    reservation_day(requested, ZONE_NAME)
+    schedule = raw.get('schedule')
+    mode, zone = 'legacy_daily', ZONE_NAME
+    if 'schedule' in raw:
+        if (not isinstance(schedule, dict) or set(schedule) != {'mode', 'timezone'}
+                or schedule['mode'] != 'exact' or not isinstance(schedule['timezone'],str)):
+            raise ValueError('Schedule requires mode=exact and an explicit IANA timezone')
+        mode, zone = schedule['mode'], schedule['timezone']
+    entered = datetime.fromisoformat(raw['publish_at'].replace('Z','+00:00'))
+    requested = exact_time(entered,zone) if mode == 'exact' else aware(entered)
+    if mode == 'legacy_daily':
+        reservation_day(requested, ZONE_NAME)
     dispatch = aware(datetime.fromisoformat(raw['dispatch_after'].replace('Z','+00:00')))
     store = NativeStore(brand.raiz,brand=brand.nombre)
     inventory = calendar_inventory(brand) if inventory is None else inventory
-    calendars = validate_inventory(inventory,accounts=brand.cuentas,now=datetime.now(timezone.utc))
+    now = datetime.now(timezone.utc)
+    calendars = validate_inventory(inventory,accounts=brand.cuentas,now=now)
     if (platform,raw['account_id']) not in calendars:
         raise ValueError('Complete account calendar inventory required for destination')
-    occupied = store.reserved_days(platform,raw['account_id']) | calendars[platform,raw['account_id']]
-    final = plan_slots([requested],occupied=occupied)[0]
-    require_coverage(inventory,final)
+    if mode == 'exact':
+        if requested <= now:
+            raise ValueError('Exact publication time must be in the future')
+        final = requested
+        for item in inventory['objects']:
+            if (item['platform'] == platform and item['account_id'] == raw['account_id']
+                    and aware(datetime.fromisoformat(item['publish_at'].replace('Z','+00:00'))) == final):
+                raise ValueError('Exact publication time conflicts with external calendar evidence; choose another time')
+    else:
+        occupied = store.reserved_days(platform,raw['account_id']) | calendars[platform,raw['account_id']]
+        final = plan_slots([requested],occupied=occupied)[0]
+    require_coverage(inventory,final,zone)
     payload['requested_publish_at'] = requested.isoformat()
-    now = datetime.now(timezone.utc)
     job = NativeJob(id=raw['id'],brand=brand.nombre,platform=platform,account_id=raw['account_id'],
         media_hash=hash_value(media_hashes(payload)),content_hash=hash_value(payload),
-        publish_at=final,timezone_name=ZONE_NAME,dispatch_after=dispatch,
+        publish_at=final,timezone_name=zone,schedule_mode=mode,dispatch_after=dispatch,
         route=raw['route'],created_at=now,updated_at=now)
+    if mode == 'exact':
+        store.assert_available(job)
     return job,payload
 
 
@@ -132,9 +153,10 @@ def prepare(manifest: str, brand: str = typer.Option(...,'--brand'),
             return
         document = approval_document(job,payload)
         typer.echo(json.dumps(document,indent=2,ensure_ascii=False))
-        typer.echo(f'Final local: {job.publish_at.astimezone(ZONE).isoformat()} {ZONE_NAME}')
+        typer.echo(f'Final local: {job.publish_at.astimezone(ZoneInfo(job.timezone_name)).isoformat()} {job.timezone_name}')
         typer.echo(f'Final UTC: {job.publish_at.isoformat()}')
         typer.echo(f'Delivery: {job.dispatch_after.isoformat()}')
+        typer.echo(f'Schedule mode: {job.schedule_mode}')
         typer.echo(f'Overflow: requested {payload["requested_publish_at"]}; final {job.publish_at.isoformat()}; item preserved')
         typer.echo(f'Approval digest: {hash_value(document)}')
     run(operation)
@@ -332,7 +354,7 @@ def _register_action(kind):
             chosen=selected(root,brand,args)
             if chosen is None: return
             store=NativeStore(chosen.raiz,brand=brand)
-            when=aware(datetime.fromisoformat(publish_at.replace('Z','+00:00'))) if publish_at else None
+            when=datetime.fromisoformat(publish_at.replace('Z','+00:00')) if publish_at else None
             if dry_run: output(action_preview(job_id,kind,store=store,publish_at=when))
             else: output(approve_action(job_id,approval_digest,kind=kind,store=store,publish_at=when))
         run(operation)

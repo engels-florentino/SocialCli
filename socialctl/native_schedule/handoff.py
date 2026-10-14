@@ -32,7 +32,7 @@ def _stored(job: NativeJob, payload: dict, store: NativeStore) -> NativeJob:
     # A caller may pass an earlier lifecycle snapshot, but immutable intent must
     # match the authoritative row exactly.
     immutable = ('id', 'brand', 'platform', 'account_id', 'media_hash',
-                 'content_hash', 'publish_at', 'timezone_name', 'route')
+                 'content_hash', 'publish_at', 'timezone_name', 'schedule_mode', 'route')
     if any(getattr(job, field) != getattr(current, field) for field in immutable):
         raise ValueError('Job does not match the stored approved intent')
     if payload != stored_payload:

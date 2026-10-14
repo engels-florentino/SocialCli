@@ -1,5 +1,8 @@
 """Account-bound calendar evidence. Absence never releases previous reservations."""
 from datetime import datetime, time, timedelta
+import json
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .approval import reject_secrets
 from .cadence import ZONE
@@ -41,8 +44,27 @@ def validate_inventory(inventory, *, accounts=None, now=None):
     return occupied
 
 
-def require_coverage(inventory, publish_at):
-    day = publish_at.astimezone(ZONE).date()
-    if not (date(inventory['coverage_start']) <= datetime.combine(day,time.min,ZONE)
-            and datetime.combine(day+timedelta(days=1),time.min,ZONE) <= date(inventory['coverage_end'])):
+def require_coverage(inventory, publish_at, timezone_name='America/New_York'):
+    zone = ZoneInfo(timezone_name)
+    day = publish_at.astimezone(zone).date()
+    if not (date(inventory['coverage_start']) <= datetime.combine(day,time.min,zone)
+            and datetime.combine(day+timedelta(days=1),time.min,zone) <= date(inventory['coverage_end'])):
         raise ValueError('Full local publication day must be inside observed inventory coverage')
+
+
+def reschedule_inventory(root, target, *, now):
+    """Read fresh, account-bound evidence before an exact-time calendar change."""
+    root = Path(root).resolve()
+    path = (root / 'native-calendar.json').resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise ValueError('Fresh native-calendar.json required before rescheduling')
+    inventory = json.loads(path.read_text())
+    calendars = validate_inventory(inventory, now=now)
+    if (target.platform, target.account_id) not in calendars:
+        raise ValueError('Complete destination account calendar required before rescheduling')
+    require_coverage(inventory,target.publish_at,target.timezone_name)
+    for item in inventory['objects']:
+        if (item['platform'] == target.platform and item['account_id'] == target.account_id
+                and date(item['publish_at']) == target.publish_at):
+            raise ValueError('Destination time is occupied in the current external calendar')
+    return inventory

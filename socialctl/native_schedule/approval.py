@@ -123,6 +123,9 @@ def approval_document(job: NativeJob, payload: dict) -> dict:
     raw = job.model_dump(mode='json')
     document = {'schema': SCHEMA, 'intent': {key:raw[key] for key in fields},
                 'payload': payload, 'media': media_hashes(payload)}
+    # Existing approvals predate this field. Their serialization is immutable.
+    if job.schedule_mode != 'legacy_daily':
+        document['intent']['schedule_mode'] = job.schedule_mode
     reject_secrets(document)
     return document
 

@@ -30,7 +30,7 @@ the outstanding rollout, backup, billing, provider review or real-agent pilots.
 |---|---|---|
 | 1. Packaged agent guide | Candidate has packaged bootstrap text and `/agents`; 0.2.6 source has a detailed guide. | Extended the canonical packaged guide with publish/schedule/metrics/inbox/reply/recovery flows and offline `agent-guide`. `delivery-options --brand --json` exposes actual delivery constraints. Generated web copy stays synchronized. Remaining: real Muse/Grok fresh-install and new-conversation acceptance. |
 | 2. Headless authentication | Candidate pairs via browser approval and polling, without guessing account ID; encrypted-file backend exists. | Preserve the tested headless path, durable root and external protected key. Real encrypted-store and interrupted-delivery tests run with this change. Remaining: real persistent storage in each agent runtime; no claim that ephemeral conversations provide supervision. |
-| 3. Portable/reliable scheduler | Local queue, fingerprints and heartbeat exist; macOS installer could falsely report success. | Installer now fails without launchctl or successful bootstrap. Added portable `schedule-doctor`: missing/stale/error evidence and unverified persistent supervision require attention; a recent run is not future availability. Native Reel transport sends SCHEDULED with exact time and checks readback. `native-schedule submit-api` connects YouTube/Facebook adapters behind explicit pilot evidence. Remaining: systemd user installation, actual account pilots, and general-purpose time/cadence below. |
+| 3. Portable/reliable scheduler | Local queue, fingerprints and heartbeat exist; macOS installer could falsely report success. | Installer now fails without launchctl or successful bootstrap. Added portable `schedule-doctor`: missing/stale/error evidence and unverified persistent supervision require attention; a recent run is not future availability. Native Reel transport sends SCHEDULED with exact time and checks readback. `native-schedule submit-api` connects YouTube/Facebook adapters behind explicit pilot evidence. Exact per-publication time/timezone and multiple same-day instants now preserve legacy reservations. Remaining: systemd user installation and actual account pilots. |
 | 4. Unified engagement | Inbox already joins YouTube/Facebook/Instagram with partial coverage; Meta drafts and immutable cross-provider batches exist. | Document the read → draft → full approval → apply → reconcile workflow, preserving existing safeguards. Remaining: cohesive cross-provider draft UX and pending-state presentation; TikTok comments unsupported. Do not rebuild the existing inbox or report empty partial reads as no comments. |
 | 5. Metrics to insights | Snapshots and the generated summary already include deltas and platform metrics. | Remaining product work: a deterministic brand report with comparable-period growth, top content and coverage; audience/time recommendations only with adequate observed data, not invented best hours. No additional LLM dependency is required. |
 | 6. Agent error taxonomy | Duplicate-risk journals and typed SaaS renewal errors exist; JSON errors are not uniform. | Added fixed `code`, `action`, `retryable`, `requires_user_action` for account login/status JSON failures. Distinguish reconnect, sign-in, recovery, reconciliation and safe read retry. Unknown/provider-controlled codes are sanitized. Remaining: adopt the taxonomy across legacy publish/read/community commands without dropping partial observations or replaying uncertain writes. |
@@ -39,12 +39,14 @@ the outstanding rollout, backup, billing, provider review or real-agent pilots.
 
 ## Scheduling release gates
 
-The existing native ledger contains a legacy policy: one item per account/day at
-09:00 America/New_York, plus mandatory calendar inventory. This was discovered while
-wiring the candidate API submission. It is not a general-purpose SaaS schedule UI.
-Before advertising arbitrary scheduling, add an explicit per-workspace cadence and
-timezone contract, retaining old queue reservations, approvals and migration safety.
-Never silently round or move a customer's requested time into that policy.
+Exact scheduling is now opt-in per publication with an explicit IANA timezone and
+matching local offset, preserving each user's chosen instant without overflow.
+Multiple distinct times per account/day are accepted; conflicts and invalid DST
+local times are rejected. Legacy manifests and reservations keep the existing
+09:00 America/New_York daily policy and unchanged approval serialization. Schema 3
+blocks incompatible old writers after the first exact intent is persisted.
+The implementation plan is `2026-10-13-exact-native-scheduling.md`. Real account
+pilots and provider eligibility remain release gates; this is not live-pilot proof.
 
 The new Facebook transport uses the official Page `video_reels` fields
 `video_state=SCHEDULED` and `scheduled_publish_time`; the Video node exposes

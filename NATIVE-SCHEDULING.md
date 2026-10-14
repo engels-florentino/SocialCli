@@ -55,9 +55,31 @@ not proof of Business Suite/Studio calendar visibility; use the existing fresh
 observation/reconcile flow. An uncertain attempt retains its checkpoint and must
 never be re-uploaded automatically. Comments are separate work after public verification.
 
-The legacy ledger still enforces one item per account/day at 09:00 America/New_York.
-Do not promise arbitrary hours or silently change the requested time. General
-cadence/timezone support and real account pilots remain launch gates.
+New manifests select the customer's date and time with an explicit schedule object:
+
+```json
+"schedule": {"mode": "exact", "timezone": "Europe/Madrid"},
+"publish_at": "2035-01-03T19:30:00+01:00"
+```
+
+Use the actual customer-selected IANA timezone and local UTC offset. Exact requests
+never overflow to another time/date; conflicting instants, past times, subsecond
+values and invalid DST offsets are rejected. Multiple distinct times per account/day
+are supported. Calendar coverage must span the full local day in the selected zone.
+This is intent and reservation support; real provider/account pilots remain required.
+
+Omitting `schedule` preserves legacy 09:00 America/New_York, one item/account/day.
+Old reservations retain their whole New York date and conflict with exact jobs on
+that date. Existing approval digests remain valid. New exact jobs bind their mode,
+timezone and instant into the preview digest. Rescheduling stays an explicitly
+approved official-UI operation; it retains both reservations until verified. Exact
+reschedule preview, approval and submission require fresh destination-account
+calendar inventory covering the entire new local day.
+
+The first persisted exact job upgrades that local ledger to schema 3 atomically.
+Old clients reject schema 3; keep all writers on the reviewed candidate version.
+Read-only commands never upgrade the ledger. No existing jobs, evidence or media
+are rewritten, and subsequent writes never downgrade schema 3.
 
 Use `socialcli delivery-options --brand BRAND --json` to inspect product limits and
 `socialcli schedule-doctor --brand BRAND --json` to inspect local executor evidence.

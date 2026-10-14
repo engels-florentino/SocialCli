@@ -147,10 +147,15 @@ exact digest, persist and approve that same intent:
     socialcli native-schedule submit-api JOB_ID --brand MyBrand --eligibility operator-pilot.json
     socialcli native-schedule status --brand MyBrand
 
-The existing native ledger uses 09:00 America/New_York, one item per account/day.
-Do not silently substitute that for another requested hour; general scheduling is
-not yet a launch-ready feature. Complete input examples are included below.
-Facebook API delivery currently covers
+For new customer schedules, use `schedule: {"mode":"exact","timezone":"Europe/Madrid"}`
+with the customer's actual IANA timezone and a matching local offset in `publish_at`.
+Each publication can have its own date, time and timezone, including multiple posts
+per day. SocialCli preserves the exact instant or rejects a conflict; it never moves
+an exact request to 09:00 or another day. Explicit offsets resolve repeated DST hours;
+nonexistent local times are rejected. Complete input examples are included below.
+Manifests without `schedule` retain the legacy 09:00 America/New_York daily policy.
+Existing legacy reservations still protect their whole New York date; they must not
+be silently rewritten or bypassed. Facebook API delivery currently covers
 Reels only, with a conservative window greater than ten minutes and at most 28 days.
 
 `pending_verification` means the API response was checked but calendar confirmation
@@ -202,18 +207,21 @@ Example `native-calendar.json`:
 
 Example `native.json` (standalone Reel, no source-video follow-up). `dispatch_after`
 is the earliest upload time, not publication time. It must precede `publish_at`;
-submission also obeys existing account cooldowns. The current 09:00 policy may move
-an occupied date; inspect the **final** preview before approving. A customer who
-requested another hour needs the general scheduling feature, still pending.
+submission also obeys existing account cooldowns. The example uses the customer's
+chosen 19:30 in Europe/Madrid. Confirm that timezone with the customer; never infer
+it from the server, the agent's machine or a brand name. Inspect the local time,
+UTC time and **final** preview before approving. Platform eligibility and publication
+windows still apply; choosing a time does not prove the platform accepted it.
 
 ```json
 {
   "id": "example-reel",
   "platform": "facebook",
   "account_id": "page-example",
-  "publish_at": "2035-01-03T09:00:00-05:00",
+  "publish_at": "2035-01-03T19:30:00+01:00",
   "dispatch_after": "2035-01-01T12:00:00Z",
   "route": "api",
+  "schedule": {"mode": "exact", "timezone": "Europe/Madrid"},
   "payload": {
     "calendar": "Meta Business Suite",
     "visibility": "public",
@@ -273,7 +281,7 @@ Example `calendar-observation.json` below uses placeholder hashes; it is not evi
   "content_hash": "REPLACE_WITH_PREVIEW_CONTENT_HASH",
   "approval_digest": "REPLACE_WITH_APPROVED_DIGEST",
   "remote_ref": "REPLACE_WITH_CONFIRMED_REMOTE_ID",
-  "publish_at": "2035-01-03T09:00:00-05:00",
+  "publish_at": "2035-01-03T19:30:00+01:00",
   "observed_at": "2035-01-01T12:05:00Z",
   "source": "ui",
   "calendar_visible": true,
@@ -291,6 +299,19 @@ Keep the original media unchanged while reconciling. Then run:
 
     socialcli native-schedule reconcile JOB_ID --observation calendar-observation.json --brand MyBrand
     socialcli native-schedule status --brand MyBrand
+
+Before rescheduling an exact-time job, refresh `native-calendar.json` with complete
+coverage of the new local day. Preview, approval and the submit marker each require
+fresh account-bound evidence; an old calendar cannot authorize moving into an
+unobserved day. To change a verified schedule, show a new complete action preview with the local
+ISO timestamp (including its correct offset for the stored timezone):
+
+    socialcli native-schedule reschedule JOB_ID --publish-at 2035-01-04T20:15:00+01:00 --brand MyBrand --dry-run
+
+Only after approval, use the same command with `--approval-digest ACTION_DIGEST`
+instead of `--dry-run`, then follow the approved official-UI handoff and reconciliation.
+Both times remain reserved until fresh evidence confirms the change. Cancellation
+also requires its own preview and approval; it does not authorize deleting the video.
 
 Reconciliation reads local evidence and changes only the ledger; it does not publish.
 Check the resulting `state` and notices: command completion alone does not establish

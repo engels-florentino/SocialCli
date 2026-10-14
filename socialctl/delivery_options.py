@@ -25,7 +25,7 @@ def delivery_options(brand) -> dict:
                 'native_schedule_status': 'pilot_required',
                 'authorization_verified': False,
                 'instruction': 'Meta supports scheduling; SocialCli API eligibility remains closed until the '
-                    'account/format pilot is verified. The current CLI offers an approved Business Suite handoff.',
+                    'account/format pilot is verified. Use gated native-schedule submit-api for Reels, or an approved Business Suite handoff.',
             },
             'instagram': {
                 'selected_delivery': 'publish_now',
@@ -44,6 +44,11 @@ def delivery_options(brand) -> dict:
                 'instruction': 'Inbox uploads for creator review; the creator finishes in TikTok. Direct Post '
                     'requires an audited app and creator-specific permission checks. Neither mode schedules a future post.',
             },
+        },
+        'native_schedule_intent': {
+            'exact_time': True, 'explicit_timezone_required': True,
+            'multiple_times_per_day': True, 'moves_conflicting_exact_time': False,
+            'legacy_daily_reservations_preserved': True, 'provider_pilot_required': True,
         },
         'local_queue': {
             'requires_original_file': True, 'requires_running_executor': True,

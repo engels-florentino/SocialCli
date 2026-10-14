@@ -42,7 +42,7 @@ def test_packaged_native_examples_support_preview_and_local_reconciliation(tmp_p
                      coverage_end=(now+timedelta(days=7)).isoformat())
     manifest = example('native.json')
     manifest.update(dispatch_after=(now-timedelta(minutes=1)).isoformat(),
-        publish_at=(now.astimezone(ZoneInfo('America/New_York'))+timedelta(days=2)).replace(hour=9,minute=0,second=0,microsecond=0).isoformat())
+        publish_at=(now.astimezone(ZoneInfo('Europe/Madrid'))+timedelta(days=2)).replace(hour=19,minute=30,second=0,microsecond=0).isoformat())
     for name, data in [('native-calendar.json', inventory), ('native.json', manifest),
                        ('operator-pilot.json', example('operator-pilot.json'))]:
         (brand.raiz / name).write_text(json.dumps(data))
