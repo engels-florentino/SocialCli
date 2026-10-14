@@ -63,3 +63,18 @@ failed before the fix and passed afterward. Sanitized operational diagnostics
 record status or exception type/source locations without request links, headers,
 exception messages or credentials. This is a server patch after the immutable
 rc2 package; it does not alter the published TestPyPI artifacts.
+
+## Live YouTube scheduling: rotating thumbnail signatures
+
+An approved private test upload completed and was read back as private/processed.
+Two metadata-batch schedule attempts stopped before PUT because the observed
+resource changed. A read-only comparison isolated renewed `sqp`/`rs` parameters
+on HTTPS `i9.ytimg.com` thumbnail URLs and the associated ETag; all other fields
+were unchanged. The comparison now permits only that narrow rotation. Changed
+metadata, thumbnail paths/dimensions and unexplained ETag-only changes remain
+conflicts. PUT retains fresh If-Match and the second inspection's strict ETag
+check. Regression failed before the fix; 66 focused and 2805 full tests passed.
+Independent review found no blockers. With the patched development client, the
+same private copy accepted the schedule and was verified as applied. Actual
+publication at its requested time and cleanup are separate acceptance checks.
+The immutable public rc2 wheel does not yet include this client fix.

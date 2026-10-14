@@ -263,3 +263,19 @@ def test_preserved_schedule_expiry_fails_only_affected_batch_member(
     assert [ident for ident, *_ in api.writes] == ["video-2", "video-3"]
     assert api.videos["video-1"] == original
     assert result.operations[0].after == batch.operations[0].after
+
+
+@pytest.mark.parametrize('other_change', [None, 'title', 'thumbnail_path', 'privacy'])
+def test_thumbnail_signature_rotation_preserves_only_equivalent_snapshot(tmp_path, other_change):
+    api = API()
+    api.videos['video-1']['snippet']['thumbnails'] = {'default': {'url':'https://i9.ytimg.com/vi/video-1/default.jpg?sqp=old&rs=old', 'width':120, 'height':90}}
+    module, api, client, store, change, _ = proposal(tmp_path, api=api, names=('video-1',))
+    api.videos['video-1']['etag'] = 'rotated-etag'
+    api.videos['video-1']['snippet']['thumbnails']['default']['url'] = 'https://i9.ytimg.com/vi/video-1/default.jpg?sqp=new&rs=new'
+    if other_change == 'title': api.videos['video-1']['snippet']['title'] = 'Independent edit'
+    if other_change == 'thumbnail_path': api.videos['video-1']['snippet']['thumbnails']['default']['url'] = 'https://i9.ytimg.com/vi/video-1/other.jpg?sqp=new&rs=new'
+    if other_change == 'privacy': api.videos['video-1']['status']['privacyStatus'] = 'public'
+    result = module.apply_batch(client, store, change.id, change.fingerprint)
+    assert result.operations[0].status == ('applied' if other_change is None else 'conflict')
+    assert len(api.writes) == (1 if other_change is None else 0)
+    if api.writes: assert api.writes[0][2]['if-match'] == 'rotated-etag'

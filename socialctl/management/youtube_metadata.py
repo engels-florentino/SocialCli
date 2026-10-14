@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
+import re
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from typing import Any
 
 from socialctl.management.changes import ChangeError, _validate_snippet
@@ -16,6 +19,33 @@ class MetadataVideo:
     channel_id: str
     etag: str
     resource: dict[str, Any]
+
+
+def same_metadata_snapshot(before, after):
+    """Ignore only renewed ytimg signature parameters, retaining all other state."""
+    if before == after:
+        return True
+    left, right = copy.deepcopy(before), copy.deepcopy(after)
+    changed = False
+    for value in (left, right):
+        thumbnails = value.get('snippet', {}).get('thumbnails', {})
+        if not isinstance(thumbnails, dict):
+            return False
+        for thumbnail in thumbnails.values():
+            if not isinstance(thumbnail, dict) or not isinstance(thumbnail.get('url'), str):
+                return False
+            parts = urlsplit(thumbnail['url'])
+            if parts.scheme != 'https' or not re.fullmatch(r'i\d+\.ytimg\.com', parts.netloc):
+                continue
+            query = parse_qsl(parts.query, keep_blank_values=True)
+            if {'sqp', 'rs'} <= {k for k, _ in query}:
+                thumbnail['url'] = urlunsplit(parts._replace(query=urlencode([(k,v) for k,v in query if k not in {'sqp','rs'}])))
+    changed = before.get('snippet', {}).get('thumbnails') != after.get('snippet', {}).get('thumbnails')
+    if not changed:
+        return False  # An unexplained ETag-only change remains a conflict.
+    left.pop('etag', None)
+    right.pop('etag', None)
+    return left == right
 
 
 class YouTubeMetadataClient(YouTubeManagementClient):

@@ -17,6 +17,7 @@ from socialctl.management.changes import ApprovalMismatch, ChangeError, ChangeSt
 from socialctl.management.metadata_parts import KINDS, MetadataEdit, editable_parts, propose_parts
 from socialctl.management.youtube import (YouTubeManagementError, YouTubeUpdateConflict,
     YouTubeUpdateRejected)
+from socialctl.management.youtube_metadata import same_metadata_snapshot
 
 
 class BatchFile(BaseModel):
@@ -213,7 +214,7 @@ def _apply_operation(client, store, batch, op):
         _event(op, "reconciled_read_only")
         store.save(batch)
         return
-    if current.resource != op.observed:
+    if not same_metadata_snapshot(op.observed, current.resource):
         op.status = "conflict"
         _event(op, "observed_state_changed")
         store.save(batch)
