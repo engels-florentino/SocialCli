@@ -102,3 +102,29 @@ prepared, not applied. The owner has been asked for the exact A record and for
 which personal Google account or accessible Shared Drive to authorize for backup.
 Google Drive authorization, external recovery, public pilot, signed webhook
 receipt, package publication and real Muse/Grok pilots remain outstanding.
+
+## Linux verification of client checkpoint15aaa05 — not deployed
+
+On14October2026, the current committed source was transferred using `git archive`
+into a separate verification directory on Florentino. No customer workspace,
+secrets, database or media was transferred. A disposable container used the prior
+verification image's Linux/Python3.12 dependencies, with external networking off,
+read-only source/root and temporary writable test storage.
+
+- Full suite: **2,687 passed in142.78s**, container exit0.
+- Wheel SHA256 after transfer:
+  `6558c1a0ae3b8aa8f35e94fe3244181a4f52f087fc1f207649b1ba459b521268`.
+- A separate offline virtual environment installed that wheel with the same
+  resolved dependencies. Installed smoke passed version, help, workspace creation,
+  real encrypted-credential persistence and packaged agent instructions.
+  `media check`, `inbox-draft` and `native-schedule` command help also passed.
+- The first smoke attempt could not execute the CLI entrypoint because the test
+  tmpfs was mounted noexec. Explicit exec on that disposable test mount resolved
+  it; no product permissions or production mounts changed.
+- This verifies Linux compatibility with those dependencies, not fresh resolution
+  from PyPI, real agent runtimes, provider writes or a server redeployment.
+
+The deployed candidate remains1fbaf1d and public remains0.2.6. The latest DNS
+lookup still returns no A record for pilot.socialcli.app. Drive authorization and
+external restore, HTTPS pilot, real signed webhooks, package publication and real
+Muse/Grok pilots are not established by this verification.
