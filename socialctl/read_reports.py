@@ -51,6 +51,9 @@ def annotate_partial_read(result):
         return result
     code = ('read_interrupted' if result.get('interrupted') is True else
             'read_deadline' if result.get('timed_out') is True else 'read_partial')
+    detail = result.get('error_detail')
+    if isinstance(detail, dict) and code == 'read_partial':
+        code = detail.get('code', code)
     return {**result, 'error_detail':error_for_code(code, read_only=True)}
 
 

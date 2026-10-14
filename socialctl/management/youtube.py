@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from socialctl.agent_errors import with_error_code, with_http_error_code
 from socialctl.adapters.errores import mensaje_de_error
 from socialctl.auth import AuthError, obtener_token
 from socialctl.brands import Brand
@@ -230,12 +231,10 @@ class YouTubeManagementClient:
         try:
             return obtener_token(self.brand, Platform.YOUTUBE, self.client)
         except AuthError as exc:
-            raise YouTubeManagementError(str(exc)) from None
-        except Exception:
+            raise with_error_code(YouTubeManagementError(str(exc)), exc, read_only=True) from None
+        except Exception as exc:
             # Un fallo imprevisto podría arrastrar el secreto en su texto.
-            raise YouTubeManagementError(
-                "failed to read or refresh YouTube credentials"
-            ) from None
+            raise with_error_code(YouTubeManagementError("failed to read or refresh YouTube credentials"), exc, read_only=True, fallback="authorization_unavailable") from None
 
     def _authenticated_channel(self, token: str) -> str:
         payload = self._get_json(
@@ -261,14 +260,12 @@ class YouTubeManagementClient:
             response = self.client.get(
                 url, headers={"Authorization": f"Bearer {token}"}, params=params
             )
-        except httpx.TimeoutException:
-            raise YouTubeManagementError(
-                f"timed out while attempting to {operation} on YouTube"
-            ) from None
-        except (httpx.HTTPError, httpx.InvalidURL):
-            raise YouTubeManagementError(
-                f"failed to connect to YouTube to {operation}"
-            ) from None
+        except httpx.TimeoutException as exc:
+            raise with_error_code(YouTubeManagementError(
+                f"timed out while attempting to {operation} on YouTube"), exc, read_only=True) from None
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+            raise with_error_code(YouTubeManagementError(
+                f"failed to connect to YouTube to {operation}"), exc, read_only=True) from None
         except Exception:
             raise YouTubeManagementError(
                 f"unexpected failure during {operation} on YouTube"
@@ -276,13 +273,11 @@ class YouTubeManagementClient:
         if not response.is_success:
             detail = mensaje_de_error(response, token)
             if response.status_code == 403:
-                raise YouTubeManagementError(
+                raise with_http_error_code(YouTubeManagementError(
                     f"YouTube did not allow {operation}; check youtube.readonly. "
-                    f"Detalle: {detail}"
-                )
-            raise YouTubeManagementError(
-                f"YouTube returned {response.status_code} during {operation}: {detail}"
-            )
+                    f"Detalle: {detail}"), response, read_only=True)
+            raise with_http_error_code(YouTubeManagementError(
+                f"YouTube returned {response.status_code} during {operation}: {detail}"), response, read_only=True)
         try:
             payload = response.json()
         except Exception:

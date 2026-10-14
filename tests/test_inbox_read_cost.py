@@ -93,7 +93,8 @@ def test_youtube_deadline_keeps_all_verified_tops_without_repeated_failed_reads(
     rows, complete, errors = _youtube_rows(client, 'video-1')
     assert len(rows) == 6 and not complete
     assert len(attempts) == 1
-    assert len(errors) == 1 and 'time limit' in errors[0]
+    assert len(errors) == 1 and errors[0]['code'] == 'read_deadline'
+    assert 'time limit' in errors[0]['message']
 
 
 def test_youtube_later_page_deadline_keeps_verified_rows(tmp_path):

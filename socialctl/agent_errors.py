@@ -90,9 +90,9 @@ def error_document(exc: BaseException, *, read_only: bool) -> dict:
     from socialctl.read_budget import ReadDeadlineExceeded, ReadResponseTooLarge
     from socialctl.management.changes import ChangeError
     from socialctl.management.youtube_resources import ResourceError, ResourceUncertain
-    from socialctl.management.youtube import YouTubeUpdateUncertain
-    from socialctl.management.meta_comments import CommentUncertain
-    from socialctl.management.meta_schema import MetaUncertain
+    from socialctl.management.youtube import YouTubeManagementError, YouTubeUpdateUncertain
+    from socialctl.management.meta_comments import CommentError, CommentUncertain
+    from socialctl.management.meta_schema import MetaError, MetaUncertain
     from socialctl.metricas.base import SinPermiso
 
     # A read flow may refresh a token via POST. A lost response to that operation
@@ -108,6 +108,8 @@ def error_document(exc: BaseException, *, read_only: bool) -> dict:
             429:'rate_limited',503:'provider_unavailable'}.get(exc.status,'service_rejected')
     elif isinstance(exc, (ResourceUncertain, YouTubeUpdateUncertain, CommentUncertain, MetaUncertain)):
         code = 'operation_uncertain'
+    elif isinstance(exc, (AuthError, YouTubeManagementError, ResourceError, CommentError, MetaError)) and getattr(exc, '_socialcli_error_code', None) is not None:
+        code = exc._socialcli_error_code
     elif isinstance(exc, ReadDeadlineExceeded): code = 'read_deadline'
     elif isinstance(exc, ReadResponseTooLarge): code = 'response_too_large'
     elif isinstance(exc, KeyboardInterrupt): code = 'read_interrupted'
@@ -129,6 +131,23 @@ def error_document(exc: BaseException, *, read_only: bool) -> dict:
     elif isinstance(exc, ValueError): code = 'invalid_local_state'
     else: code = 'operation_failed'
     return error_for_code(code,read_only=read_only)
+
+
+def with_error_code(wrapper: Exception, cause: BaseException, *, read_only: bool,
+                    fallback: str | None = None) -> Exception:
+    """Keep only a fixed code across a sanitized wrapper, never raw exception data."""
+    code = error_document(cause, read_only=read_only)['code']
+    if code == 'operation_failed' and fallback is not None:
+        code = error_for_code(fallback, read_only=read_only)['code']
+    wrapper._socialcli_error_code = code
+    return wrapper
+
+
+def with_http_error_code(wrapper: Exception, response, *, read_only: bool) -> Exception:
+    import httpx
+    cause = httpx.HTTPStatusError('Provider request rejected', request=response.request,
+                                  response=response)
+    return with_error_code(wrapper, cause, read_only=read_only)
 
 
 def emit_error(exc: Exception, *, read_only: bool) -> None:

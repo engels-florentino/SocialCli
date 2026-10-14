@@ -9,6 +9,7 @@ from urllib.parse import quote
 import httpx
 from socialctl.read_budget import ReadDeadlineExceeded, transport_label
 
+from socialctl.agent_errors import with_error_code
 from socialctl.auth import obtener_token
 from socialctl.management.changes import ChangeError
 from socialctl.management.youtube import YouTubeManagementClient, YouTubeManagementError
@@ -124,15 +125,15 @@ class YouTubeResourcesClient(YouTubeManagementClient):
                 self._access_token = obtener_token(self.brand, Platform.YOUTUBE, transport)
             except ReadDeadlineExceeded:
                 raise
-            except Exception:
-                raise ResourceError("YouTube credentials unavailable; refresh unconfirmed") from None
+            except Exception as exc:
+                raise with_error_code(ResourceError("YouTube credentials unavailable; refresh unconfirmed"), exc, read_only=True, fallback="authorization_unavailable") from None
         return self._access_token
 
     def inspect(self, video_id):
         try:
             return super().inspect(resource_id(video_id))
         except YouTubeManagementError as exc:
-            raise ResourceError(str(exc)) from None
+            raise with_error_code(ResourceError(str(exc)), exc, read_only=True) from None
 
     def _request(self, method, url, *, headers=None, max_response=4 * 1024 * 1024, **kwargs):
         # All call sites use literal known endpoints; reject future accidental expansion.
@@ -142,8 +143,8 @@ class YouTubeResourcesClient(YouTubeManagementClient):
         writing = method != "GET"
         try:
             token = self._token()
-        except YouTubeManagementError:
-            raise ResourceError("YouTube credentials unavailable") from None
+        except YouTubeManagementError as exc:
+            raise with_error_code(ResourceError("YouTube credentials unavailable"), exc, read_only=True) from None
         try:
             with self.client.stream(method, url,
                 headers={**(headers or {}), "Authorization": f"Bearer {token}", "Accept-Encoding": "identity"},
@@ -173,11 +174,11 @@ class YouTubeResourcesClient(YouTubeManagementClient):
         except ResourceError:
             raise
         except httpx.TransportError as exc:
-            raise (ResourceUncertain if writing else ResourceError)(
-                f"YouTube: transport interrupted ({transport_label(exc)}); outcome unconfirmed") from None
-        except Exception:
-            raise (ResourceUncertain if writing else ResourceError)(
-                "YouTube: transport interrupted; outcome unconfirmed") from None
+            raise with_error_code((ResourceUncertain if writing else ResourceError)(
+                f"YouTube: transport interrupted ({transport_label(exc)}); outcome unconfirmed"), exc, read_only=not writing) from None
+        except Exception as exc:
+            raise with_error_code((ResourceUncertain if writing else ResourceError)(
+                "YouTube: transport interrupted; outcome unconfirmed"), exc, read_only=not writing) from None
 
     def _endpoint_allowed(self, method, path):
         paths = {"/youtube/v3/channels", "/youtube/v3/videos", "/youtube/v3/captions",

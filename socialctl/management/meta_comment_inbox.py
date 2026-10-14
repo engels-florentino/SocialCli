@@ -368,6 +368,7 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
         "media_id": media_id, "observed_at": now, "since_used": effective_since, "next_since": next_since,
         "provider_cursor": listing.get("next_cursor"), "complete": listing["complete"],
         "cursor_recovered": cursor_recovered, "interrupted":listing.get("interrupted",False), "parent_ids": list(remote), "error": listing.get("error"),
+        **({"error_detail": listing["error_detail"]} if "error_detail" in listing else {}),
         "new": added, "updated": updated,
         "deduplicated": unchanged + max(0, len(listing["data"]) - len(remote) - skipped_unverifiable),
         "skipped_own": skipped_own, "skipped_before_since": skipped_before_since,

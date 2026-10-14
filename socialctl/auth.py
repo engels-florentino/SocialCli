@@ -7,6 +7,7 @@ import time
 
 import httpx
 
+from socialctl.agent_errors import with_error_code, with_http_error_code
 from socialctl.brands import Brand
 from socialctl.models import Platform
 
@@ -68,19 +69,17 @@ def _refrescar(
 
     try:
         respuesta = client.post(url, data=datos)
-    except httpx.InvalidURL:
+    except httpx.InvalidURL as exc:
         # No hereda de httpx.HTTPError, así que necesita su propio except; la
         # URL es una constante de este módulo (URL_REFRESCO), pero se cubre
         # por si acaso, igual que en los adaptadores de este proyecto.
-        raise _pedir_auth(platform, "the token refresh URL is invalid") from None
-    except httpx.TimeoutException:
+        raise with_error_code(_pedir_auth(platform, "the token refresh URL is invalid"), exc, read_only=False) from None
+    except httpx.TimeoutException as exc:
         # Subclase de httpx.HTTPError: debe ir antes que ese except para no
         # quedar inalcanzable.
-        raise _pedir_auth(
-            platform, "token refresh timed out"
-        ) from None
-    except httpx.HTTPError:
-        raise _pedir_auth(platform, "could not connect to refresh the token") from None
+        raise with_error_code(_pedir_auth(platform, "token refresh timed out"), exc, read_only=False) from None
+    except httpx.HTTPError as exc:
+        raise with_error_code(_pedir_auth(platform, "could not connect to refresh the token"), exc, read_only=False) from None
     except Exception:
         # Resguardo final para cualquier fallo imprevisto que no sea de las
         # familias anteriores: nunca se interpola el propio error, podría
@@ -90,7 +89,8 @@ def _refrescar(
         ) from None
 
     if respuesta.status_code != 200:
-        raise _pedir_auth(platform, "the token refresh was rejected")
+        raise with_http_error_code(_pedir_auth(platform, "the token refresh was rejected"),
+                                   respuesta, read_only=False)
 
     try:
         cuerpo = respuesta.json()
@@ -119,8 +119,8 @@ def obtener_token(brand: Brand, platform: Platform, client: httpx.Client) -> str
         from socialctl.connections.client import broker_access_token
         try:
             return broker_access_token(brand, platform, client)
-        except Exception:
-            raise AuthError("shared connection unavailable; run socialcli connections --brand <brand> and reconnect if needed") from None
+        except Exception as exc:
+            raise with_error_code(AuthError("shared connection unavailable; run socialcli connections --brand <brand> and reconnect if needed"), exc, read_only=False, fallback="authorization_unavailable") from None
     if not secreto.get("access_token"):
         raise _pedir_auth(
             platform, f"no credentials for {platform.value} for {brand.nombre}"

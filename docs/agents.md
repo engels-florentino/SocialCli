@@ -540,6 +540,15 @@ For an older executor, inspect authoritative state and upgrade or use legacy
 read-only status; do not repeat a mutation to obtain a prettier response.
 Parser errors (such as missing required CLI flags) remain standard CLI usage errors.
 
+Typed failure codes now survive sanitized authentication, YouTube metadata/resource
+and Meta management/comment wrappers. A provider GET timeout or rate limit can
+request a bounded read retry; a lost token-refresh or SaaS token POST requires
+reconciliation even when the outer command only requested a read. A generic
+401/403 does not prove expired authorization. Only a recognized service expiry
+code requests reconnection, which still requires the owner. Partial comment and
+community pagination, comments sync and the unified inbox retain verified rows
+and the specific recovery action.
+
 Other management commands are not all converted to this taxonomy; inspect
 their exit code, stderr and durable result as well. No action hint grants approval
 to reconnect, publish, delete or replay a write.

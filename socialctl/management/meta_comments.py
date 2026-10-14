@@ -20,6 +20,7 @@ import httpx
 from socialctl.read_budget import ReadDeadlineExceeded, transport_label
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from socialctl.agent_errors import with_error_code, with_http_error_code, error_document
 from socialctl.auth import AuthError, obtener_token
 from socialctl.brands import Brand
 from socialctl.management.changes import ChangeError, ChangeStore, now_utc
@@ -69,8 +70,8 @@ class MetaCommentsClient:
             if self._access_token is None:
                 self._access_token = obtener_token(self.brand, self.platform, self.client)
             token = self._access_token
-        except AuthError:
-            raise CommentError("Meta requires valid brand credentials") from None
+        except AuthError as exc:
+            raise with_error_code(CommentError("Meta requires valid brand credentials"), exc, read_only=True) from None
         writing = method != "GET"
         probe_budget = getattr(self, '_probe_budget', None)
         if probe_budget is not None and not writing:
@@ -86,11 +87,11 @@ class MetaCommentsClient:
             raise
         except httpx.TransportError as exc:
             error = CommentUncertain if writing else CommentError
-            raise error(f'Meta: transport interrupted ({transport_label(exc)}); outcome unconfirmed') from None
-        except Exception:
+            raise with_error_code(error(f'Meta: transport interrupted ({transport_label(exc)}); outcome unconfirmed'), exc, read_only=not writing) from None
+        except Exception as exc:
             error = CommentUncertain if writing else CommentError
-            raise error("Meta: transporte interrumpido; resultado desconocido" if writing else
-                        "Meta: failed to complete read") from None
+            raise with_error_code(error("Meta: transporte interrumpido; resultado desconocido" if writing else
+                        "Meta: failed to complete read"), exc, read_only=not writing) from None
         if not response.is_success:
             params = kwargs.get("params") or {}
             if method == "GET" and isinstance(params.get("after"), str):
@@ -107,7 +108,7 @@ class MetaCommentsClient:
             error = (CommentUncertain if response.status_code >= 500 or response.is_redirect
                      else CommentRejected) if writing else CommentError
             from socialctl.management.meta_errors import graph_error
-            raise error(graph_error(response, method, path, token))
+            raise with_http_error_code(error(graph_error(response, method, path, token)), response, read_only=not writing)
         try:
             data = response.json()
             if not isinstance(data, dict) or "error" in data:
@@ -172,7 +173,8 @@ class MetaCommentsClient:
             except CommentError as exc:
                 if not rows: raise
                 return {"data":rows, "complete":False, "absence_proven":False,
-                        "next_cursor":params.get("after"), "error":str(exc)}
+                        "next_cursor":params.get("after"), "error":str(exc),
+                        "error_detail":error_document(exc, read_only=True)}
             except ReadDeadlineExceeded as exc:
                 if not rows: raise
                 return {"data":rows, "complete":False, "absence_proven":False,

@@ -128,9 +128,10 @@ def leer_red(
     try:
         return LECTORES[platform]().leer(brand, client, desde)
     except AuthError as e:
+        from socialctl.agent_errors import error_document
         return LecturaRed(
             estado=EstadoLectura.SIN_CREDENCIALES,
-            failure_code='authorization_unavailable',
+            failure_code=error_document(e, read_only=True)['code'],
             error=_redactar_url_por_patron(str(e)),
         )
     except SinPermiso as e:

@@ -1,5 +1,6 @@
 """Bounded fixed-host community reads and one explicit effect, without retry."""
 import json
+from socialctl.agent_errors import error_document
 import re
 from socialctl.read_budget import ReadDeadlineExceeded
 
@@ -108,6 +109,7 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                 break
             except ResourceError as exc:
                 result["error"] = str(exc)
+                result["error_detail"] = error_document(exc, read_only=True)
                 break
         if not result["complete"] and result["error"] is None:
             result["error"] = "page limit reached"

@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo,ZoneInfoNotFoundError
 
 from socialctl.models import Platform
 from socialctl.read_budget import read_client, ReadDeadlineExceeded
-from socialctl.read_reports import ReadReport,safe_error
+from socialctl.read_reports import ReadReport,safe_error,annotate_partial_read
+from socialctl.agent_errors import error_document
 from socialctl.management.meta_comment_inbox import CommentInboxStore,sync_inbox
 from socialctl.migration_files import write_json
 
@@ -71,13 +72,29 @@ class InboxInterrupted(KeyboardInterrupt):
         self.rows = rows
 
 
+def _partial_problem(report):
+    detail = annotate_partial_read({**report, 'complete': False})['error_detail']
+    return {'code': detail['code'], 'message': safe_error(report.get('error') or 'Read incomplete')}
+
+
+def _exception_problem(exc):
+    return {**error_document(exc, read_only=True), 'message': safe_error(str(exc))}
+
+
+def _problem_document(problem):
+    if isinstance(problem, dict):
+        return {'code': problem.get('code', 'read_partial'),
+                'message': safe_error(problem.get('message', 'Read incomplete'))}
+    return {'message': safe_error(str(problem))}
+
+
 def _youtube_rows(client, video_id):
     report = client.list_threads(video_id)
     rows, errors = [], []
     complete = report['complete']
     timed_out = report.get('timed_out', False)
     if report.get('error'):
-        errors.append(report['error'])
+        errors.append(_partial_problem(report))
 
     def observe(row, parent, thread_id):
         nonlocal complete
@@ -112,11 +129,12 @@ def _youtube_rows(client, video_id):
             except ReadDeadlineExceeded as exc:
                 replies = {'items': [], 'complete': False, 'error': str(exc), 'timed_out': True}
             except Exception as exc:
-                replies = {'items': [], 'complete': False, 'error': safe_error(str(exc))}
+                replies = {'items': [], 'complete': False, 'error': safe_error(str(exc)),
+                           'error_detail': error_document(exc, read_only=True)}
             timed_out = replies.get('timed_out', False)
             complete = complete and replies['complete']
             if replies.get('error'):
-                errors.append(replies['error'])
+                errors.append(_partial_problem(replies))
             for reply in replies['items']:
                 observe(reply, top['id'], thread['id'])
             if replies.get('interrupted'):
@@ -171,18 +189,18 @@ def sync_brand_inbox(brand,*,since,budget):
                                 row['scopes'].append({'media_id':ident,'filter':'published','complete':False})
                                 raise KeyboardInterrupt() from None
                             except Exception as exc:
-                                items,ok,problems=[],False,[safe_error(str(exc))]
+                                items,ok,problems=[],False,[_exception_problem(exc)]
                             scope=json.dumps([platform.value,account,ident,'published'])
                             edited.update(store.observe(items,observed_at=observed,scope=scope,complete=ok))
                             observed_keys.update(store.key(i) for i in items)
                             row['scopes'].append({'media_id':ident,'filter':'published','complete':ok})
                             complete=complete and ok
-                            errors.extend({'platform':platform.value,'media_id':ident,'message':safe_error(str(e))} for e in problems)
+                            errors.extend({**_problem_document(e),'platform':platform.value,'media_id':ident} for e in problems)
                     else:
                         meta=MetaClient(brand,platform,http)
                         listing=meta.content_list('posts' if platform is Platform.FACEBOOK else 'media',for_comments=True)
                         if listing.get('error'):
-                            errors.append({'platform':platform.value,'message':safe_error(listing['error'])})
+                            errors.append({**_partial_problem(listing),'platform':platform.value})
                         complete=listing['complete'];client=MetaInboxClient(brand,platform,http)
                         inbox=CommentInboxStore(brand.raiz)
                         for media in listing['data']:
@@ -212,25 +230,24 @@ def sync_brand_inbox(brand,*,since,budget):
                                         results.append(reply_result);collect(reply_result)
                                         if reply_result.get('interrupted'):raise KeyboardInterrupt()
                                     except Exception as exc:
-                                        problems.append(safe_error(str(exc)))
+                                        problems.append(_exception_problem(exc))
                                     except KeyboardInterrupt:
                                         row['scopes'].append({'media_id':ident,'filter':'top_level_and_direct_replies','complete':False})
                                         raise
                                 ok=not problems and all(r['complete'] for r in results)
-                                problems.extend(r.get('error') or 'Meta traversal incomplete' for r in results if not r['complete'])
+                                problems.extend(_partial_problem(r) for r in results if not r['complete'])
                                 row['scopes'].append({'media_id':ident,'filter':'top_level_and_direct_replies','complete':ok})
                             except Exception as exc:
-                                items,ok,problems=[],False,[safe_error(str(exc))]
+                                items,ok,problems=[],False,[_exception_problem(exc)]
                             scope=json.dumps([platform.value,account,ident,'top_level_and_direct_replies'])
                             edited.update(store.observe(items,observed_at=observed,scope=scope,complete=ok))
                             observed_keys.update(store.key(i) for i in items)
                             complete=complete and ok
-                            errors.extend({'platform':platform.value,'media_id':ident,'message':safe_error(str(e))} for e in problems)
+                            errors.extend({**_problem_document(e),'platform':platform.value,'media_id':ident} for e in problems)
                     row['complete']=complete;row['state']='ok' if complete else 'partial'
                     if not complete and not any(e.get('platform')==platform.value for e in errors):errors.append({'platform':platform.value,'message':'Owned content enumeration incomplete'})
             except (Exception,KeyboardInterrupt) as exc:
                 row['state']='partial' if row['scopes'] else 'error'
-                from socialctl.agent_errors import error_document
                 errors.append({**error_document(exc,read_only=True),'platform':platform.value,'message':'Read interrupted' if isinstance(exc,KeyboardInterrupt) else safe_error(str(exc))})
                 if isinstance(exc,KeyboardInterrupt):break
     covered={r['platform'] for r in coverage}

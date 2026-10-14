@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 
+from socialctl.agent_errors import with_error_code, with_http_error_code, error_document
 from socialctl.identity import credential_metadata
 from socialctl.management.meta_schema import MetaError, MetaRejected, MetaUncertain, meta_id, validate_edit
 from socialctl.models import Platform
@@ -53,8 +54,8 @@ class MetaClient:
             self.token_mode = secret.get("token_mode", "facebook_page")
             self.actor_id = secret.get("actor_id")
             expired = credential_metadata(secret)["expiry"]["expired"]
-        except Exception:
-            raise MetaError("Meta credentials unavailable") from None
+        except Exception as exc:
+            raise with_error_code(MetaError("Meta credentials unavailable"), exc, read_only=False, fallback="authorization_unavailable") from None
         if not isinstance(self._token, str) or not self._token or expired:
             raise MetaError("Meta credentials missing/expired; not refreshed automatically")
         if self.token_mode not in {"facebook_page", "facebook_user"}:
@@ -72,7 +73,7 @@ class MetaClient:
                     error = (MetaUncertain if response.status_code >= 500 or response.is_redirect or response.status_code in {408, 429}
                              else MetaRejected) if writing else MetaError
                     from socialctl.management.meta_errors import graph_error
-                    raise error(graph_error(response, method, path, self._token))
+                    raise with_http_error_code(error(graph_error(response, method, path, self._token)), response, read_only=not writing)
                 raw = bytearray()
                 for chunk in response.iter_bytes():
                     raw.extend(chunk)
@@ -84,8 +85,8 @@ class MetaClient:
                 return result
         except MetaError:
             raise
-        except Exception:
-            raise (MetaUncertain if writing else MetaError)("Meta: response/transport unverifiable") from None
+        except Exception as exc:
+            raise with_error_code((MetaUncertain if writing else MetaError)("Meta: response/transport unverifiable"), exc, read_only=not writing) from None
 
     def listing(self, target, edge, *, fields, max_pages=10, params=None):
         meta_id(target, composite=True)
@@ -103,7 +104,8 @@ class MetaClient:
             except MetaError as exc:
                 if not rows:
                     raise
-                return {"data": rows, "complete": False, "absence_proven": False, "error": str(exc)}
+                return {"data": rows, "complete": False, "absence_proven": False, "error": str(exc),
+                        "error_detail": error_document(exc, read_only=True)}
             data = result.get("data")
             if not isinstance(data, list) or len(data) > 100 or any(not isinstance(row, dict) for row in data):
                 raise MetaError("invalid/excessive Meta list")
