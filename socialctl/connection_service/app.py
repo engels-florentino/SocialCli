@@ -116,7 +116,10 @@ def create_app(settings: Settings, *, store: Store | None = None,
                         JSONResponse({'detail':'connection service unavailable'}, status_code=503))
         response.headers.update({'Cache-Control':'no-store', 'Pragma':'no-cache',
                                  'X-Content-Type-Options':'nosniff'})
-        response.headers.setdefault('Referrer-Policy', 'no-referrer')
+        # Native HTML form POSTs use Origin:null under no-referrer. Preserve
+        # same-origin account submissions while withholding cross-origin referrers.
+        response.headers.setdefault('Referrer-Policy',
+            'same-origin' if settings.saas and request.url.path.startswith('/account/') else 'no-referrer')
         response.headers.setdefault('Content-Security-Policy',
             "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         return response

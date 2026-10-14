@@ -190,3 +190,18 @@ def test_authenticated_forms_do_not_require_auxiliary_login_cookie(tmp_path):
     assert page.status_code == 200
     assert client.post('/account/logout', data=fields(page),
                        headers={'Origin':'https://social.example'}, follow_redirects=False).status_code == 303
+
+
+def test_browser_account_forms_preserve_same_origin_without_accepting_null_origin(tmp_path):
+    client, _, calls = service(tmp_path)
+    page=client.get('/account/login')
+    # Native form POSTs under no-referrer send Origin:null, unlike our HTTP test client.
+    assert page.headers['referrer-policy']=='same-origin'
+    form=fields(page);form['email']=EMAIL
+    rejected=client.post('/account/login',data=form,headers={'Origin':'null'})
+    assert rejected.status_code==403
+    assert not calls
+    verify=client.post('/account/login',data=form,headers={'Origin':'https://social.example'})
+    assert verify.status_code==200 and verify.headers['referrer-policy']=='same-origin'
+    assert rejected.headers['referrer-policy']=='same-origin'
+    assert client.get('/healthz').headers['referrer-policy']=='no-referrer'
