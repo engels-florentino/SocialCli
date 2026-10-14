@@ -1,4 +1,4 @@
-# Isolated HTTPS pilot — prepared, not deployed
+# Isolated HTTPS pilot — public activation verified
 
 DNS required in Namecheap: **CNAME `pilot` → `socialcli.app`**, automatic TTL.
 This supersedes the earlier fixed-IP A-record request: the WAN address changed
@@ -97,3 +97,21 @@ The NPM form is prepared with the documented destination, request-size limit,
 legacy-create guards, disabled request logs, new certificate, forced HTTPS and
 host-only HSTS. The final public activation is awaiting action-time confirmation;
 these checks do not establish public TLS or a completed browser login journey.
+
+## Public activation verified — 14 October 2026
+
+The owner saved the host and explicitly authorized public activation. NPM host40
+now serves the candidate with Let's Encrypt certificate44 (valid for the exact
+pilot hostname through 12 January 2027). Real external certificate-chain/hostname
+validation passed. Force SSL was initially off after creation; it was enabled and
+verified with HTTP301 to the identical HTTPS path. HSTS is host-only with
+`max-age=63072000`; the NPM default preload hint is overridden for this pilot.
+
+Public `/healthz`, `/agents` and `/account/login` return200 with no-store;
+unauthenticated `/account/` returns303 to login. Legacy create routes, including
+the encoded variant, return410. Root, privacy, terms and help initially returned404;
+exact redirects now lead to the existing socialcli.app pages, all verified200.
+No account/API route is redirected to the main site. Nginx syntax verification
+passed after the final changes, and the existing socialcli.app remains200.
+Safari displayed the English sign-in page at the verified HTTPS origin.
+This completes public proxy activation, not OTP/checkout/provider acceptance.
