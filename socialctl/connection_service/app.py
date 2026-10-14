@@ -184,7 +184,9 @@ def create_app(settings: Settings, *, store: Store | None = None,
         if not 16 <= len(cookie) <= 512:
             cookie = secrets.token_urlsafe(32)
         token = landing_tokens.issue(authorization_id, cookie, record['expires'])
-        response = HTMLResponse('' if request.method == 'HEAD' else landing_page(authorization_id, token, platform=record['payload']['platform']))
+        response = HTMLResponse('' if request.method == 'HEAD' else landing_page(
+            authorization_id, token, platform=record['payload']['platform'],
+            browser_selection=bool(record['payload'].get('saas'))))
         response.headers['X-Robots-Tag'] = 'noindex, nofollow'
         response.headers['Referrer-Policy'] = 'same-origin'
         provider_origin = {'youtube':'https://accounts.google.com', 'facebook':'https://www.facebook.com',

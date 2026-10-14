@@ -51,10 +51,12 @@ def _page(title: str, content: str) -> str:
 </footer></body></html>'''
 
 
-def landing_page(authorization_id: str, form_token: str, *, platform='youtube') -> str:
+def landing_page(authorization_id: str, form_token: str, *, platform='youtube', browser_selection=False) -> str:
     action = escape('/connect/' + authorization_id, quote=True)
     token = escape(form_token, quote=True)
     name, login, mark, description = PROVIDERS[platform]
+    confirmation = ('After signing in, choose and confirm your account in this browser.'
+                    if browser_selection else 'Return there to choose and confirm your account.')
     content = f'''
 <div class="connection-symbols" aria-hidden="true"><img src="{ASSETS}/socialcli-logo.png" alt="" width="64" height="64">
 <span class="connection-line"></span><span class="provider-mark provider-{platform}">{mark}</span></div>
@@ -67,7 +69,7 @@ def landing_page(authorization_id: str, form_token: str, *, platform='youtube') 
 <button class="primary-button" type="submit"><span>Continue with {login}</span>{_icon('arrow')}</button></form>
 <p class="button-note">You'll continue to {login} to sign in.</p>
 <div class="connection-details"><div class="detail">{_icon('lock')}<div><h2>You're in control</h2><p>Review the requested access before you approve.</p></div></div>
-<div class="detail">{_icon('terminal')}<div><h2>Keep SocialCli open</h2><p>Return there to choose and confirm your account.</p></div></div></div>
+<div class="detail">{_icon('terminal')}<div><h2>Keep SocialCli open</h2><p>{confirmation}</p></div></div></div>
 <p class="quiet-notice">Connecting does not publish content.</p>
 <p class="expiry-note">This link expires 10 minutes after it was created.</p>'''
     return _page('Connect ' + name, content)

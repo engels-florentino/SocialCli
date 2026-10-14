@@ -22,6 +22,26 @@ from socialctl.saas import pages
 from socialctl.saas.access import AccessDecision
 
 
+ROUTE_EXPECTATIONS = {
+    'login': (200, 'Send sign-in code'),
+    'email-invalid': (400, 'Enter a valid email address.'),
+    'code': (200, 'Enter your sign-in code'),
+    'code-invalid': (400, 'That code is invalid or expired.'),
+    'code-expired': (403, 'This code expired. Request a new sign-in code.'),
+    'account-empty': (200, 'No social accounts connected yet.'),
+    'assistant-approve': (200, 'Allow Fictional assistant?'),
+    'assistant-linked': (200, 'Assistant linked'),
+    'youtube-connect': (200, 'confirm your account in this browser.'),
+    'account-select': (200, 'Choose your account'),
+    'account-confirmed': (200, 'ACCOUNT CONFIRMED'),
+    'account-connected': (200, 'Disconnect'),
+    'account-delete': (200, 'Type DELETE'),
+    'assistant-long-name': (200, 'Allow AssistantWithAVeryLongUnbrokenFictionalNameForLayoutChecking123456789?'),
+    'email-unavailable': (503, 'Email delivery is temporarily unavailable.'),
+    'signin-unavailable': (503, 'Sign-in is temporarily unavailable.'),
+}
+
+
 def build(output: Path):
     output.mkdir(parents=True, exist_ok=True)
     assets = Path(__file__).resolve().parents[1] / 'socialctl/connection_service/assets'
@@ -29,8 +49,13 @@ def build(output: Path):
     catalogue = []
 
     def save(name, html, source):
+        status = None
         if hasattr(html, 'text'):
+            expected_status, marker = ROUTE_EXPECTATIONS[name]
+            assert html.status_code == expected_status, (name, html.status_code, expected_status)
             assert html.headers['content-type'].startswith('text/html'), name
+            assert marker in html.text, (name, 'expected page marker missing')
+            status = html.status_code
             html = html.text
         css_hash = hashlib.sha256((assets / 'connection.css').read_bytes()).hexdigest()[:12]
         html = html.replace('/connect/assets/connection.css', '/connect/assets/connection.css?v=' + css_hash)
@@ -40,7 +65,7 @@ def build(output: Path):
             'content="default-src \'none\'; style-src \'self\'; img-src \'self\'; '
             'form-action \'none\'; base-uri \'none\'">', 1)
         (output / f'{name}.html').write_text(html)
-        catalogue.append({'name': name, 'source': source})
+        catalogue.append({'name': name, 'source': source, 'http_status': status})
 
     with TemporaryDirectory(prefix='socialcli-ui-fictional-') as tmp:
         client, now, _ = service(Path(tmp), provider=provider)

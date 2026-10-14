@@ -24,7 +24,9 @@ sandboxed iframe. Existing logo and generated CSS are copied to the catalogue;
 no media is generated. CSS URLs include a content hash to avoid stale previews.
 The files are development artifacts, not part of the customer package or site.
 
-`manifest.json` identifies each page's source. Actual route responses cover
+`manifest.json` identifies each page's source and HTTP status (`null` for direct
+renderers). Before saving each route response, the generator asserts its expected
+status, HTML content type and a distinguishing page marker. Actual responses cover
 login, invalid email, OTP, rejected/expired OTP, unavailable identity/email,
 empty and connected accounts, assistant approval/success, YouTube connection,
 account selection/confirmation and the account-deletion confirmation. A second
@@ -110,16 +112,40 @@ issues in this diff and independently reran the 28 billing tests successfully.
 That review checked code and evidence boundaries; Safari inspection was performed
 by the executor.
 
-Further copy review is needed for the shared connection landing page: its
-“Return there to choose and confirm your account” wording describes the legacy
-CLI flow, whereas SaaS account selection occurs in the owner's browser. This
-finding remains open alongside provider-specific journey acceptance.
+## Connection instructions and keyboard/zoom follow-through — 2026-10-14
+
+At baseline `2b0c399`, the shared landing page still told SaaS users to return
+to the CLI to choose their account. The renderer now uses the stored authorization's
+SaaS flag to explain that selection and confirmation happen in the browser.
+Legacy connections retain their existing instruction. Manual fictional route
+probes verified both variants return 200 with the appropriate instruction and
+retain the provider form-action policy. The corrected SaaS YouTube fixture was
+visually checked at 360, 390 and 1440 CSS pixels, including its footer, without
+reported document or checked-block overflow.
+
+The catalogue now checks the expected HTTP status and distinguishing marker of
+all 16 route-derived fixtures, addressing the earlier review's Minor finding.
+Generation succeeded for all 25 pages. Connection UI/service/SaaS-connection
+checks passed: **29 tests**, one existing Starlette/httpx deprecation warning.
+The generated-assets check passed; no CSS changed in this increment.
+
+Native Safari's standalone `assistant-approve.html` was inspected at **200%
+browser zoom**, verified by the browser's zoom menu. The heading, explanatory
+copy, permission legend, controls and footer remained readable without visible
+horizontal clipping. Option-Tab traversed home, Skip to content, all four network
+checkboxes, Allow, Cancel, Privacy, Terms and Help. Activating Skip to content
+moved into the main content; the next Option-Tab reached YouTube. Screenshots
+confirmed visible focus on home, YouTube and Help, and keyboard traversal scrolled
+the page to expose the controls. No approval form was submitted. This verifies
+that standalone fixture in the current desktop window, not every viewport or
+catalogue page. Safari zoom was restored to 100%, the temporary tab was closed
+and the local preview server stopped. The original seven tabs were preserved.
 
 ## Still required for full UI acceptance
 
 The 25-state width review does not cover every product surface or interaction.
-Complete 200% browser zoom, reduced motion and keyboard traversal for the
-catalogue. Complete website/pricing/installation,
+Complete the remaining 200% browser zoom and keyboard cases across the catalogue,
+and reduced-motion acceptance. Complete website/pricing/installation,
 email-client and provider-specific fixtures plus the real authenticated journey
 through Stripe and social providers. Preserve the real journey's required owner
 approvals. Screen-reader announcement testing remains separate from inspecting
@@ -130,11 +156,15 @@ permissions, authentication decisions, subscription pricing or media storage.
 
 ## Independent review
 
-One read-only fresh-context review found no Critical or Important issues and
-accepted this increment. A Minor improvement remains: route fixture capture
-checks HTML content type but does not consistently assert the expected HTTP
-status and a distinguishing page marker. Until that is strengthened, inspect
-fixture content against its manifest source; generation alone is not success.
+The first read-only fresh-context review found no Critical or Important issues.
+Its Minor finding about route fixture status/marker checks is resolved by the
+capture assertions described above. Generation still does not replace visual
+inspection or authenticated journey acceptance.
+
+A final read-only review of the connection-copy/catalogue increment against
+`2b0c399` found no Critical, Important or Minor issues and accepted the change.
+The reviewer inspected all four changed files and ran `git diff --check`;
+tests and Safari observations were executor evidence, not independently repeated.
 
 Review boundaries remain requirements, not exemptions: complete width/zoom/
 reduced-motion/keyboard acceptance is still open; native appearance was checked
