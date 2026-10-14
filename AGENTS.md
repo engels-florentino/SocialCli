@@ -3,6 +3,9 @@
 Public Python CLI for creator-owned social accounts. Run `uv run pytest` and
 `uv run socialcli --help`. Internal Python imports remain `socialctl`.
 
+- All product-facing UI, CLI messages, errors, emails and product documentation
+  must be in English. The operator conversation may be in Spanish.
+
 - Never infer a user's brand or connect somebody else's accounts.
 - Never publish without a complete `--dry-run` preview and explicit approval.
 - Never generate, crop or reencode media. Users supply produced files.

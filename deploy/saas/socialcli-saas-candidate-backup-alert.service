@@ -1,0 +1,13 @@
+[Unit]
+Description=Monitor SocialCli encrypted backup freshness and send private alerts
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/blades3/projects/socialcli-saas/ops/backup_alert.py /home/blades3/projects/socialcli-saas/private/backup-candidate.json
+UMask=0077
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/blades3/projects/socialcli-saas/backups/candidate

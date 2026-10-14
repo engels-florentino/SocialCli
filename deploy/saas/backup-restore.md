@@ -231,3 +231,38 @@ on the Mac. The owner enabled the desktop integration and authorized access.
 The vault items include repository paths and isolation/reconciliation instructions.
 This establishes independent password storage, not a test of losing access to
 the owner's Google or 1Password accounts; preserve those account recovery methods.
+
+## Private backup alerts
+
+`backup_alert.py` records `remote-status.json` only after both encrypted repositories
+have completed their Drive copy and comparison. The separate five-minute monitor
+checks local completion, systemd failure and the age of the remote snapshot pair.
+A pair older than two hours requires attention even when a newer local backup exists.
+Install the existing `socialctl/saas/mail.py` as `ops/saas_mail.py` beside the host
+scripts; the SMTP transport uses certificate-verified STARTTLS and the private
+Auth SMTP configuration. Set `alert_recipient` in the root-only backup JSON.
+
+Alerts are English-only, contain fixed operational descriptions, and exclude
+credentials and customer records. The private `alert-status.json` records a durable
+fence before SMTP DATA. Accepted or uncertain deliveries are not resent during the
+same incident; only an inactive successful service with completed local and matching
+verified remote receipts rearms notifications for a later incident. A running retry
+does not count as recovery.
+A definite pre-DATA failure or explicit transient SMTP rejection may retry. Inspect
+`delivery=uncertain`, `sending` or `rejected` manually; do not erase the receipt to
+replay a message whose acceptance is unknown. `--test` has a separate durable receipt
+and explicitly labels the message as a delivery test, not an actual backup failure.
+
+This monitor runs on the backup server. It cannot notify while that server or its
+mail/network path is unavailable; an independent outage monitor is a separate gate.
+The earlier Spanish test was received by the operator; it predates the English-only
+requirement and is not an automated alert template.
+
+Deployment verified on 14 October 2026: the host scripts and systemd units were
+installed with restricted permissions. A complete new backup, both Drive copy/check
+pairs and the new remote completion step returned systemd Result=success. The
+monitor returned status=ok with no active incident. The alert timer is enabled and
+active; an actual service invocation returned Result=success, ExecMainStatus=0.
+The English delivery-test message was accepted by SMTP. Inbox receipt of that
+English message has not yet been confirmed. The monitor uses the operator-approved
+recipient; it does not change the customer reminder configuration or public service.
