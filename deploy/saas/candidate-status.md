@@ -1,6 +1,6 @@
 # Isolated server candidate — 13 October 2026
 
-Code checkpoint: `fe9700c`, SocialCli **0.3.0rc1**. Public SocialCli remains
+Code checkpoint: `a5461a3`, SocialCli **0.3.0rc1**. Public SocialCli remains
 **0.2.6**. This is a private server deployment, not a public SaaS launch.
 
 ## Deployed boundaries
@@ -23,12 +23,12 @@ Code checkpoint: `fe9700c`, SocialCli **0.3.0rc1**. Public SocialCli remains
 
 ## Evidence
 
-- Full Python suite including host backup orchestration: **2,407 passed**, one
+- Full Python suite including host backup orchestration: **2,416 passed**, one
   upstream Starlette deprecation warning. Backup orchestration runs on the host;
   the deployed application image remains at the code checkpoint above.
 - Wheel and source archive passed the release allowlist/private-file verifier.
-- Wheel SHA256: `50bc17bd3f9132e81d9b92b335fd4dfa47bd0f8dbf641d8a3ebcfa44b7ebe552`.
-- Sdist SHA256: `19578bc5b214ee354071b60d2956851e7d9f7f3936f7a75b23c7d2fcc339fc6e`.
+- Wheel SHA256: `edee7a79f82167f44770e327e845bc355803c3aba3eee880e024f5f745fe9acf`.
+- Sdist SHA256: `bcbb28f97a0b9f3f4258514aa980edeed7a6a6e05884ec79bc60a638002e9512`.
 - Candidate installed in its own Python 3.12 image; version is 0.3.0rc1.
 - Local HTTP probes: `/healthz`, `/agents`, `/account/login` return 200;
   unauthenticated `/account/` redirects 303. Guide and login include expected
@@ -52,3 +52,9 @@ Muse/Grok pilot remain outstanding. This deployment does not establish these.
 The candidate-only encrypted backup timer is now enabled hourly. A real systemd
 run succeeded, and an exact local snapshot pair restored offline with both
 repositories fully checked. See [backup evidence and limits](backup-restore.md).
+
+The whole-branch session and CLI recovery fixes are now in the candidate image.
+A fresh encrypted backup completed before recreation; installed hashes of all
+three changed modules match the reviewed checkout. Candidate/public service
+health and the four HTTP route checks above passed after deployment. See
+[branch review](branch-review.md) for findings, fixes and acceptance limits.
