@@ -16,6 +16,7 @@ runner = CliRunner()
 
 @pytest.mark.parametrize('launchctl,returncode', [(None, 0), ('/test/launchctl', 1)])
 def test_install_does_not_claim_success_without_loaded_service(tmp_path, monkeypatch, launchctl, returncode):
+    monkeypatch.setattr(cli.sys,'platform','darwin')
     crear_brand(tmp_path, 'Example')
     home = tmp_path / 'home'
     monkeypatch.setattr(cli.Path, 'home', lambda: home)

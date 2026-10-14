@@ -1048,12 +1048,23 @@ def schedule_install(
     brand_nombre: str = typer.Option(..., "--brand", help="Brand to install the agent for."),
     root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
 ) -> None:
-    """Install the periodic queue executor as a macOS launchd agent."""
+    """Install the local queue executor using macOS launchd or Linux systemd user timers."""
     brand = _cargar_marca(root, brand_nombre)
     try:
         ScheduleStore(brand.raiz).assert_ready()
     except ScheduleError as exc:
         _fallar(str(exc))
+    if sys.platform.startswith('linux'):
+        from socialctl.scheduler_systemd import install, SupervisorError
+        try:
+            supervisor = install(brand.nombre,root)
+        except (SupervisorError,OSError) as exc:
+            _fallar(str(exc) if isinstance(exc,SupervisorError) else 'Could not save Linux scheduler units')
+        typer.echo(f"Linux user timer installed and active: {supervisor['unit']}.timer")
+        typer.echo('Original media stays on this customer-owned machine; keep it powered on and connected.')
+        if supervisor['survives_logout'] is not True:
+            typer.echo(f'Logout persistence is unverified. The operator can enable it with loginctl enable-linger {os.getuid()}; then run schedule-doctor.')
+        return
     launchctl = shutil.which("launchctl")
     if not launchctl:
         _fallar('No launchd supervisor is available. Nothing was installed. On Linux, configure a persistent '
@@ -1119,21 +1130,49 @@ def schedule_doctor(
                   'unattended_delivery_guaranteed': False, 'server_media_storage': False,
                   'error': diagnostic,
                   'instruction': 'Keep the original files, credentials and a supervised executor available on '
-                      'the customer-owned machine. Use schedule-install on macOS; on Linux configure run-due '
-                      'with a persistent supervisor. Do not promise delivery from an ephemeral Muse/Grok session.'}
+                      'the customer-owned machine. Use schedule-install on macOS or Linux. '
+                      'Do not promise delivery from an ephemeral Muse/Grok session.'}
+        if sys.platform.startswith('linux'):
+            from socialctl.scheduler_systemd import inspect
+            supervisor = inspect(brand.nombre,root)
+            result['supervisor'] = supervisor
+            supervised = (supervisor['configuration_matches'] and supervisor['enabled'] and supervisor['active']
+                          and supervisor['survives_logout'] is True and supervisor['service_failed'] is False)
+            if supervised:
+                result['persistent_supervision'] = 'verified_now'
+                if not observation['stale'] and observation.get('state') != 'error':
+                    result['status'] = 'ready'
+                    result['error'] = None
+            elif observation.get('state') != 'error' and not observation['stale']:
+                if supervisor['service_failed']:
+                    code,message = 'supervisor_service_failed','The Linux service failed; inspect journalctl --user before relying on the queue.'
+                elif supervisor['active'] and supervisor['survives_logout'] is not True:
+                    code,message = 'logout_persistence_unverified','The timer is active, but persistence after logout requires operator-verified linger.'
+                else:
+                    code,message = 'supervision_unverified','An enabled active Linux user timer with matching configuration was not verified.'
+                result['error'] = {'code':code,'message':message,'action':'user_action'}
     if json_output:
         typer.echo(json.dumps(result, indent=2))
     else:
-        typer.echo(result['error']['message'])
+        typer.echo(result['error']['message'] if result['error'] else 'Executor and persistent supervision verified now; future delivery still depends on this machine.')
         typer.echo(result.get('instruction', ''))
-    raise typer.Exit(1)
+    raise typer.Exit(0 if result['status'] == 'ready' else 1)
 
 
 @app.command("schedule-uninstall")
 def schedule_uninstall(
     brand_nombre: str = typer.Option(..., "--brand", help="Brand whose agent to remove."),
+    root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace containing the brand's scheduler."),
 ) -> None:
-    """Remove a brand's local launchd agent."""
+    """Remove this workspace's local queue supervisor without deleting queue or media."""
+    if sys.platform.startswith('linux'):
+        from socialctl.scheduler_systemd import uninstall, SupervisorError
+        try:
+            removed = uninstall(brand_nombre,root)
+        except (SupervisorError,OSError) as exc:
+            _fallar(str(exc) if isinstance(exc,SupervisorError) else 'Could not remove Linux scheduler units')
+        typer.echo('Linux timer removed. An already running approved operation may finish; queue and media are preserved.' if removed else 'No Linux scheduler units found for this workspace and brand.')
+        return
     label = f"com.socialctl.{brand_nombre.lower()}.run-due"
     plist_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
     if not plist_path.exists():

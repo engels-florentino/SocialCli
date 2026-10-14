@@ -173,10 +173,25 @@ original file, credentials, connectivity and a persistent executor at delivery t
     socialcli schedule-doctor --brand MyBrand --json
 
 Exit 1 requires attention. A recent heartbeat proves only a recent run, not that
-Muse/Grok will keep an executor alive between conversations. `schedule-install`
-loads a macOS launchd agent and fails if it cannot. Linux operators must provide
-their own persistent supervisor for `run-due`; automatic systemd installation is
-not yet included. This is not a reason to move media onto the SaaS server.
+Muse/Grok will keep an executor alive between conversations. On a persistent,
+customer-owned Linux machine, `schedule-install --brand MyBrand` installs systemd
+user service/timer units for that exact workspace and installed interpreter. On
+macOS it loads a launchd agent. Both fail instead of reporting success from files alone.
+
+Linux units run `run-due` without a shell, five seconds after timer activation and
+60 seconds after each completed run. They cannot keep a disappearing agent runtime
+alive. The user manager must be available. The installer does not change host policy:
+if logout persistence is unverified, an authorized operator can enable linger with
+`loginctl enable-linger USER_ID` and then run `schedule-doctor` again.
+
+On Linux, doctor exits 0 only when the matching loaded configuration, enabled active
+timer, service result, logout persistence and recent executor heartbeat are verified
+now. Even `ready` does not guarantee future power, credentials, files or connectivity.
+macOS persistent supervision still requires operator verification beyond heartbeat.
+Use `schedule-uninstall --brand MyBrand --root WORKSPACE` to disable future Linux
+runs; an already running approved operation may finish. Queue, media and credentials
+remain intact. Different workspace roots have different Linux unit identities.
+This is not a reason to move media onto the SaaS server.
 
 ## Native scheduling input examples (offline)
 

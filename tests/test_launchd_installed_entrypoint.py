@@ -14,6 +14,7 @@ from socialctl.cli import app
 
 @pytest.mark.parametrize("uv_available", [False, True])
 def test_installed_agent_runs_from_external_workspace(tmp_path, monkeypatch, uv_available):
+    monkeypatch.setattr(sys,"platform","darwin")
     workspace = tmp_path / "creator-workspace"
     workspace.mkdir()
     crear_brand(workspace, "ExampleBrand")

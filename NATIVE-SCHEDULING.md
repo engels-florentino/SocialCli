@@ -83,8 +83,13 @@ are rewritten, and subsequent writes never downgrade schema 3.
 
 Use `socialcli delivery-options --brand BRAND --json` to inspect product limits and
 `socialcli schedule-doctor --brand BRAND --json` to inspect local executor evidence.
-The latter exits 1 while supervision is unverified; a recent heartbeat alone is
-not a guarantee that a transient AI-agent session will execute future work.
+The latter exits 1 while supervision is unverified. On persistent customer-owned
+Linux systems, `schedule-install` installs a systemd user timer and verifies its
+loaded configuration and activation. `schedule-doctor` also requires logout
+persistence and a recent executor heartbeat before reporting ready. The installer
+does not enable linger automatically; follow its operator instruction if necessary.
+`schedule-uninstall --brand BRAND --root WORKSPACE` disables future timer runs and
+preserves queue/media. None of this makes an ephemeral AI conversation persistent.
 
 Complete offline input examples (manifest, required calendar inventory, eligibility
 and reconciliation observation) ship in `socialcli agent-guide`; the canonical source
