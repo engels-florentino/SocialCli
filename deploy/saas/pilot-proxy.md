@@ -80,3 +80,20 @@ current payment/identity state or change the public host39/certificate43.
 
 References: [NPM dedicated Docker networks](https://nginxproxymanager.com/advanced-config/),
 [Namecheap CNAME setup](https://www.namecheap.com/support/knowledgebase/article.aspx/9646/2237/how-to-create-a-cname-record-for-your-domain/).
+
+## Prepared host activation — 14 October 2026
+
+The operator authenticated NPM in Safari over a loopback-only SSH tunnel.
+The candidate now uses canonical origin `https://pilot.socialcli.app` and the
+verified image `57efd47`. Its Compose configuration explicitly disables all four
+providers and customer reminders. The dedicated `socialcli-pilot-edge` membership
+is persisted in both Compose files; the running NPM container was connected without
+recreation. NPM is not on `socialcli-identity`. Original Compose files were retained
+in the server's private directory for rollback.
+
+The candidate and existing public connection service were healthy after recreation;
+local Host-bound probes of `/healthz`, `/agents` and `/account/login` returned 200.
+The NPM form is prepared with the documented destination, request-size limit,
+legacy-create guards, disabled request logs, new certificate, forced HTTPS and
+host-only HSTS. The final public activation is awaiting action-time confirmation;
+these checks do not establish public TLS or a completed browser login journey.
