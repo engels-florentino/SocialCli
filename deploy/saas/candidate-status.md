@@ -140,3 +140,58 @@ and maintenance writer, then migrate. An old process already running does not
 re-evaluate startup schema guards. Rollback must use schema7-compatible code;
 never restore an old database simply to downgrade code. No new customer access,
 provider revocation or fine-grained action permissions are claimed by this change.
+
+## Schema7 image and offline migration rehearsal — 14 October 2026
+
+Linux verification of checkpoint `7fbb6a2` is complete: **2,703 tests passed in
+146.39s**, followed by successful installed-wheel smoke with networking disabled.
+See the [connection-access verification](../../docs/superpowers/plans/2026-10-14-installation-platform-access.md).
+
+Prepared immutable image `socialcli-saas-candidate:7fbb6a2`, ID
+`sha256:8673546e75d79fb55c6a6e53abf2f58792c4d4ad3a5debb711d5952917951622`.
+The image derives from the exact deployed `1fbaf1d` image, preserving its resolved
+dependencies, and installs the reviewed wheel with `--no-index --no-deps` and build
+networking disabled. Dependency declarations have not changed between these
+checkpoints. Wheel SHA256:
+`b0511592cd49c0ec90b9e3e4a9f1cf2ee0c36b1590cc9a8850339442b557b007`.
+Build context was 1.407 MB and excluded private configuration, scripts, state and
+rehearsal results. The image is prepared, not serving traffic.
+
+A fresh online SQLite backup of the private candidate was authenticated before
+use. Its schema6 source hash is
+`c548a444e30db3466e1f2da5d70a9376cc52390b76b9df9e5fccaa10b7d47c65`.
+The rehearsal mounted that snapshot read-only, used a disposable working copy,
+disabled all external networking, and never mounted the active database.
+
+Verified against that actual candidate snapshot:
+
+- Migration reaches schema7 and is idempotent on a second initialization.
+- All other SQL table contents and decrypted record values remain identical.
+- The deployed schema6 implementation rejects the migrated database; rejection
+  leaves its contents unchanged. This is a downgrade guard, not a usable rollback.
+- The new image serves health, agent instructions and login through an isolated
+  ASGI client; an unauthenticated account request redirects to sign-in.
+- The original snapshot remains unchanged. The migrated snapshot authenticates
+  successfully and retains the persistent legacy cutoff.
+
+The snapshot contains one encrypted record and **zero installation records**.
+This live-data rehearsal therefore does not establish legacy installation-policy
+migration; the separate fictional migration and restriction tests cover that path.
+No Stripe, Auth, SMTP or social-provider request was made by the rehearsal.
+
+Private server evidence: `release-7fbb6a2/scripts/rehearse.py`,
+`release-7fbb6a2/scripts/schema6_store.py`, and
+`release-7fbb6a2/results/report.json`, relative to
+`/home/blades3/projects/socialcli-saas`. The authenticated migrated snapshot stays
+there; neither database nor keys were downloaded to the Mac. This local snapshot
+does not establish off-host recovery or a fresh paired Auth restore.
+
+After the rehearsal, authoritative inspection confirmed the deployed private
+candidate still uses `1fbaf1d` and schema6; the public image is unchanged. Both
+containers are healthy and candidate maintenance/backup timers are active.
+
+Remaining before switching the private service: prepare and verify an independently
+usable schema7-compatible recovery release, obtain a fresh paired backup, and stop
+all old writers during the migration. Never use the schema6 image or restore an old
+database as a code rollback. Pilot DNS still has no A record; public HTTPS routing,
+Drive authorization/recovery and the other launch gates above remain incomplete.
