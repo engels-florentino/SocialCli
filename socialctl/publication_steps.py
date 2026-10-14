@@ -143,7 +143,16 @@ def _comment_issue(result, data):
     return result
 
 
-def _resume_publication(brand, http, store, data, *, on_media_result=None):
+def _observe_media(callback, result):
+    """Advisory output cannot replace the critical persisted-media callback."""
+    if callback is not None:
+        try:
+            callback(result)
+        except Exception:
+            pass
+
+
+def _resume_publication(brand, http, store, data, *, on_media_result=None, on_media_observed=None):
     result = _stored_media(data)
     if result is None:
         return PostResult(platform=Platform(data["platform"]), status=PostStatus.ERROR,
@@ -151,6 +160,7 @@ def _resume_publication(brand, http, store, data, *, on_media_result=None):
             error="journal has no media result: uncertain outcome; manual reconciliation required")
     try:
         _bound(brand, data)
+        _observe_media(on_media_observed, result)
         if on_media_result is not None:
             on_media_result(result)
         if result.status is not PostStatus.PUBLICADO or not result.platform_id:
@@ -263,7 +273,7 @@ def retry_first_comment(brand, http, publication_id):
         return _first_comment(brand, http, store, store.load(publication_id), retry_rejected=True)
 
 
-def publish_with_steps(post, brand, platform, adapter, http, *, on_media_result=None,
+def publish_with_steps(post, brand, platform, adapter, http, *, on_media_result=None, on_media_observed=None,
                        occurrence_id=None, provenance="approved-publish-preview", retry_guard=False):
     store = PublicationStore(brand.raiz)
     gate = str(uuid.uuid5(uuid.NAMESPACE_URL, json.dumps([
@@ -274,10 +284,11 @@ def publish_with_steps(post, brand, platform, adapter, http, *, on_media_result=
             if platform in blockers:
                 raise CommentError("; ".join(blockers[platform]))
         return _publish_occurrence(post, brand, platform, adapter, http,
-            on_media_result=on_media_result, occurrence_id=occurrence_id, provenance=provenance)
+            on_media_result=on_media_result, on_media_observed=on_media_observed,
+            occurrence_id=occurrence_id, provenance=provenance)
 
 
-def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result=None,
+def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result=None, on_media_observed=None,
                         occurrence_id=None, provenance):
     store = PublicationStore(brand.raiz)
     identifier = occurrence_id or str(uuid.uuid4())
@@ -290,7 +301,8 @@ def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result
             if (existing["slug"], existing["platform"], existing["brand"], existing["brand_root"]) != (
                     post.slug, platform.value, brand.nombre, str(brand.raiz.resolve())):
                 raise CommentError("journal UUID belongs to another post, platform or brand")
-            return _resume_publication(brand, http, store, existing, on_media_result=on_media_result)
+            return _resume_publication(brand, http, store, existing, on_media_result=on_media_result,
+                                       on_media_observed=on_media_observed)
         data = Publication(id=identifier, brand=brand.nombre, brand_root=str(brand.raiz.resolve()),
             platform=platform.value, slug=post.slug, account=_account(brand, platform),
             text=post.platforms[platform].first_comment, provenance=provenance,
@@ -309,6 +321,7 @@ def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result
         result.publication_id = identifier
         if data["text"]:
             result.first_comment_status = "pending"
+        _observe_media(on_media_observed, result)
         data["media"] = result.model_dump(mode="json")
         data["state"] = "published" if result.status is PostStatus.PUBLICADO else "upload_result"
         try:

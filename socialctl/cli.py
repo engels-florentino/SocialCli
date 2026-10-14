@@ -67,6 +67,8 @@ from socialctl.models import Platform, Post, PostStatus
 from socialctl.workspace import default_root
 from socialctl.postfile import PostNoEncontrado, cargar_post
 from socialctl.publication_status import describe_result_with_observation
+from socialctl.read_reports import safe_error
+from socialctl.publish_output import PublishOutput
 from socialctl.publisher import (
     PersistenciaError,
     anexar_historial,
@@ -369,7 +371,7 @@ def _mostrar_comentario(result):
     if result.first_comment_change_id:
         typer.echo(f'Comment ChangeSet: {result.first_comment_change_id}')
     for warning in result.warnings:
-        typer.echo(f"WARNING: {warning}")
+        typer.echo(f"WARNING: {safe_error(warning)}")
 
 
 def _publicar_impl(
@@ -381,6 +383,7 @@ def _publicar_impl(
     only: list[Platform] | None,
     motivo_exclusion: str = "not requested with --only",
     retry_guard: bool = False,
+    report=None,
 ) -> None:
     """Validate, preview and publish an already loaded post; shared by publish and retry."""
     if only is not None:
@@ -389,14 +392,11 @@ def _publicar_impl(
         destinos = list(post.platforms)
 
     errores = validar_todo(post, brand)
-    typer.echo(
-        render_preview(
-            post, errores,
-            brand=brand,
-            destinos=destinos if only is not None else None,
-            motivo_exclusion=motivo_exclusion,
-        )
-    )
+    preview = render_preview(post, errores, brand=brand,
+        destinos=destinos if only is not None else None, motivo_exclusion=motivo_exclusion)
+    typer.echo(preview)
+    if report is not None:
+        report.preview = preview
 
     if only is not None and not destinos:
         _fallar(
@@ -405,10 +405,14 @@ def _publicar_impl(
 
     errores_bloqueantes = {p: es for p, es in errores.items() if p in destinos}
     if any(errores_bloqueantes.values()):
+        if report is not None:
+            report.add_error("validation_failed")
         typer.echo("\nNothing will be published: fix the problems above.")
         raise typer.Exit(1)
 
     if dry_run:
+        if report is not None:
+            report.status = "preview"
         typer.echo("\n--dry-run: nothing was published.")
         raise typer.Exit(0)
 
@@ -427,6 +431,8 @@ def _publicar_impl(
             typer.echo("\nCanceled. Nothing was published.")
             raise
         if not confirmado:
+            if report is not None:
+                report.status = "cancelled"
             typer.echo("Canceled. Nothing was published.")
             raise typer.Exit(0)
 
@@ -436,20 +442,31 @@ def _publicar_impl(
     except ValueError as exc:
         _fallar(str(exc))
 
+    reporting = {}
+    if report is not None:
+        report.begin_write()
+        reporting = {'on_result': report.observe_safely}
     resultados = publicar(post, brand, solo=destinos, on_progreso=_mostrar_progreso,
-                          retry_guard=retry_guard)
+                          retry_guard=retry_guard, **reporting)
+    if report is not None:
+        for result in resultados:
+            report.observe_safely(result)
 
     typer.echo("")
     for r in resultados:
         estado = describe_result_with_observation(r)
-        typer.echo(f"{r.platform.value}: {estado} {r.url or r.error or ''}".rstrip())
+        typer.echo(f"{r.platform.value}: {estado} {safe_error(r.url or r.error or '')}".rstrip())
         _mostrar_comentario(r)
 
     try:
         guardar_resultado(post, brand, resultados)
         anexar_historial(post, brand, resultados)
+        if report is not None:
+            report.persistence = {"complete": True}
     except PersistenciaError as exc:
-        typer.echo(f"\n{exc}")
+        if report is not None:
+            report.add_error("persistence_failed")
+        typer.echo(f"\n{safe_error(str(exc))}")
         typer.echo(
             'Publication WAS attempted for the results above; only saving them to disk failed.'
         )
@@ -667,20 +684,22 @@ def publish(
     yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt."),
     only: list[str] = typer.Option(None, "--only", help="Publish only on these platforms."),
     source_link: bool = typer.Option(False, "--source-link", help="Require this exact post in source-videos.yml before previewing."),
+    json_output: bool = typer.Option(False, "--json", help="One JSON result; complete preview and approval UI on stderr."),
 ) -> None:
     """Validate every platform, display the complete preview, then publish approved content."""
-    brand = _cargar_marca(root, brand_nombre)
-    post = _cargar_post_con_avisos(brand, slug, source_link=source_link)
+    with PublishOutput(json_output, command="publish", brand=brand_nombre, slug=slug) as report:
+        brand = _cargar_marca(root, brand_nombre)
+        post = _cargar_post_con_avisos(brand, slug, source_link=source_link)
 
-    destinos: list[Platform] | None = None
-    if only:
-        try:
-            destinos = [Platform(r) for r in only]
-        except ValueError:
-            validas = ", ".join(p.value for p in Platform)
-            _fallar(f"--only contains an unknown platform. Valid platforms: {validas}")
+        destinos: list[Platform] | None = None
+        if only:
+            try:
+                destinos = [Platform(r) for r in only]
+            except ValueError:
+                validas = ", ".join(p.value for p in Platform)
+                _fallar(f"--only contains an unknown platform. Valid platforms: {validas}")
 
-    _publicar_impl(post, brand, dry_run=dry_run, yes=yes, only=destinos)
+        _publicar_impl(post, brand, dry_run=dry_run, yes=yes, only=destinos, report=report)
 
 
 @app.command("schedule")
@@ -1231,8 +1250,14 @@ def retry(
     brand_nombre: str = typer.Option(..., "--brand", help="Brand to retry."),
     root: Path = typer.Option(RAIZ_POR_DEFECTO, help="Workspace directory containing brands."),
     yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt."),
+    json_output: bool = typer.Option(False, "--json", help="One JSON result; complete preview and approval UI on stderr."),
 ) -> None:
     """Retry failed platforms only after validation and preview, excluding outcomes that may duplicate publications."""
+    with PublishOutput(json_output, command="retry", brand=brand_nombre, slug=slug) as report:
+        _retry_impl(slug, brand_nombre, root, yes, report=report)
+
+
+def _retry_impl(slug, brand_nombre, root, yes, *, report=None):
     brand = _cargar_marca(root, brand_nombre)
     post = _cargar_post_con_avisos(brand, slug)
 
@@ -1241,6 +1266,10 @@ def retry(
         protected = retry_media_blockers(brand, post.slug, post.platforms)
     except CommentError as exc:
         _fallar(str(exc))
+    if report is not None:
+        report.retry["blocked"] = sorted(p.value for p in protected)
+        for platform in protected:
+            report.add_error("operation_uncertain", platform=platform.value)
     for platform, reasons in protected.items():
         for reason in reasons:
             typer.echo(f"{platform.value}: {reason}. Consulta comments publication-status / retry-first.")
@@ -1299,6 +1328,13 @@ def retry(
     )
     seguras = [p for p in vigentes if p not in arriesgadas and Platform(p) not in protected]
 
+    if report is not None:
+        report.retry["blocked"] = sorted(set(report.retry["blocked"]) | set(arriesgadas))
+        report.retry["selected"] = seguras
+        for platform in arriesgadas:
+            if Platform(platform) not in protected:
+                report.add_error("operation_uncertain", platform=platform)
+
     if arriesgadas:
         typer.echo(
             "\nWARNING: these platforms will not be retried automatically because of "
@@ -1306,7 +1342,7 @@ def retry(
             "that the content may have been published):"
         )
         for p in arriesgadas:
-            typer.echo(f"  - {p}: {previos[p].get('error')}")
+            typer.echo(f"  - {p}: {safe_error(previos[p].get('error') or '')}")
         typer.echo(
             "Check the account manually before publishing on these platforms again "
             "(for example: socialcli publish ... --only <platform> --yes)."
@@ -1324,6 +1360,7 @@ def retry(
             only=[Platform(p) for p in seguras],
             motivo_exclusion="not retried in this attempt",
             retry_guard=True,
+            report=report,
         )
     except typer.Exit as exc:
         codigo_publish = exc.exit_code or 0

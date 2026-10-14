@@ -425,7 +425,29 @@ requires reconciliation, including a failed journal save or interruption; it nev
 means the write was rejected. Use the corresponding reconcile/status command,
 not a fresh proposal or another apply to retry a possibly completed write.
 
-Other publish/mutation commands are not all converted to this taxonomy; inspect
+`publish --json` and `retry --json` also reserve stdout for one versioned document.
+Full preview, progress and confirmation remain on stderr; a dry-run additionally
+returns the exact `preview` string. Preserve both streams and show the owner the
+complete preview. `--json` never grants approval; existing `--yes` still requires
+prior explicit consent to that complete preview.
+
+Publication reports include `status`, `resultados`, `errors` and `persistence`;
+retry additionally reports `retry.selected` and `retry.blocked`. A report can be
+`preview`, `cancelled`, `noop`, `ok`, `partial` or `error`. Each result retains its
+original platform state, confirmed IDs, durable attempt IDs and visibility fields.
+`error_detail` describes a failed/uncertain/pending media result;
+`first_comment_error_detail` concerns only the comment, never a reason to upload
+media again. Pending TikTok confirmation remains pending even with exit 0.
+An unfinished first comment may likewise produce `partial` with the legacy exit 0.
+Always inspect the document instead of inferring completion from the exit alone.
+
+`persistence.complete` is true only after both resultado.json and history were
+saved; false after an attempted publication whose persistence is incomplete, and
+null before publication. Keep all returned observations after an interruption or
+persistence failure. Confirmed results are not permission to replay an uncertain
+platform; use the durable journal and provider observations for reconciliation.
+
+Other management/native-scheduling commands are not all converted to this taxonomy; inspect
 their exit code, stderr and durable result as well. No action hint grants approval
 to reconnect, publish, delete or replay a write.
 

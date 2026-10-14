@@ -196,6 +196,7 @@ def publicar(
     *,
     on_progreso: Callable[[Platform], None] | None = None,
     on_media_result: Callable[[PostResult], None] | None = None,
+    on_result: Callable[[PostResult], None] | None = None,
     occurrence_ids: dict[Platform, str] | None = None,
     approval_provenance: str = "approved-publish-preview",
     retry_guard: bool = False,
@@ -224,7 +225,7 @@ def publicar(
                 error="could not persist publication start; publication was not attempted", riesgo_duplicado=False) for p in selected]
         # Do not classify an exception after adapter effects as safe to retry.
         return _publicar_locked(post, brand, solo, on_progreso=on_progreso,
-            on_media_result=on_media_result, occurrence_ids=occurrence_ids,
+            on_media_result=on_media_result, on_result=on_result, occurrence_ids=occurrence_ids,
             approval_provenance=approval_provenance, retry_guard=retry_guard,
             legacy_approved_platforms=legacy_approved_platforms)
 
@@ -236,6 +237,7 @@ def _publicar_locked(
     *,
     on_progreso: Callable[[Platform], None] | None = None,
     on_media_result: Callable[[PostResult], None] | None = None,
+    on_result: Callable[[PostResult], None] | None = None,
     occurrence_ids: dict[Platform, str] | None = None,
     approval_provenance: str = "approved-publish-preview",
     retry_guard: bool = False,
@@ -244,6 +246,14 @@ def _publicar_locked(
     """Publish independently on each platform; one failure does not abort the others."""
     destinos = [p for p in post.platforms if solo is None or p in solo]
     resultados: list[PostResult] = []
+
+    def record(result):
+        resultados.append(result)
+        if on_result is not None:
+            try:
+                on_result(result)
+            except Exception:
+                pass  # Reporting cannot retry or change provider behavior.
 
     with httpx.Client(timeout=60) as client:
         for platform in destinos:
@@ -254,7 +264,7 @@ def _publicar_locked(
                     pass
             adaptador_cls = ADAPTADORES.get(platform)
             if adaptador_cls is None:
-                resultados.append(
+                record(
                     PostResult(
                         platform=platform,
                         status=PostStatus.ERROR,
@@ -265,7 +275,7 @@ def _publicar_locked(
             try:
                 adaptador = adaptador_cls()
             except Exception as exc:
-                resultados.append(
+                record(
                     PostResult(
                         platform=platform,
                         status=PostStatus.ERROR,
@@ -280,29 +290,30 @@ def _publicar_locked(
                 errors += validate_derivation(post.platforms[platform],
                     require_origin=platform not in legacy_approved_platforms)
             except Exception as exc:
-                resultados.append(PostResult(platform=platform, status=PostStatus.ERROR,
+                record(PostResult(platform=platform, status=PostStatus.ERROR,
                     error=f"validation for {platform.value} failed unexpectedly ({type(exc).__name__})"))
                 continue
             if errors:
-                resultados.append(PostResult(platform=platform, status=PostStatus.ERROR,
+                record(PostResult(platform=platform, status=PostStatus.ERROR,
                     error="; ".join(e.motivo for e in errors)))
                 continue
             try:
                 if platform in {Platform.FACEBOOK, Platform.INSTAGRAM, Platform.YOUTUBE}:
                     from socialctl.publication_steps import publish_with_steps
-                    resultados.append(publish_with_steps(
+                    record(publish_with_steps(
                         post, brand, platform, adaptador, client,
                         on_media_result=on_media_result,
+                        on_media_observed=on_result,
                         occurrence_id=(occurrence_ids or {}).get(platform),
                         provenance=approval_provenance,
                         retry_guard=retry_guard,
                     ))
                     continue
-                resultados.append(
+                record(
                     adaptador.publish(post.platforms[platform], brand, client)
                 )
             except Exception as exc:
-                resultados.append(
+                record(
                     PostResult(
                         platform=platform,
                         status=PostStatus.ERROR,
