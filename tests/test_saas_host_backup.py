@@ -81,3 +81,49 @@ def test_identical_backup_passwords_are_not_independent_recovery(tmp_path):
     commands=Commands()
     with pytest.raises(backup.BackupFailure):backup.perform(config,runner=commands)
     assert commands.calls==[]
+
+
+@pytest.mark.parametrize('status,at,last_success,issues',[
+    ('complete',9900,9900,[]),
+    ('complete',9900,9900.001,[]),
+    ('failed',9900,9800,['backup_failed']),
+    ('running',9950,9800,[]),
+    ('running',9000,8900,['backup_stalled']),
+    ('complete',1000,1000,['backup_stale']),
+    ('running',9950,None,['backup_unverified']),
+    ('complete',11000,11000,['backup_unknown']),
+])
+def test_backup_inspector_detects_failure_stall_and_stale_success(tmp_path,status,at,last_success,issues):
+    backup=module();config,root=fixture(tmp_path)
+    report={'status':status,'at':at}
+    if last_success is not None:
+        report.update(last_success=last_success,state_snapshot='a'*64,recovery_snapshot='b'*64)
+    backup.receipt(root,report)
+    before=(root/'status.json').read_bytes()
+    result=backup.inspect_status(config,now=lambda:10000)
+    assert result['issues']==issues
+    assert result['status']==('attention' if issues else 'ok')
+    assert (root/'status.json').read_bytes()==before
+
+
+@pytest.mark.parametrize('payload',[None,'{invalid private-secret','[]',
+    '{"status":"complete","at":9900,"last_success":9900}',
+    '{"status":"complete","at":NaN,"last_success":9900}',
+])
+def test_backup_inspector_fails_closed_on_unusable_receipts(tmp_path,payload):
+    backup=module();config,root=fixture(tmp_path)
+    if payload is not None:
+        (root/'status.json').write_text(payload);(root/'status.json').chmod(0o600)
+    result=backup.inspect_status(config,now=lambda:10000)
+    assert result=={'status':'attention','issues':['backup_unknown']}
+    assert 'private-secret' not in json.dumps(result)
+
+
+def test_status_cli_never_starts_backup_and_returns_attention_for_missing_receipt(tmp_path):
+    config,root=fixture(tmp_path)
+    config_path=root/'config.json';config_path.write_text(json.dumps(config));config_path.chmod(0o600)
+    script=Path(__file__).resolve().parents[1]/'deploy/saas/backup_host.py'
+    result=subprocess.run([sys.executable,str(script),str(config_path),'--status'],capture_output=True,text=True)
+    assert result.returncode==1
+    assert json.loads(result.stdout)=={'status':'attention','issues':['backup_unknown']}
+    assert not (root/'staging').exists() and not (root/'worker.lock').exists()

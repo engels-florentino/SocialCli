@@ -4,6 +4,7 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -54,6 +55,40 @@ def snapshot_id(output):
     ids=[row.get('snapshot_id','') for row in summaries if row.get('message_type')=='summary']
     if len(ids)!=1 or not re.fullmatch(r'[0-9a-f]{64}',ids[0]):raise BackupFailure('Backup receipt unavailable.')
     return ids[0]
+
+
+def inspect_status(config,*,now=time.time):
+    """Read local completion receipts only; never create a backup or contact Drive."""
+    try:
+        root=private(config['root'],directory=True)
+        path=private(root/'status.json')
+        with path.open('rb') as stream:raw=stream.read(65537)
+        if len(raw)>65536:raise ValueError
+        report=json.loads(raw)
+        current=now()
+        def timestamp(value):
+            if type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<=current:
+                raise ValueError
+            return value
+        at=timestamp(report['at'])
+        status=report['status']
+        if status not in ('complete','running','failed'):raise ValueError
+        last=report.get('last_success')
+        if last is not None:
+            last=timestamp(last)
+            # Existing receipts sample the two clocks separately at completion.
+            if last>at+1:raise ValueError
+            for key in ('state_snapshot','recovery_snapshot'):
+                if not re.fullmatch(r'[0-9a-f]{64}',report[key]):raise ValueError
+        elif status=='complete':raise ValueError
+        issues=[]
+        if status=='failed':issues.append('backup_failed')
+        if status=='running' and current-at>600:issues.append('backup_stalled')
+        if last is None:issues.append('backup_unverified')
+        elif current-last>7200:issues.append('backup_stale')
+        return {'status':'attention' if issues else 'ok','issues':issues}
+    except Exception:
+        return {'status':'attention','issues':['backup_unknown']}
 
 
 def perform(config,*,runner=run,now=time.time):
@@ -129,15 +164,18 @@ def perform(config,*,runner=run,now=time.time):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('config',type=Path)
+    parser.add_argument('--status',action='store_true',help='Inspect local backup freshness without starting a backup')
     args=parser.parse_args()
     os.umask(0o077)
     try:
         config=json.loads(private(args.config).read_text())
-        result=perform(config)
+        result=inspect_status(config) if args.status else perform(config)
     except Exception:
-        print(json.dumps({'status':'failed','error':'backup_failed'}))
+        print(json.dumps({'status':'attention','issues':['backup_unknown']} if args.status
+                         else {'status':'failed','error':'backup_failed'}))
         raise SystemExit(1)
     print(json.dumps(result,sort_keys=True))
+    if args.status and result['status']!='ok':raise SystemExit(1)
 
 
 if __name__=='__main__':main()

@@ -1,0 +1,12 @@
+[Unit]
+Description=Check isolated SocialCli candidate local backup freshness
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/blades3/projects/socialcli-saas/ops/backup_host.py /home/blades3/projects/socialcli-saas/private/backup-candidate.json --status
+UMask=0077
+TimeoutStartSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict

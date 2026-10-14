@@ -134,6 +134,25 @@ server once Drive authorization is available. This preference does not establish
 that an upload has occurred or authorize deleting the existing server recovery
 sets before remote recovery is verified.
 
+## Private freshness check
+
+`backup_host.py PRIVATE_CONFIG --status` reads the private local receipt without
+starting Docker, Restic, a backup, or a network request. Exit 0 means the last
+local snapshot pair is recent; exit 1 requests operator attention. The report
+contains only fixed labels: `backup_unknown` for a missing/invalid receipt,
+`backup_unverified` when no completed pair exists, `backup_failed` after a failed
+run, `backup_stalled` when a running receipt is older than ten minutes, and
+`backup_stale` when the last completed pair is older than two hours. A new run
+does not hide an overdue or missing successful backup. Future timestamps and
+malformed snapshot IDs fail closed.
+
+The candidate backup-check timer runs this read-only command independently every
+five minutes, even when the hourly backup timer stops. Its service has networking
+disabled and a read-only filesystem. Failures appear in private systemd status
+and journal; this is not delivered email or off-host monitoring, and cannot detect
+a host outage while the host itself is down. A healthy result never establishes
+Drive upload or remote recoverability.
+
 ## Operational rollout still required
 
 Local scheduled backups do not establish off-host recovery or a recovery SLA.

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check SocialCli candidate backups independently every five minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=10s
+Unit=socialcli-saas-candidate-backup-check.service
+
+[Install]
+WantedBy=timers.target
