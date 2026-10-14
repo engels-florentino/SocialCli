@@ -1,6 +1,10 @@
 # Isolated HTTPS pilot — prepared, not deployed
 
-DNS required in Namecheap: A `pilot` → `71.250.63.180`, automatic TTL.
+DNS required in Namecheap: **CNAME `pilot` → `socialcli.app`**, automatic TTL.
+This supersedes the earlier fixed-IP A-record request: the WAN address changed
+on14October and the root domain now follows the working dynamic DNS updater.
+Do not keep an A/AAAA record alongside the CNAME for the same pilot hostname.
+The current root A address is71.250.63.127; it is not a permanent server address.
 The public `socialcli.app` host remains on0.2.6. On13October the pilot A/AAAA
 records were absent and the public account route returned404. Do not interpret
 these instructions as a configured proxy or successful public browser test.
@@ -67,4 +71,5 @@ current payment/identity state or change the public host39/certificate43.
 - Real social-provider pilots need separately configured callbacks and explicit
   account/media approvals; the initial pilot overlay keeps all providers disabled.
 
-Reference: [NPM dedicated Docker networks](https://nginxproxymanager.com/advanced-config/).
+References: [NPM dedicated Docker networks](https://nginxproxymanager.com/advanced-config/),
+[Namecheap CNAME setup](https://www.namecheap.com/support/knowledgebase/article.aspx/9646/2237/how-to-create-a-cname-record-for-your-domain/).

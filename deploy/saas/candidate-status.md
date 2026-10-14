@@ -15,8 +15,9 @@ the current deployment and its schema-compatible recovery image.
 - HTTP bound to host loopback `127.0.0.1:8789`, with canonical Host `socialcli.app`.
   No NPM route or public service replacement. Port 8788 was occupied, so the
   candidate uses 8789; the unrelated listener was not changed.
-- Stripe test account/product/price/Portal configuration only. Webhook signature
-  key is a local placeholder; no Stripe endpoint delivers to this candidate yet.
+- Stripe test account/product/price/Portal configuration only. A real CLI-forwarded
+  signed event was verified on14October; the candidate now has that private test
+  listener's signing secret. No permanent public Stripe endpoint is configured.
 - Social providers and trial reminder delivery disabled. Candidate-only maintenance
   runs every five minutes; Auth OTP remains configured separately.
 - Container runs as UID/GID 1000, root filesystem read-only, capabilities dropped,
@@ -47,7 +48,7 @@ with a test card and cancelled at period end. No real owner/social account was a
 The Portal timestamp cancellation fix was rechecked against that exact Stripe
 subscription after candidate-only redeployment, with a verified pre-update snapshot.
 
-The package-index release, complete browser registration/return, real signed webhook delivery,
+The package-index release, complete browser registration/return, direct public webhook delivery,
 public proxy routing, off-host recovery, alert delivery and
 Muse/Grok pilot remain outstanding. This deployment does not establish these.
 
@@ -238,3 +239,10 @@ Post-switch verification:
 No fallback was needed. Recovery preserves current security/data rather than
 undoing schema7. This private update does not finish the launch gates or imply
 fine-grained per-action permissions, public package availability or real agent pilots.
+
+Subsequent Stripe verification replaced only the placeholder webhook signing secret
+and recreated this same image. A real signed test event was received through Stripe
+CLI, durably queued, then processed by systemd maintenance with unchanged paid
+access/cancellation. The temporary listener was stopped and timers resumed. See
+[hosted billing evidence](hosted-billing-verification.md) for exact scope and the
+remaining permanent-public-webhook gate.

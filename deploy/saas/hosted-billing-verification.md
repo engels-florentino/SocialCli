@@ -42,8 +42,9 @@ values do not set the notice. This changes display metadata, not paid-period acc
   currently a 404 because the public domain still serves the old static site. The
   isolated candidate has the account route, but public proxy/browser return is not
   deployed. Requested DNS `pilot.socialcli.app` for the separate hosted pilot.
-- No actual signed Stripe webhook delivery has reached this candidate yet. This
-  test proves hosted Checkout/Portal and canonical reconciliation, not webhooks.
+- At the original13October checkpoint, no signed webhook had reached the candidate.
+  The14October CLI-forwarded receipt below now verifies that path; a permanent
+  public HTTPS webhook endpoint remains unverified.
 - Full OTP/browser registration and Muse/Grok installation still need the hosted
   pilot route. No production/live Stripe configuration was changed.
 
@@ -59,3 +60,55 @@ now records scheduled cancellation, preserves paid access through Nov 13 and
 reports no billing review. Both candidate and original public containers remain
 healthy. The screenshot/UI steps establish Stripe's hosted flow; the public
 SocialCli return and delivery of a webhook are still unverified.
+
+## Real signed test event — 14 October 2026
+
+Used the existing fictional hosted Checkout owner and its active test subscription,
+with scheduled cancellation preserved. A single diagnostic metadata key generated
+an actual `customer.subscription.updated` event in Stripe. The request used a
+persisted attempt marker and idempotency key; the subscription price/items, latest
+invoice, billing anchor, trial date and cancellation fields were read before and
+after and verified unchanged. No real card, charge, email or social action occurred.
+
+Stripe CLI1.53.1 was downloaded directly from its official GitHub release and the
+archive SHA256 checked against release metadata:
+`032fe0b849a9d6a222488bc846445bafeae993af1026b78a8121d02321ca1fd1`.
+Its API key stayed in the server process environment. The CLI signing secret was
+captured privately and replaced only the placeholder `STRIPE_WEBHOOK_SECRET` in
+candidate configuration. Image, database, public service and provider settings
+were unchanged. Candidate billing/backup services were drained during recreation;
+maintenance was deliberately paused to observe receipt before processing.
+
+The temporary listener subscribed only to `customer.subscription.updated` from
+the test account and forwarded to loopback8789 with Host socialcli.app. TLS to
+Stripe remained enabled; no public listener/port or permanent webhook endpoint
+was created. Account event version matched pinned `2025-09-30.clover`.
+
+Observed evidence:
+
+- CLI recorded the Stripe event and HTTP200 from the deployed candidate route.
+- Exactly one matching event was found in SQLite with state pending and its
+  encrypted original parsed payload saved, before maintenance started.
+- Actual systemd maintenance reconciled canonical Stripe state and changed that
+  event to done. Paid entitlement, paid-until date and cancellation notice remained
+  identical; no billing-review issue was introduced.
+- A separate forged-signature request returned400 without creating an event row.
+- Listener termination was verified; its temporary output was sanitized to remove
+  the signing secret. Private receipts and the attempt marker remain on the server.
+- Both candidate timers were resumed and systemd maintenance returned0.
+
+This proves actual Stripe-to-CLI-to-candidate signed receipt, durable queueing and
+canonical processing. It does not prove direct public HTTPS delivery, DNS/TLS,
+Stripe retry/redelivery, 3DS recovery or a full external agent onboarding flow.
+The configured secret belongs to this CLI test session/device; a future permanent
+Stripe webhook endpoint needs its own signing secret and delivery verification.
+
+During cleanup the WAN address changed and public-name SSH timed out. The same
+host was positively identified by its matching stored SSH host-key fingerprint and
+reached over its existing LAN address. The app stayed healthy; no duplicate Stripe
+trigger was sent. Cleanup and maintenance resumed over that verified connection.
+
+Sources checked through Context7 and official code:
+[CLI listen](https://github.com/stripe/stripe-cli/wiki/Listen-command),
+[custom Host forwarding](https://github.com/stripe/stripe-cli/blob/v1.53.1/pkg/proxy/endpoint.go),
+[subscription metadata update](https://docs.stripe.com/api/subscriptions/update).
