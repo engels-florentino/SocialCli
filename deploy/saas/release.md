@@ -101,10 +101,10 @@ publication on the owner's behalf. Both allow only tags matching `v*`, with no
 branch rules. Saved configuration was verified in Safari and the public GitHub
 REST API. No workflow was dispatched.
 
-The `Immutable release tags` ruleset is prepared with active enforcement, `v*`
+The `Immutable release tags` ruleset (ID `25040400`) is saved with active enforcement, `v*`
 targeting, no bypass actors, and restrictions on updates, deletions and force
-pushes. Creation remains allowed. GitHub requested email identity verification
-at save time; the ruleset is **not saved yet** (API still returns no rulesets).
+pushes. Creation remains allowed. The owner completed GitHub email identity
+verification; Safari and the public ruleset API confirm the saved configuration.
 
 PyPI sign-in is complete and the pending-publisher form is prepared in Safari.
 No publisher was registered or publishing authority granted. The public JSON endpoints for `socialcli` on both
