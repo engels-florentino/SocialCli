@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly encrypted backup of the isolated SocialCli candidate
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=120
+Persistent=true
+Unit=socialcli-saas-candidate-backup.service
+
+[Install]
+WantedBy=timers.target

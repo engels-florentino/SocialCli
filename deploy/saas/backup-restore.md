@@ -89,14 +89,51 @@ an old database just to downgrade code. For a coordinated planned restore, stop
 writes and maintenance before taking the SQLite and Auth copies and keep traffic
 closed until both are consistent and smoke tests pass.
 
+## Scheduled candidate backups
+
+`backup_host.py` runs on the Docker host as root. Its mode-0600 JSON configuration
+specifies a private `root`, `service_container`, `auth_container`, `repository`,
+`password_file`, `recovery_repository`, `recovery_password_file`, and a
+`secret_files` mapping of simple destination filenames to private source paths.
+Initialize both Restic repositories with different passwords before running it.
+Never put actual configuration, passwords or recovery files in Git.
+
+The worker snapshots and authenticates the SQLite vault, obtains a custom-format
+Auth dump, validates its archive catalog, and writes file hashes. State and recovery
+configuration go into separate encrypted Restic repositories. A completed receipt
+requires both snapshot IDs and repository checks; incomplete Restic exit codes are
+failures. A failed run preserves the previous successful snapshot IDs. A host lock
+prevents overlapping workers. Dedicated plaintext staging is removed after each
+run and on the next run after a crash. Private recovery directories and the Docker
+host remain trusted; repository encryption does not protect a compromised host.
+
+On 13 October 2026, the included candidate-only service and hourly timer were
+installed and enabled on Florentino. A real run under the systemd restrictions
+exited zero. This covers the isolated candidate vault and private SocialCli Auth,
+not the public 0.2.6 connection vault. The billing/reminder timer remains disabled.
+
+Both encrypted repositories passed `restic check --read-data`. An exact completed
+snapshot pair was restored into disposable containers with networking disabled:
+file hashes matched, vault authentication/schema 6 passed, and PostgreSQL restored
+28 tables, 2 users and 75 migrations. Recovery configuration matched its sources.
+The fresh PostgreSQL rehearsal needs `socialcli_auth` and the `postgres NOLOGIN`
+compatibility role from the Auth initialization before `pg_restore --exit-on-error`.
+Only disposable restored data and containers were removed afterward.
+
+The user chose Google Drive for off-host copies. The available credential is a
+service account and the read-only probe found no accessible Shared Drives. Personal
+Drive OAuth or access to a Workspace Shared Drive remains pending. No encrypted
+repository has been uploaded. Service accounts cannot own Drive files; see
+[Google's upload guidance](https://developers.google.com/workspace/drive/api/guides/folder).
+
 ## Operational rollout still required
 
-The utility and rehearsals do not establish backup scheduling, off-host storage,
-retention, alert delivery or a recovery SLA. Before public rollout, configure a
-private scheduled backup of both stores, independently secured key recovery,
-an encrypted off-host destination, retention and a failed/stale-backup alert.
-Rehearse from that actual destination. Do not delete old key versions while any
-retained recovery point still depends on them. No backup timer is enabled by this
-source change.
+Local scheduled backups do not establish off-host recovery or a recovery SLA.
+Before public rollout, finish independently secured off-host password recovery,
+encrypted remote storage, retention and failed/stale-backup alerts. Rehearse from
+that actual destination. Automatic pruning is intentionally not enabled before
+that recovery point is verified; monitor local disk usage meanwhile. Do not delete
+old key versions while any retained recovery point depends on them. The receipt's
+`complete` status means a local backup, not a successful off-host copy.
 
 Reference: [Python SQLite online backup API](https://docs.python.org/3.11/library/sqlite3.html#sqlite3.Connection.backup).

@@ -15,13 +15,15 @@ candidata `0.3.0rc1`. El servicio público sigue en 0.2.6. Identidad, vinculaci�
 trial, Stripe test, control de acceso, migración, rotación, renovación, eliminación
 y recordatorios tienen código y pruebas. El correo real llegó a bandeja de entrada;
 Auth privado y restauración se verificaron. El mantenimiento tiene límites de tiempo,
-contadores de pendientes y diagnóstico privado de solo lectura; la suite pasa 2401
+contadores de pendientes y diagnóstico privado de solo lectura; la suite pasa 2407
 pruebas. La candidata está desplegada de forma aislada en el servidor, con base
 propia y acceso solo local; salud, Auth y configuración Stripe test verificados.
 Checkout y Portal se probaron en Safari con tarjeta ficticia: pago, acceso y
 cancelación al final del periodo verificados. Se corrigió la cancelación mediante
 `cancel_at` descubierta en esa prueba. Quedan pendientes la marca global de Stripe,
-DNS/ruta del piloto y webhook real. Los timers y las alertas aún no están activados. El piloto sigue en preparación:
+DNS/ruta del piloto y webhook real. El respaldo local cifrado de la candidata y
+Auth ya se ejecuta cada hora y se restauró de forma aislada. Google Drive externo
+sigue pendiente de acceso; mantenimiento y alertas siguen sin activar. El piloto sigue en preparación:
 no hay publicación PyPI ni despliegue público del SaaS.
 
 La lista original de abajo conserva los criterios de aceptación completos; no debe

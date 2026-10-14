@@ -1,0 +1,83 @@
+"""Host backup completion requires both databases and separate recovery secrets."""
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import sys
+import pytest
+
+
+def module():
+    path=Path(__file__).resolve().parents[1]/'deploy/saas/backup_host.py'
+    spec=importlib.util.spec_from_file_location('backup_host',path)
+    result=importlib.util.module_from_spec(spec);spec.loader.exec_module(result)
+    return result
+
+
+def fixture(tmp_path):
+    root=tmp_path/'private';root.mkdir(mode=0o700)
+    config={'root':str(root),'service_container':'socialcli-saas-candidate',
+        'auth_container':'socialcli-auth-db','repository':str(root/'repo'),
+        'password_file':str(root/'password'),'recovery_repository':str(root/'recovery'),
+        'recovery_password_file':str(root/'recovery-password'),
+        'secret_files':{'service.env':str(root/'service.env')}}
+    for name in ('password','recovery-password','service.env'):
+        (root/name).write_text(name+'-private-secret');(root/name).chmod(0o600)
+    return config,root
+
+
+class Commands:
+    def __init__(self,fail=None):self.fail=fail;self.calls=[]
+    def __call__(self,args,**kwargs):
+        self.calls.append(args)
+        if self.fail and self.fail(args):raise subprocess.CalledProcessError(3,args,stderr=b'private-secret')
+        if 'snapshot' in args:return json.dumps({'integrity':'ok','schema_version':6,'sha256':__import__('hashlib').sha256(b'fixture-sqlite').hexdigest()}).encode()
+        if args[:2]==['docker','cp']:Path(args[-1]).write_bytes(b'fixture-sqlite')
+        if 'pg_dump' in args:kwargs['stdout'].write(b'PGDMP fixture')
+        if 'pg_restore' in args:
+            # A subprocess uses the OS file offset, not a Python buffered cursor.
+            subprocess.run([sys.executable,'-c',
+                "import sys; assert sys.stdin.buffer.read(5)==b'PGDMP'"],
+                stdin=kwargs['stdin'],capture_output=True,check=True)
+        if 'backup' in args:return json.dumps({'message_type':'summary','snapshot_id':('b' if 'recovery' in args else 'a')*64}).encode()
+        return b''
+
+
+def test_success_requires_separate_state_and_recovery_snapshots(tmp_path):
+    backup=module();config,root=fixture(tmp_path);commands=Commands()
+    result=backup.perform(config,runner=commands,now=lambda:1000)
+    assert result['status']=='complete' and result['last_success']==1000
+    assert result['state_snapshot']!=result['recovery_snapshot']
+    backups=[args for args in commands.calls if 'backup' in args]
+    assert len(backups)==2
+    assert not (root/'staging').exists()
+    assert (root/'status.json').stat().st_mode & 0o777==0o600
+    assert 'private-secret' not in json.dumps(result)
+
+
+@pytest.mark.parametrize('failure',['dump','state','recovery'])
+def test_failure_does_not_replace_last_good_receipt_or_leak_details(tmp_path,failure):
+    backup=module();config,root=fixture(tmp_path)
+    backup.perform(config,runner=Commands(),now=lambda:1000)
+    def fails(args):
+        if failure=='dump':return 'pg_dump' in args
+        return 'backup' in args and (('recovery' in args)==(failure=='recovery'))
+    with pytest.raises(backup.BackupFailure):backup.perform(config,runner=Commands(fails),now=lambda:2000)
+    report=json.loads((root/'status.json').read_text())
+    assert report['status']=='failed' and report['last_success']==1000
+    assert 'private-secret' not in json.dumps(report)
+    assert not (root/'staging').exists()
+
+
+def test_public_password_file_is_rejected_before_any_command(tmp_path):
+    backup=module();config,root=fixture(tmp_path);(root/'password').chmod(0o644);commands=Commands()
+    with pytest.raises(backup.BackupFailure):backup.perform(config,runner=commands)
+    assert commands.calls==[]
+
+
+def test_identical_backup_passwords_are_not_independent_recovery(tmp_path):
+    backup=module();config,root=fixture(tmp_path)
+    (root/'recovery-password').write_bytes((root/'password').read_bytes())
+    commands=Commands()
+    with pytest.raises(backup.BackupFailure):backup.perform(config,runner=commands)
+    assert commands.calls==[]

@@ -63,5 +63,7 @@ This report does not prove current external-service availability, backup freshne
 off-host recoverability or successful delivery of alerts. Check Auth's internal
 health endpoint and the public service health separately during rollout. An external
 scheduler must poll diagnostics even when the maintenance timer itself stops.
-Automatic alert delivery, backup scheduling and an off-host recovery destination
-remain rollout work; no operational email has been authorized/sent by this module.
+The candidate has a separate hourly encrypted backup timer; see
+[backup and recovery](backup-restore.md). Automatic alert delivery and an off-host
+recovery destination remain rollout work; no operational email has been
+authorized/sent by this module.

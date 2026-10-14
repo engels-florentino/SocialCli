@@ -23,7 +23,9 @@ Code checkpoint: `fe9700c`, SocialCli **0.3.0rc1**. Public SocialCli remains
 
 ## Evidence
 
-- Full Python suite: **2,401 passed**, one upstream Starlette deprecation warning.
+- Full Python suite including host backup orchestration: **2,407 passed**, one
+  upstream Starlette deprecation warning. Backup orchestration runs on the host;
+  the deployed application image remains at the code checkpoint above.
 - Wheel and source archive passed the release allowlist/private-file verifier.
 - Wheel SHA256: `50bc17bd3f9132e81d9b92b335fd4dfa47bd0f8dbf641d8a3ebcfa44b7ebe552`.
 - Sdist SHA256: `19578bc5b214ee354071b60d2956851e7d9f7f3936f7a75b23c7d2fcc339fc6e`.
@@ -44,5 +46,9 @@ The Portal timestamp cancellation fix was rechecked against that exact Stripe
 subscription after candidate-only redeployment, with a verified pre-update snapshot.
 
 The package-index release, complete browser registration/return, real signed webhook delivery,
-public proxy routing, backup scheduling/off-host recovery, alert delivery and
+public proxy routing, off-host recovery, alert delivery and
 Muse/Grok pilot remain outstanding. This deployment does not establish these.
+
+The candidate-only encrypted backup timer is now enabled hourly. A real systemd
+run succeeded, and an exact local snapshot pair restored offline with both
+repositories fully checked. See [backup evidence and limits](backup-restore.md).

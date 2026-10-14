@@ -42,7 +42,9 @@ Approved master: `2026-10-13-socialcli-saas.md`. Execute natively in an isolated
   digests matching, fresh-volume migrations, restricted runtime, real candidate
   adapter OTP/lookup/idempotent deletion with a fictional user. No new real mail.
 - Vault: consistent SQLite online snapshot and restored application boundaries;
-  protected key separation documented. Scheduling/off-host recovery remain.
+  protected key separation documented. Candidate/Auth encrypted hourly backups
+  now active, exact local snapshot pair restored offline. Drive off-host access,
+  independent off-host password recovery, retention and stale alerts remain.
 - Candidate distribution: 0.3.0rc1, packaged `/agents`, explicit version discovery,
   protected OIDC workflow, archive allowlist/verifier and clean-install smoke work.
   Headless storage revealed installation-slot and backend migration gaps; fixed
