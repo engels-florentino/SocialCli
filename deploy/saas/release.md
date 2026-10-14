@@ -106,9 +106,12 @@ targeting, no bypass actors, and restrictions on updates, deletions and force
 pushes. Creation remains allowed. The owner completed GitHub email identity
 verification; Safari and the public ruleset API confirm the saved configuration.
 
-PyPI sign-in is complete and the pending-publisher form is prepared in Safari.
-No publisher was registered or publishing authority granted. The public JSON endpoints for `socialcli` on both
-indexes returned404 at this checkpoint; this does not reserve the name.
+After the owner's explicit action-time approval, PyPI registered the pending
+publisher for `socialcli`: `engels-florentino/SocialCli`, `release.yml`, environment
+`pypi`. Safari showed the success notification and saved publisher row. No package
+has been published. TestPyPI publisher setup remains pending. The public JSON
+endpoints for `socialcli` on both indexes previously returned404; a pending
+publisher does not reserve the name.
 
 When dispatching the release workflow, select **the reviewed tag** in GitHub's
 “Use workflow from” selector, as well as entering that same tag in the `tag` input.
