@@ -1,6 +1,6 @@
 # Isolated server candidate — updated 14 October 2026
 
-Current code checkpoint: `7fbb6a2`, SocialCli **0.3.0rc1**, schema7. Public SocialCli remains
+Current code checkpoint: `57efd47`, SocialCli **0.3.0rc1**, schema7. Public SocialCli remains
 **0.2.6**. This is a private server deployment, not a public SaaS launch.
 The dated checkpoints below retain historical evidence; the final section records
 the current deployment and its schema-compatible recovery image.
@@ -246,3 +246,33 @@ CLI, durably queued, then processed by systemd maintenance with unchanged paid
 access/cancellation. The temporary listener was stopped and timers resumed. See
 [hosted billing evidence](hosted-billing-verification.md) for exact scope and the
 remaining permanent-public-webhook gate.
+
+## Private refresh to57efd47 — 14 October 2026
+
+The reviewed UI copy and typed recovery-action fixes are now installed in the
+private candidate. No dependency or database schema change was required.
+
+- Linux source suite: **2,761 passed**,123.65s, network disabled.
+- Wheel SHA256: `f3d930e381d29d70b921d5557947f9baebdbcb548fc6209b3fe1ea0f692af025`.
+- Image: `socialcli-saas-candidate:57efd47`, ID
+  `sha256:8a9f95aa275b060569525c6e1c0c8aabe871eb1ae8e0ccda477cd3d846107b5b`.
+- Built offline from the previous7fbb6a2 image with unchanged dependencies;
+  installed Linux smoke passed outside the checkout with fictional data and
+  zero external calls. All188 packaged source/assets matched reviewed source.
+- Fresh paired encrypted backup succeeded before the switch. Billing/backup
+  timers stopped and services drained; old container stopped before replacement.
+- An initial environment-list order comparison triggered automatic rollback.
+  Comparing sorted complete entries resolved that overly strict deployment check;
+  the repeated switch verified identical environment contents and runtime settings.
+- Health, guide and login returned200; unauthenticated account returned303.
+  Maintenance returned0; schema7 operational diagnostics reported no issues.
+- Public0.2.6 container identity/image and healthy state stayed unchanged.
+  Provider access and reminders remain disabled; Stripe remains test-only.
+- Prior Compose/Dockerfile/wheel retained server-side in `rollback-7fbb6a2`.
+  This schema7 image remains a compatible rollback using the current database.
+- Pilot CNAME still absent at the public resolver. Off-host Drive recovery and
+  the other external launch/agent acceptance gates above remain outstanding.
+
+Post-switch paired encrypted backup returned0; all three candidate billing,
+backup and freshness timers are active. Candidate/public health checks passed.
+Auth exposes no Docker healthcheck; its HTTP health endpoint was checked directly.
