@@ -29,3 +29,19 @@ button:disabled{opacity:.65;cursor:wait}
 .install-prompt button[hidden]{display:none}.install-prompt button:hover{filter:brightness(.92)}
 .install-prompt .copied-icon{display:none}.install-prompt button[data-copied=true] .copy-icon{display:none}.install-prompt button[data-copied=true] .copied-icon{display:block}
 .copy-status{min-height:1.5em;margin:6px 0 20px;font-size:14px;color:var(--muted)}
+
+/* The customer landing keeps the complete installation handoff in one view.
+   Content may scroll on very short screens or at enlarged accessibility sizes. */
+body.landing{min-height:100vh;min-height:100svh;display:grid;grid-template-rows:auto 1fr auto}
+.landing header,.landing main,.landing footer{width:100%;max-width:1120px;margin:0 auto;padding:20px 28px}
+.landing header{gap:16px}.landing .logo{font-size:22px}.landing nav{font-size:14px;gap:18px}
+.landing main{min-height:0;display:grid;place-items:center;padding-top:8px;padding-bottom:8px;text-align:center}
+.landing-content{width:100%;max-width:690px}.landing .badge{font-size:12px;letter-spacing:.12em;margin:0 0 14px}
+.landing h1{font-size:clamp(32px,4.6vw,54px);line-height:1.08;letter-spacing:-.035em;margin:0 0 18px}
+.landing .lead{max-width:590px;font-size:18px;line-height:1.5;margin:0 auto 14px;color:var(--muted)}
+.landing-platforms{font-size:14px;margin:0 0 22px}.landing-platforms span{padding:0 8px;color:var(--muted)}
+.landing-price{font-size:13px;color:var(--muted);line-height:1.65;margin:0 0 22px}.landing-price strong{font-size:24px;color:var(--ink)}.landing-price strong span{font-size:15px;font-weight:400}
+.install-label{font-size:14px;margin:0 0 8px;color:var(--muted)}.landing .install-prompt{margin:0 auto;text-align:left;max-width:570px}.landing .copy-status{margin:6px 0 0;font-size:12px;min-height:20px}
+.landing footer{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;color:var(--muted);border:0}.landing footer nav{font-size:12px;gap:16px}.landing footer a{margin:0}
+@media(max-width:600px){.landing header,.landing main,.landing footer{padding-left:18px;padding-right:18px}.landing header{padding-top:14px;padding-bottom:14px}.landing .badge{font-size:10px;margin-bottom:12px}.landing h1{margin-bottom:14px}.landing .lead{font-size:15px}.landing-platforms{font-size:12px;margin-bottom:16px}.landing-platforms span{padding:0 4px}.landing-price{font-size:12px;margin-bottom:16px}.install-label{font-size:12px}.landing #install-prompt{font-size:clamp(11px,2.85vw,15px);padding:8px 2px}.landing .install-prompt{gap:4px;padding:4px}.landing .install-prompt button{flex-basis:44px;width:44px;height:44px}.landing footer{justify-content:center;flex-wrap:wrap;padding-top:12px;padding-bottom:12px;gap:6px}.landing footer>span{width:100%;text-align:center}}
+@media(max-height:700px) and (min-width:601px){.landing header,.landing footer{padding-top:12px;padding-bottom:12px}.landing h1{font-size:40px;margin-bottom:12px}.landing .badge{margin-bottom:10px}.landing-platforms,.landing-price{margin-bottom:14px}.landing .lead{font-size:16px;margin-bottom:10px}}
