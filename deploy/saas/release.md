@@ -109,7 +109,11 @@ verification; Safari and the public ruleset API confirm the saved configuration.
 After the owner's explicit action-time approval, PyPI registered the pending
 publisher for `socialcli`: `engels-florentino/SocialCli`, `release.yml`, environment
 `pypi`. Safari showed the success notification and saved publisher row. No package
-has been published. TestPyPI publisher setup remains pending. The public JSON
+has been published. The owner also created the separate `socialcli` TestPyPI
+account, verified its email and enabled TOTP. After separate explicit approval,
+TestPyPI registered the same project/repository/workflow with environment
+`testpypi`; its success notification and saved row were verified in Safari.
+Both pending publishers are configured; no workflow or upload has run. The public JSON
 endpoints for `socialcli` on both indexes previously returned404; a pending
 publisher does not reserve the name.
 
