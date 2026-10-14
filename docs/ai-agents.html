@@ -98,8 +98,9 @@ socialcli changes status CHANGE_ID --brand MyBrand
 <p>For an agent without interactive stdin, obtain the user’s explicit authorization for the exact account ID and brand first, then use <code>socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes</code>. <code>--yes</code> confirms this account connection only; it does not authorize publication. Never guess an ID or use its position in a returned list. Replacing independent credentials additionally requires <code>--replace-independent</code>. Without these explicit arguments, noninteractive execution stops before creating an authorization link.</p>
 <h2 id="bounded-machine-readable-reads">Bounded machine-readable reads</h2>
 <p>Use <code>socialcli stats --brand Example --json --timeout 120</code> for a version 1 report.
-Progress goes to stderr. Exit 0 means complete success; exit 1 means partial or
-failed observations. Coverage records completeness, observation time and whether
+Progress goes to stderr. For aggregate stats, inbox and report in rc2, exit 0 means
+complete success, exit 3 means partial observations and exit 1 means failure
+(rc1 used exit 1 for both). Coverage records completeness, observation time and whether
 values came from this read or a previous snapshot. A missing metric remains null.
 Interruptions preserve completed platforms. Persistence failures include observations
 and the saved/unsaved file list; inspect them before retrying local persistence.</p>

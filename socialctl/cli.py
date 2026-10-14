@@ -1683,8 +1683,6 @@ def stats(
     # red para que lo último que se lea sea lo que hay que hacer.
     _avisar_de_fallos_persistentes(marca, snapshot)
 
-    if interrupted:
-        raise typer.Exit(130)
     if all(l.estado is not EstadoLectura.OK for l in redes.values()):
         raise typer.Exit(1)
     if persistence_error or any(l.estado is not EstadoLectura.OK or l.warnings or

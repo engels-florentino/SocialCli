@@ -28,7 +28,7 @@ def http_client():
     from socialctl.read_budget import LocalConfigurationError
     try:
         return httpx.Client(timeout=30,follow_redirects=False)
-    except (ValueError,OSError,ImportError):
+    except (httpx.InvalidURL,ValueError,OSError,ImportError):
         raise LocalConfigurationError('Check local proxy, CA and HTTP transport configuration; no request was sent.') from None
 
 

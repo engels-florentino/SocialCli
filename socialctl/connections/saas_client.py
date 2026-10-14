@@ -6,7 +6,9 @@ from socialctl.connections.client import service_origin
 
 
 class TransportFailure(ValueError):
-    pass
+    def __init__(self,message,*,request_method=None):
+        super().__init__(message)
+        self.request_method=request_method
 
 
 class ServiceRejected(ValueError):
@@ -42,6 +44,7 @@ class SaaSClient:
         self.client=client
 
     def request(self,method,path,*,secret=None,body=None,allow_missing=False,legacy_secret=None):
+        from socialctl.read_budget import ReadDeadlineExceeded,ReadResponseTooLarge
         if path.startswith('/v1/connections'):
             path='/api/saas'+path
         if not re.fullmatch(r'/api/saas/v1/(?:capabilities|installations(?:/[A-Za-z0-9_-]{1,256}(?:/(?:authorizations|attach|migrations|rotations/[A-Za-z0-9_-]{16,64}))?)?|rotations/[A-Za-z0-9_-]{16,64}/commit|migrations/[A-Za-z0-9_-]{1,256}/poll|pairings/[A-Za-z0-9_-]{1,256}/(?:poll|ack)|authorizations/[A-Za-z0-9_-]{1,256}(?:/poll)?|connections/[A-Za-z0-9_-]{1,256}(?:/(?:activate|token))?)(?:\?refresh=false)?',path):
@@ -72,8 +75,10 @@ class SaaSClient:
                 if not isinstance(data,dict) or type(data.get('version')) is not int or data['version']!=1:
                     raise ValueError('Unsupported SocialCli account response. Update the client.')
                 return data
+        except (ReadDeadlineExceeded,ReadResponseTooLarge):
+            raise
         except (httpx.InvalidURL,httpx.LocalProtocolError,httpx.UnsupportedProtocol):
             from socialctl.read_budget import LocalConfigurationError
             raise LocalConfigurationError('Check local proxy and HTTP configuration; no server rejection was received.') from None
         except httpx.HTTPError:
-            raise TransportFailure('Could not reach SocialCli securely. Keep your local credentials and retry after checking the connection.') from None
+            raise TransportFailure('Could not reach SocialCli securely. Keep your local credentials and check the connection before reviewing this attempt.',request_method=method) from None

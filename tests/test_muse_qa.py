@@ -85,3 +85,68 @@ def test_account_transport_setup_classifies_bad_proxy(monkeypatch):
     monkeypatch.setenv('HTTPS_PROXY','invalid://private:secret@example.test')
     with pytest.raises(Exception) as caught: http_client()
     assert error_document(caught.value,read_only=True)['code']=='local_configuration'
+
+@pytest.mark.parametrize('failed',[True,False])
+def test_inbox_distinguishes_all_failed_reads_from_verified_empty(tmp_path,monkeypatch,failed):
+    from datetime import datetime,timezone
+    from tests.test_meta_comments import service
+    from socialctl import inbox as mod
+    from socialctl.management.meta_client import MetaClient
+    from socialctl.models import Platform
+    from socialctl.read_budget import ReadBudget
+    _,brand,graph,_,_=service(tmp_path)
+    def provider(request):
+        if request.url.path.endswith('/789/comments'):
+            return httpx.Response(200,json={'data':[{'id':'800','message':'Unverifiable author'}]}) if failed else httpx.Response(200,json={'data':[]})
+        return graph(request)
+    monkeypatch.setattr(mod,'read_client',lambda *a,**k:httpx.Client(transport=httpx.MockTransport(provider)))
+    monkeypatch.setattr(MetaClient,'content_list',lambda *a,**k:{'data':[{'id':'789'}],'complete':True})
+    report=mod.sync_brand_inbox(brand,since=datetime(2026,10,1,tzinfo=timezone.utc),budget=ReadBudget(10),only=[Platform.FACEBOOK])
+    assert report.data['items']==[]
+    assert report.status==('error' if failed else 'ok')
+    assert not graph.writes
+
+@pytest.mark.parametrize('structured',[True,False])
+def test_stats_interrupt_preserves_completed_data_with_partial_exit(tmp_path,monkeypatch,structured):
+    from socialctl.metricas.modelos import LecturaRed,EstadoLectura,Cuenta
+    from socialctl.models import Platform
+    crear_brand(tmp_path,'Example')
+    def read(platform,*args):
+        if platform is Platform.FACEBOOK:raise KeyboardInterrupt()
+        return LecturaRed(estado=EstadoLectura.OK,cuenta=Cuenta(seguidores=7))
+    monkeypatch.setattr('socialctl.cli.leer_red',read)
+    result=CliRunner().invoke(app,['stats','--brand','Example','--root',str(tmp_path),'--only','youtube','--only','facebook']+(['--json'] if structured else []))
+    assert result.exit_code==3,result.output
+    if structured:
+        report=json.loads(result.stdout)
+        assert report['status']=='partial'
+        assert report['data']['snapshot']['redes']['youtube']['cuenta']['seguidores']==7
+    else:assert 'youtube: ok' in result.stdout
+
+@pytest.mark.parametrize('command',['stats','inbox'])
+def test_malformed_proxy_port_never_exposes_its_value(tmp_path,monkeypatch,command):
+    crear_brand(tmp_path,'Example')
+    monkeypatch.setenv('HTTPS_PROXY','http://private:fictional-secret')
+    args=[command,'--brand','Example','--root',str(tmp_path),'--json']
+    if command=='inbox':args+=['--since','2026-10-01','--timezone','UTC']
+    result=CliRunner().invoke(app,args)
+    assert result.exit_code==1
+    report=json.loads(result.stdout)
+    assert report['errors'][0]['code']=='local_configuration'
+    assert 'fictional-secret' not in result.output
+
+@pytest.mark.parametrize('method',['GET','POST'])
+@pytest.mark.parametrize('failure',['deadline','oversize','timeout'])
+def test_saas_preserves_budget_reason_and_uncertain_token_exchange(method,failure):
+    from socialctl.connections.saas_client import SaaSClient
+    from socialctl.read_budget import ReadDeadlineExceeded,ReadResponseTooLarge
+    def provider(request):
+        if failure=='deadline':raise ReadDeadlineExceeded()
+        if failure=='oversize':raise ReadResponseTooLarge('size limit')
+        raise httpx.ReadTimeout('private detail',request=request)
+    with httpx.Client(transport=httpx.MockTransport(provider)) as transport:
+        with pytest.raises(Exception) as caught:
+            SaaSClient('https://example.test',transport).request(method,'/api/saas/v1/connections/fixture/token')
+    detail=error_document(caught.value,read_only=True)
+    assert detail['code']==('operation_uncertain' if method=='POST' else {'deadline':'read_deadline','oversize':'response_too_large','timeout':'transport_failure'}[failure])
+    assert detail['retryable'] is (method=='GET' and failure=='timeout')

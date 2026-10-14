@@ -272,7 +272,7 @@ def sync_brand_inbox(brand,*,since,budget,only=None):
         try:inside=created is None or datetime.fromisoformat(created.replace('Z','+00:00')).astimezone(timezone.utc)>=since
         except (ValueError,AttributeError):inside=True
         if inside or key in edited:items.append({**item,'edited_this_sync':key in edited})
-    status='ok' if coverage and all(r['complete'] for r in coverage) else 'partial' if any(r['scopes'] or r['complete'] for r in coverage) else 'error'
+    status='ok' if coverage and all(r['complete'] for r in coverage) else 'partial' if observed_keys or any(r['complete'] or any(scope['complete'] for scope in r['scopes']) for r in coverage) else 'error'
     return ReadReport(status=status,coverage=coverage,errors=errors,
         data={'brand':brand.nombre,'resolved_since':since.isoformat(),'observed_until':observed,
               'filter_semantics':'created at/after since, plus previously observed comments edited during this sync',

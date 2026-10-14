@@ -99,6 +99,8 @@ def error_document(exc: BaseException, *, read_only: bool) -> dict:
 
     # A read flow may refresh a token via POST. A lost response to that operation
     # cannot be classified as a harmless GET retry merely from the CLI command.
+    if isinstance(exc, TransportFailure) and exc.request_method not in {None,'GET','HEAD','OPTIONS'}:
+        read_only = False
     if isinstance(exc, httpx.RequestError):
         try: request = exc.request
         except RuntimeError: request = None

@@ -59,8 +59,8 @@ Linux/macOS servers can explicitly install <code>socialcli[headless-credentials]
 select authenticated encrypted-file storage. Only creator connection capabilities
 are stored; provider application secrets remain on the connection service.</p>
 <p>Create a private directory outside every Git repository (<code>chmod 700</code>) and an
-external Fernet key file (<code>chmod 600</code>). Generate the key using Python's
-<code>cryptography.fernet.Fernet.generate_key()</code> and write it directly to that file;
+external Fernet key file (<code>chmod 600</code>). In rc2, run <code>socialcli credentials generate-key --key-file /secure/socialcli/master.key</code>
+to write the key directly to that file (rc1 requires Python Fernet.generate_key);
 never put the key value in a command argument, chat, <code>.env</code> or Git.</p>
 <pre><code class="language-sh">socialcli credentials configure --backend encrypted-file \
   --store-file /secure/socialcli/capabilities.json \

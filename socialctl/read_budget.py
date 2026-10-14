@@ -162,7 +162,7 @@ class _EnvironmentTransport(httpx.AsyncBaseTransport):
     def __init__(self):
         try:
             self.client = httpx.AsyncClient(timeout=30, follow_redirects=False, trust_env=True)
-        except (ValueError, OSError, ImportError) as exc:
+        except (httpx.InvalidURL, ValueError, OSError, ImportError) as exc:
             raise LocalConfigurationError('Check local proxy, CA and HTTP transport configuration; no request was sent.') from None
 
     async def handle_async_request(self, request):

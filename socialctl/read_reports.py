@@ -73,10 +73,11 @@ def emit_report(report: ReadReport) -> int:
 
 
 def fail_read(exc: Exception, *, json_output: bool) -> None:
-    message = safe_error(str(exc))
+    detail = error_document(exc, read_only=True)
+    message = detail['message'] if detail['code'] == 'local_configuration' else safe_error(str(exc))
     code = 2 if message.startswith('--timeout must') else 1
     if json_output:
-        emit_report(ReadReport(status='error', errors=[{**error_document(exc, read_only=True), 'message':message}]))
+        emit_report(ReadReport(status='error', errors=[{**detail, 'message':message}]))
     else:
         typer.echo(message)
     raise typer.Exit(code)

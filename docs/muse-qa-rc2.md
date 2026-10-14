@@ -18,8 +18,32 @@ An existing generated CSS/source mismatch was repaired without changing the land
 
 ## Verification boundaries
 
-Full suite: 2,785 tests passed, with one existing Starlette/httpx deprecation warning. Automated regression tests use fictional accounts. The built rc2 wheel installs in an isolated environment and passes the release smoke check without external calls.
+Full suite after second review: 2,797 tests passed, with one existing Starlette/httpx deprecation warning. Automated regression tests use fictional accounts. The built rc2 wheel installs in an isolated environment and passes the release smoke check without external calls.
 
 A read-only Histopast acceptance attempt on 2026-10-14 could not scan YouTube: the hosted token endpoint returned HTTP 404 connection_unavailable for its saved connection. Local encrypted storage and installation sign-in remain available. No reconnection, permission change or social write was performed. This is a live acceptance blocker, not evidence that all provider reads work.
 
 The rc1 artifact is immutable. rc2 must pass the protected release workflow before the public installation guide is switched. Local source/build verification does not imply TestPyPI publication or platform app approval.
+
+
+## Second independent review
+
+The second pass reproduced and corrected these additional cases:
+
+- Malformed proxy URL ports could expose raw configuration fragments in stats
+  diagnostics. All HTTP client factories now sanitize InvalidURL; local setup
+  errors retain fixed guidance in both text and JSON output.
+- Interrupted text stats returned 130 despite preserved data, unlike JSON.
+  Both modes now distinguish complete, partial and failed observations consistently.
+- SaaS transport wrapping hid read deadlines and oversized-response limits.
+  It now preserves those reasons. A lost POST credential exchange also retains
+  its method context and requires reconciliation instead of an automatic retry.
+- An inbox scan with only unverifiable rows could claim partial observations.
+  Partial status now requires actual observations or verified coverage. A verified
+  empty inbox is still successful; wholly failed reads return error.
+- HTML documentation now matches the rc2 exit codes and key-generation guidance.
+
+The follow-up reviewer found no remaining important issue in these changes.
+Focused verification: 107 passed; 24 Muse QA regression cases passed independently.
+The rebuilt wheel and source archive passed release-content checks; installed-wheel
+smoke testing passed without external calls. Live connection acceptance and protected
+publication remain separate, as described above.
