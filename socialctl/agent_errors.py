@@ -38,6 +38,7 @@ _CATALOG = {
     'native_verify': ('reconcile', 'Collect fresh official evidence for this existing job. Scheduling alone does not prove publication.'),
     'operation_failed': ('inspect', 'Inspect the current state before taking another action.'),
     'service_rejected': ('inspect', 'Review account status and service availability.'),
+    'local_configuration': ('user_action', 'Check local URL, proxy and CA configuration. No server rejection was received; keep credentials unchanged.'),
     'invalid_local_state': ('user_action', 'Review arguments, local account state and protected credential storage.'),
     'read_partial': ('inspect', 'Keep verified observations and inspect coverage before another read.'),
     'read_deadline': ('adjust_read', 'Keep verified observations; reduce read scope or increase the read budget.'),
@@ -86,6 +87,7 @@ def error_for_code(code: str, *, read_only: bool = True) -> dict:
 
 def error_document(exc: BaseException, *, read_only: bool) -> dict:
     import httpx
+    from socialctl.read_budget import LocalConfigurationError
     from socialctl.auth import AuthError
     from socialctl.read_budget import ReadDeadlineExceeded, ReadResponseTooLarge
     from socialctl.management.changes import ChangeError
@@ -115,8 +117,8 @@ def error_document(exc: BaseException, *, read_only: bool) -> dict:
     elif isinstance(exc, KeyboardInterrupt): code = 'read_interrupted'
     elif isinstance(exc, AuthError): code = 'authorization_unavailable'
     elif isinstance(exc, SinPermiso): code = 'permissions_required'
-    elif isinstance(exc, (httpx.InvalidURL,httpx.LocalProtocolError,httpx.UnsupportedProtocol)):
-        code = 'request_rejected'
+    elif isinstance(exc, (LocalConfigurationError,httpx.InvalidURL,httpx.LocalProtocolError,httpx.UnsupportedProtocol)):
+        code = 'local_configuration'
     elif isinstance(exc, (TransportFailure,httpx.TransportError)): code = 'transport_failure'
     elif isinstance(exc, httpx.HTTPStatusError) or isinstance(exc, ResourceError) and exc.http_status:
         status = exc.response.status_code if isinstance(exc,httpx.HTTPStatusError) else exc.http_status

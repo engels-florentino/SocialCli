@@ -170,8 +170,8 @@ For an agent without interactive stdin, obtain the user’s explicit authorizati
 ## Bounded machine-readable reads
 
 Use `socialcli stats --brand Example --json --timeout 120` for a version 1 report.
-Progress goes to stderr. Exit 0 means complete success; exit 1 means partial or
-failed observations. Coverage records completeness, observation time and whether
+Progress goes to stderr. For aggregate stats, inbox and report, exit 0 means complete success, exit 3
+means partial observations and exit 1 means failure (rc1 used exit 1 for both). Coverage records completeness, observation time and whether
 values came from this read or a previous snapshot. A missing metric remains null.
 Interruptions preserve completed platforms. Persistence failures include observations
 and the saved/unsaved file list; inspect them before retrying local persistence.
@@ -338,3 +338,5 @@ explicitly; OS keyring remains the default and no silent fallback is provided.
 For 0.3.0rc1 installation, protected persistent storage and browser-owned SocialCli
 sign-in, use the [candidate bootstrap guide](agents.md). Public PyPI availability
 and the real Muse/Grok pilot remain unconfirmed.
+
+See the packaged `socialcli agent-guide` for rc2 scoped inbox reads, management consent, protected key generation and local configuration diagnostics.

@@ -32,7 +32,11 @@ def interactive_terminal():
 
 
 def http_client():
-    return httpx.Client(timeout=30,follow_redirects=False)
+    from socialctl.read_budget import LocalConfigurationError
+    try:
+        return httpx.Client(timeout=30,follow_redirects=False)
+    except (ValueError,OSError,ImportError):
+        raise LocalConfigurationError('Check local proxy, CA and HTTP transport configuration; no request was sent.') from None
 
 
 def atomic_bytes(path:Path,content:bytes,mode=0o600):
@@ -124,7 +128,7 @@ def register(app):
                 account_id:str|None=typer.Option(None,'--account-id',help='Exact account ID to bind; required with --yes.'),
                 yes:bool=typer.Option(False,'--yes',help='Confirm only the explicitly authorized --account-id connection.'),
                 replace_independent:bool=typer.Option(False,'--replace-independent',help='Explicitly permit replacing independent credentials with --yes.'),
-                management:bool=typer.Option(False,'--management',help='YouTube: metadata management; Facebook/Instagram: comments and webhook permissions.'),
+                management:bool=typer.Option(False,'--management',help='YouTube: comment inbox and management (youtube.force-ssl); Facebook/Instagram: comments and webhook permissions.'),
                 analytics:bool=typer.Option(False,'--analytics',help='YouTube, Facebook or Instagram: request analytics read access.'),
                 timeout:float=typer.Option(600,'--timeout',min=1,max=600,help='Maximum browser connection wait in seconds.'),
                 dev_local:bool=typer.Option(False,'--dev-local',help='Development only: permit a loopback HTTP service.')):

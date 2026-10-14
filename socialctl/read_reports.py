@@ -69,7 +69,7 @@ def load_read_brand(root, brand):
 
 def emit_report(report: ReadReport) -> int:
     typer.echo(report.model_dump_json(indent=2))
-    return 0 if report.status == 'ok' else 1
+    return read_exit_code(report.status)
 
 
 def fail_read(exc: Exception, *, json_output: bool) -> None:
@@ -80,3 +80,7 @@ def fail_read(exc: Exception, *, json_output: bool) -> None:
     else:
         typer.echo(message)
     raise typer.Exit(code)
+
+
+def read_exit_code(status: str) -> int:
+    return {'ok': 0, 'partial': 3, 'error': 1}[status]

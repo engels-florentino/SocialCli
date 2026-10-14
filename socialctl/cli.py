@@ -88,7 +88,7 @@ from socialctl.scheduler import (
     schedule_digest,
 )
 
-app = typer.Typer(help="Publish already produced content on YouTube, Facebook, Instagram and TikTok.")
+app = typer.Typer(help="Publish and manage your social content. Setup: brand new NAME, credentials generate-key/configure (headless), account login, then connect PLATFORM. Run agent-guide for the complete workflow.")
 
 
 @app.command('agent-guide')
@@ -134,7 +134,8 @@ def brand_report(
         code = emit_report(result)
     else:
         typer.echo(render_report(result) if result.data else result.errors[0].get('message', result.errors[0]['code']))
-        code = 0 if result.status == 'ok' else 1
+        from socialctl.read_reports import read_exit_code
+        code = read_exit_code(result.status)
     raise typer.Exit(exit_code if exit_code is not None else code)
 
 
@@ -1529,7 +1530,7 @@ def stats(
         None, "--since", "--desde", help="Only content published since this date (YYYY-MM-DD)."
     ),
     json_output: bool = typer.Option(False, "--json", help="Print a versioned report; progress goes to stderr."),
-    timeout: float = typer.Option(120, "--timeout", help="Total read time limit in seconds."),
+    timeout: float = typer.Option(300, "--timeout", help="Total read time limit in seconds; use --only to give one platform the full budget."),
 ) -> None:
     """Read platform metrics and save a brand snapshot. Selected-platform reads merge with today's data; old snapshots expire after one year."""
     def invalid(message):
@@ -1570,13 +1571,15 @@ def stats(
     except ValueError as exc:
         invalid(str(exc))
     redes = {}
-    request_number = 0
-    def progress():
-        nonlocal request_number
-        request_number += 1
-        typer.echo(f"Reading {platform.value}: request {request_number}...", err=True)
+    from socialctl.read_budget import ReadProgress
+    progress = ReadProgress('stats')
     interrupted = False
-    with read_client(budget, progress=progress) as client:
+    try:
+        transport = read_client(budget, progress=progress)
+    except Exception as exc:
+        from socialctl.read_reports import fail_read
+        fail_read(exc,json_output=json_output)
+    with transport as client:
         for index, platform in enumerate(destinos):
             if interrupted:
                 redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; platform not started', failure_code='not_attempted')
@@ -1684,6 +1687,10 @@ def stats(
         raise typer.Exit(130)
     if all(l.estado is not EstadoLectura.OK for l in redes.values()):
         raise typer.Exit(1)
+    if persistence_error or any(l.estado is not EstadoLectura.OK or l.warnings or
+            any('enriquecimiento_fallido' in piece.especificas for piece in l.piezas)
+            for l in redes.values()):
+        raise typer.Exit(3)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
-# SocialCli for AI agents — Candidate 0.3.0rc1
+# SocialCli for AI agents — Candidate 0.3.0rc2
 
-Status: public SaaS pilot, Candidate 0.3.0rc1. Use the exact candidate below;
+Status: public SaaS pilot, Candidate 0.3.0rc2. Use the exact candidate below;
 do not replace an existing 0.2.6 installation or migrate its credentials silently.
 Stripe remains in test mode. Google is in testing and permits configured test users.
 Real-agent acceptance is performed by the owner; do not claim it from installation.
@@ -13,16 +13,16 @@ availability depends on account eligibility; Google production is still pending.
 ## Install the reviewed candidate
 
 Use the official TestPyPI release metadata:
-https://test.pypi.org/pypi/socialcli/0.3.0rc1/json
+https://test.pypi.org/pypi/socialcli/0.3.0rc2/json
 
-1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc1`. If this
+1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc2`. If this
    release is unavailable, stop and report it; do not install a similarly named package.
-2. Select exactly `socialcli-0.3.0rc1-py3-none-any.whl` from `urls`. Download its
+2. Select exactly `socialcli-0.3.0rc2-py3-none-any.whl` from `urls`. Download its
    HTTPS `url` and verify the file against that entry's `digests.sha256`.
 3. Install that verified local wheel into an isolated environment. Resolve
    dependencies from normal PyPI, not TestPyPI. For example:
 
-       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc1-py3-none-any.whl[headless-credentials]'
+       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc2-py3-none-any.whl[headless-credentials]'
        socialcli --version
        socialcli agent-guide
 
@@ -31,7 +31,7 @@ https://test.pypi.org/pypi/socialcli/0.3.0rc1/json
    If an existing SocialCli tool is installed, use a separate virtual environment
    for this pilot and its absolute executable; do not upgrade it automatically.
 
-Verify the installed version is exactly 0.3.0rc1 before continuing. The stable
+Verify the installed version is exactly 0.3.0rc2 before continuing. The stable
 `uv tool install socialcli` command is not the installation path for this pilot.
 
 For headless agents, configure encrypted-file storage with an external0600 key in
@@ -54,6 +54,9 @@ Ask for the brand name; never infer it. Replace MyBrand below with that exact na
 Keep the workspace outside the application repository:
 
     socialcli brand new MyBrand
+    mkdir -m 700 -p "$HOME/.local/share/socialcli-credentials"
+    socialcli credentials generate-key --key-file "$HOME/.local/share/socialcli-credentials/master.key"
+    socialcli credentials configure --brand MyBrand --backend encrypted-file --store-file "$HOME/.local/share/socialcli-credentials/store.json" --key-file "$HOME/.local/share/socialcli-credentials/master.key" --yes
     socialcli account login --brand MyBrand --service https://pilot.socialcli.app --no-browser --label "My AI assistant"
 
 Give the printed URL directly to the user. Do not open, fetch, preview or follow
@@ -61,7 +64,7 @@ it yourself. Keep the process alive with a runner timeout longer than 30 minutes
 The user signs in by email and explicitly approves this installation. Do not ask
 for their OTP, password, session cookie or provider token in chat.
 
-    socialcli connect youtube --brand MyBrand --no-browser
+    socialcli connect youtube --brand MyBrand --management --analytics --no-browser
 
 The provider step has its own 10-minute window. The user grants access and chooses
 the exact account in their browser; the SaaS flow does not require guessing an
@@ -92,7 +95,7 @@ credentials. A network failure is not proof the social account was revoked.
 Check --help on the installed version before using a proposed flag.
 
 Preserve stdout JSON separately from stderr progress. Give read operations their
-own --timeout and a longer runner limit. Exit 1 may include verified partial data;
+own --timeout and a longer runner limit. For stats, inbox and report, exit 3 means partial observations; exit 1 means error. Older clients and other read commands may return partial data with exit 1;
 never treat an incomplete empty inbox as proof there are no comments.
 
 ## Publication gate
@@ -377,8 +380,8 @@ this command's scope. Continue to show the full publication dry-run for approval
     socialcli inbox --brand MyBrand --since yesterday --timezone America/New_York --timeout 120 --json
 
 Set the external runner timeout longer than the command timeout. Keep stdout as one
-JSON document and progress stderr separate. Exit 1 can contain verified partial
-observations. Inspect coverage and errors; a partial empty inbox never means no
+JSON document and progress stderr separate. Aggregate partial results use exit 3
+in rc2 (exit 1 in rc1). Inspect coverage and errors; a partial empty inbox never means no
 comments. TikTok comments are unsupported. Missing metrics are unknown, not zero.
 `--since` on stats filters publication dates, not the metrics reporting window.
 For an offline brand report from already saved snapshots:
@@ -587,3 +590,36 @@ This is a connection-broker boundary. It does not narrow provider tokens, which 
 carry permissions for linked accounts and additional actions. Per-action restrictions
 remain unavailable. Previously delivered provider tokens can remain valid after
 SocialCli revocation until they expire or are separately revoked at the provider.
+
+
+## Read diagnostics in Candidate 0.3.0rc2
+
+- Aggregate `stats`, `inbox` and `report` JSON envelopes: exit 0 = ok,
+  exit 3 = partial, exit 1 = error, exit 2 = invalid command arguments.
+  Always inspect coverage and retain verified observations, including after errors.
+  A partial empty inbox never proves that no comments exist.
+- `stats` and `inbox` default to a 300-second total budget. Give the process
+  additional time for persistence. Use `--only youtube` (repeat `--only` for more
+  platforms) to devote the read budget to selected providers. Increase `--timeout`
+  for large catalogs; the budget remains finite. `--since` on stats filters video
+  publication dates, not the analytics period. Inbox still examines older videos
+  because they can have new comments.
+- Progress is summarized at most once every five seconds. YouTube audience is
+  requested before per-video retention and traffic enrichment. Unverifiable Meta
+  comments remain excluded and counted; more time cannot repair missing fields.
+- YouTube inbox's authenticated moderation filter requires management consent.
+  `connect --management` and `--analytics` exist in rc1 too. Inspect the installed
+  `connect --help`. Only with owner authorization, use the connection example above
+  to add missing consent; reads never reconnect automatically. A single 403 can
+  also mean disabled comments or resource eligibility, not missing OAuth scopes.
+- `local_configuration` indicates a local URL/proxy/CA setup issue, not server
+  rejection. `transport_failure` means connectivity failed. Preserve environment
+  proxies and credentials; correct configuration rather than bypassing it.
+- In `delivery-options`, `native_schedule_authorization_verified` concerns native
+  scheduling only. The legacy `authorization_verified` alias has the same meaning,
+  identified by `authorization_verified_scope`. Neither verifies general read access.
+- `credentials generate-key` writes a new external Fernet key privately, never to
+  stdout and never over an existing file. The parent must already be owned by you
+  with mode 0700; the file is created with mode 0600. Use a separate protected
+  directory per independent brand. The key is URL-safe base64 for 32 random bytes,
+  not a password or hexadecimal string.

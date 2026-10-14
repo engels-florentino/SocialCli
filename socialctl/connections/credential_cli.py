@@ -11,7 +11,7 @@ from socialctl.connections.file_store import EncryptedFileStore, protected_paren
 from socialctl.models import Platform
 from socialctl.workspace import default_root
 
-credentials_app = typer.Typer(help='Configure explicit capability storage; provider credentials stay on the service.')
+credentials_app = typer.Typer(help='Setup order: brand new, credentials generate-key/configure, account login, then connect. Headless: encrypted-file requires a Fernet key, generated with generate-key; never use a password or hex string.')
 
 
 def write_configuration(brand, config):
@@ -92,7 +92,7 @@ def stable_credentials(brand):
 
 
 @credentials_app.command('configure')
-def configure(backend:str=typer.Option(...,'--backend'),store_file:Path|None=typer.Option(None,'--store-file'),key_file:Path|None=typer.Option(None,'--key-file'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),yes:bool=typer.Option(False,'--yes')):
+def configure(backend:str=typer.Option(...,'--backend'),store_file:Path|None=typer.Option(None,'--store-file'),key_file:Path|None=typer.Option(None,'--key-file',help='External Fernet key file: 32 bytes in URL-safe base64. Create it with credentials generate-key.'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),yes:bool=typer.Option(False,'--yes')):
     try:
         from socialctl.connections.cli import acquire_brand_lock
         import os
@@ -112,7 +112,7 @@ def configure(backend:str=typer.Option(...,'--backend'),store_file:Path|None=typ
 
 
 @credentials_app.command('migrate')
-def migrate(to:str=typer.Option(...,'--to'),store_file:Path|None=typer.Option(None,'--store-file'),key_file:Path|None=typer.Option(None,'--key-file'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),yes:bool=typer.Option(False,'--yes')):
+def migrate(to:str=typer.Option(...,'--to'),store_file:Path|None=typer.Option(None,'--store-file'),key_file:Path|None=typer.Option(None,'--key-file',help='External Fernet key file: 32 bytes in URL-safe base64. Create it with credentials generate-key.'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),yes:bool=typer.Option(False,'--yes')):
     try:
         from socialctl.connections.cli import acquire_brand_lock
         import os
@@ -189,3 +189,24 @@ def rotate(new_key_file:Path=typer.Option(...,'--new-key-file'),brand:str=typer.
         finally: os.close(fd)
         typer.echo('Key rotation verified. Protected recovery backup retained; keep the old key separately.')
     except (OSError,ValueError) as exc: fail(exc)
+
+
+@credentials_app.command('generate-key')
+def generate_key(key_file:Path=typer.Option(...,'--key-file',help='New external key file in an existing private directory (0700).'),root:Path=typer.Option(default_root(),'--root')):
+    """Create a Fernet key (32 random bytes encoded as URL-safe base64), without displaying it."""
+    import os
+    try:
+        from cryptography.fernet import Fernet
+        path=key_file.absolute()
+        external_paths(path.with_name(path.name+'.store-check'),path,root)
+        with protected_parent(path) as (parent,name):
+            fd=os.open(name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=parent)
+            with os.fdopen(fd,'wb') as stream:
+                stream.write(Fernet.generate_key())
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.fsync(parent)
+    except (OSError,ValueError,ImportError):
+        typer.echo('Key not created. Use a new file outside the workspace and Git, in an existing directory owned by you with mode 0700; install socialcli[headless-credentials]. Existing files are never overwritten.',err=True)
+        raise typer.Exit(1)
+    typer.echo('Fernet key created with mode 0600. Keep it private and separate from backups; use this file with credentials configure --key-file.')

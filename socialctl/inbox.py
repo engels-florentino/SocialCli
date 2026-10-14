@@ -146,7 +146,7 @@ def _youtube_rows(client, video_id):
     return rows, complete, errors
 
 
-def sync_brand_inbox(brand,*,since,budget):
+def sync_brand_inbox(brand,*,since,budget,only=None):
     from socialctl.management.meta_client import MetaClient
     from socialctl.management.inbox_readers import MetaInboxClient, YouTubeInboxClient
     from socialctl.inventory import sync_content,InventoryStore
@@ -154,9 +154,11 @@ def sync_brand_inbox(brand,*,since,budget):
     store=UnifiedInboxStore(brand.raiz);coverage=[];errors=[];edited=set();observed_keys=set()
     observed=now_utc().isoformat()
     fields={'youtube':'channel_id','facebook':'page_id','instagram':'ig_user_id','tiktok':'open_id'}
-    pending_providers=sum(bool((brand.cuentas.get(p.value) or {}).get(fields[p.value])) for p in Platform if p is not Platform.TIKTOK)
-    with read_client(budget,progress=lambda:__import__('typer').echo('Reading inbox provider page...',err=True)) as http:
-        for platform in Platform:
+    platforms=list(dict.fromkeys(only)) if only else list(Platform)
+    pending_providers=sum(bool((brand.cuentas.get(p.value) or {}).get(fields[p.value])) for p in platforms if p is not Platform.TIKTOK)
+    from socialctl.read_budget import ReadProgress
+    with read_client(budget,progress=ReadProgress('inbox')) as http:
+        for platform in platforms:
             account=(brand.cuentas.get(platform.value) or {}).get(fields[platform.value])
             row={'platform':platform.value,'account_id':account or None,'complete':False,'scopes':[]}
             coverage.append(row)
@@ -170,6 +172,14 @@ def sync_brand_inbox(brand,*,since,budget):
                 with budget.share(share_count):
                     budget.check()
                     if platform is Platform.YOUTUBE:
+                        from socialctl.identity import credential_metadata
+                        grant=credential_metadata(brand.leer_secreto(platform))['granted_scopes']
+                        management_scopes={'https://www.googleapis.com/auth/youtube.force-ssl','https://www.googleapis.com/auth/youtube'}
+                        if grant['state']=='known' and not management_scopes.intersection(grant['values']):
+                            row['state']='error'
+                            errors.append({'platform':'youtube','code':'permissions_required',
+                                'message':'YouTube comment inbox requires management consent. Ask the owner to authorize connect youtube --management --analytics --no-browser with the explicit --brand and --root. Do not reconnect automatically.'})
+                            continue
                         inventory_store=InventoryStore(brand,platform,account)
                         prior=inventory_store.load().get('sync') or {}
                         resume=not prior.get('complete',True) and prior.get('resumable',False)
@@ -251,7 +261,7 @@ def sync_brand_inbox(brand,*,since,budget):
                 errors.append({**error_document(exc,read_only=True),'platform':platform.value,'message':'Read interrupted' if isinstance(exc,KeyboardInterrupt) else safe_error(str(exc))})
                 if isinstance(exc,KeyboardInterrupt):break
     covered={r['platform'] for r in coverage}
-    for platform in Platform:
+    for platform in platforms:
         if platform.value not in covered:
             coverage.append({'platform':platform.value,'account_id':(brand.cuentas.get(platform.value) or {}).get(fields[platform.value]),
                 'complete':False,'scopes':[],'state':'not_attempted'})

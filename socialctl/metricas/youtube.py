@@ -158,6 +158,15 @@ class YouTubeLector(Lector):
         cuota_agotada = False
         deadline_error = None
         warnings = []
+        # Collect channel-level audience before expensive per-video enrichment.
+        audiencia = None
+        try:
+            audiencia = self._audiencia(client, cabeceras, hoy)
+        except Exception as exc:
+            from socialctl.read_reports import safe_error
+            warnings.append('Audience unavailable: ' + safe_error(str(exc)))
+            if isinstance(exc, ReadDeadlineExceeded):
+                deadline_error = exc
         for fila in _filas(por_video):
             pieza = self._pieza(fila, catalogo)
             if pieza is None:
@@ -200,16 +209,6 @@ class YouTubeLector(Lector):
                 for pieza in piezas:
                     pieza.especificas['thumbnail_reach_error'] = (
                         'imported reach report unreadable; impressions/CTR unknown')
-
-        audiencia = None
-        if deadline_error:
-            warnings.append(f"Audience not requested: {deadline_error}")
-        else:
-            try:
-                audiencia = self._audiencia(client, cabeceras, hoy)
-            except Exception as exc:
-                from socialctl.read_reports import safe_error
-                warnings.append('Audience unavailable: ' + safe_error(str(exc)))
 
         return LecturaRed(
             estado=EstadoLectura.OK,

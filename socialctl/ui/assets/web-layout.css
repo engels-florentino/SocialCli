@@ -23,3 +23,16 @@ body.landing{min-height:100vh;min-height:100svh;display:grid;grid-template-rows:
 .landing footer{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;color:var(--muted);border:0}.landing footer nav{font-size:12px;gap:16px}.landing footer a{margin:0}
 @media(max-width:600px){.landing header,.landing main,.landing footer{padding-left:18px;padding-right:18px}.landing header{padding-top:14px;padding-bottom:14px}.landing .badge{font-size:10px;margin-bottom:12px}.landing h1{margin-bottom:14px}.landing .lead{font-size:15px}.landing-platforms{font-size:12px;margin-bottom:16px}.landing-platforms span{padding:0 4px}.landing-price{font-size:12px;margin-bottom:16px}.install-label{font-size:12px}.landing #install-prompt{font-size:clamp(11px,2.85vw,15px);padding:8px 2px}.landing .install-prompt{gap:4px;padding:4px}.landing .install-prompt button{flex-basis:44px;width:44px;height:44px}.landing footer{justify-content:center;flex-wrap:wrap;padding-top:12px;padding-bottom:12px;gap:6px}.landing footer>span{width:100%;text-align:center}}
 @media(max-height:700px) and (min-width:601px){.landing header,.landing footer{padding-top:12px;padding-bottom:12px}.landing h1{font-size:40px;margin-bottom:12px}.landing .badge{margin-bottom:10px}.landing-platforms,.landing-price{margin-bottom:14px}.landing .lead{font-size:16px;margin-bottom:10px}}
+
+/* Customer benefits share the existing landing typography and color tokens. */
+.landing-content{max-width:820px}
+.landing-benefits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;text-align:left;margin:0 0 14px}
+.landing-benefits h2{font-size:15px;line-height:1.35;margin:0 0 6px}
+.landing-benefits p{font-size:13px;line-height:1.45;color:var(--muted);margin:0}
+.landing-limits{font-size:11px;line-height:1.5;color:var(--muted);max-width:650px;margin:0 auto 16px}
+.landing .landing-platforms{margin-bottom:18px}
+.landing h1{margin-bottom:12px}
+.landing .lead{font-size:16px;line-height:1.4;margin-bottom:12px}
+.landing-price{margin-bottom:16px}
+@media(max-width:600px){.landing-benefits{gap:12px}.landing-benefits h2{font-size:12px}.landing-benefits p{font-size:11px}.landing-limits{font-size:10px;margin-bottom:12px}.landing .lead{font-size:14px}.landing h1{font-size:32px}}
+@media(max-width:360px){.landing-benefits{grid-template-columns:1fr;gap:8px}.landing-benefits h2{margin-bottom:2px}}

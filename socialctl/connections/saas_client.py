@@ -72,5 +72,8 @@ class SaaSClient:
                 if not isinstance(data,dict) or type(data.get('version')) is not int or data['version']!=1:
                     raise ValueError('Unsupported SocialCli account response. Update the client.')
                 return data
+        except (httpx.InvalidURL,httpx.LocalProtocolError,httpx.UnsupportedProtocol):
+            from socialctl.read_budget import LocalConfigurationError
+            raise LocalConfigurationError('Check local proxy and HTTP configuration; no server rejection was received.') from None
         except httpx.HTTPError:
             raise TransportFailure('Could not reach SocialCli securely. Keep your local credentials and retry after checking the connection.') from None

@@ -22,7 +22,8 @@ Public Python CLI for creator-owned social accounts. Run `uv run pytest` and
   one JSON document and progress on stderr; do not merge streams or use `tail`
   to capture the result. Any runner timeout must exceed SocialCli's limit with
   enough grace for local persistence and final output.
-- Exit 1 can contain useful verified observations. Read `status`, `coverage`
+- Aggregate stats/inbox/report use exit 3 for partial observations in rc2.
+  Older clients and other reads may use exit 1 for useful verified observations. Read `status`, `coverage`
   and `errors`; retain those observations and never interpret a partial empty
   inbox as proof that no new comments exist. Inspect Meta `skipped_comments`
   counts and respect unknown creation times and incomplete pagination.

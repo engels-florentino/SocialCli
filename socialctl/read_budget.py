@@ -160,7 +160,10 @@ class BudgetTransport(httpx.BaseTransport):
 class _EnvironmentTransport(httpx.AsyncBaseTransport):
     """Keep HTTPX's public proxy/NO_PROXY/CA routing inside the cancellable loop."""
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=30, follow_redirects=False, trust_env=True)
+        try:
+            self.client = httpx.AsyncClient(timeout=30, follow_redirects=False, trust_env=True)
+        except (ValueError, OSError, ImportError) as exc:
+            raise LocalConfigurationError('Check local proxy, CA and HTTP transport configuration; no request was sent.') from None
 
     async def handle_async_request(self, request):
         return await self.client.send(request, stream=True, follow_redirects=False)
@@ -188,3 +191,22 @@ def bounded_read(seconds: float):
         yield budget
     finally:
         active_read_budget.reset(token)
+
+
+class LocalConfigurationError(ValueError):
+    """Local HTTP configuration failed before a request could be sent."""
+
+
+class ReadProgress:
+    """At most one stderr update per five seconds, even for fast pagination."""
+    def __init__(self, label, *, clock=time.monotonic):
+        self.label, self.clock = label, clock
+        self.count, self.last = 0, None
+
+    def __call__(self):
+        import typer
+        self.count += 1
+        now = self.clock()
+        if self.last is None or now - self.last >= 5:
+            typer.echo(f'Reading {self.label}: {self.count} requests...', err=True)
+            self.last = now

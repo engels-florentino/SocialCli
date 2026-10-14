@@ -12,7 +12,7 @@ def reports_module():
 def test_partial_report_emits_one_json_document_and_nonzero_exit(capsys):
     module = reports_module()
     report = module.ReadReport(status='partial', coverage=[{'platform':'youtube','complete':False}], data={'items':[]})
-    assert module.emit_report(report) == 1
+    assert module.emit_report(report) == 3
     value = json.loads(capsys.readouterr().out)
     assert value['version'] == 1 and value['status'] == 'partial'
     assert value['coverage'][0]['complete'] is False

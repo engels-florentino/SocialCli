@@ -14,7 +14,9 @@ def delivery_options(brand) -> dict:
                 'platform_native_scheduling': True,
                 'automatic_native_schedule': False,
                 'native_schedule_status': 'pilot_required',
+                'native_schedule_authorization_verified': False,
                 'authorization_verified': False,
+                'authorization_verified_scope': 'native_scheduling_only',
                 'instruction': 'Native API submission requires verified project/account eligibility and a pilot. '
                     'Use native-schedule with explicit approval; only verified remote scheduling allows the agent to stop.',
             },
@@ -23,7 +25,9 @@ def delivery_options(brand) -> dict:
                 'platform_native_scheduling': True,
                 'automatic_native_schedule': False,
                 'native_schedule_status': 'pilot_required',
+                'native_schedule_authorization_verified': False,
                 'authorization_verified': False,
+                'authorization_verified_scope': 'native_scheduling_only',
                 'instruction': 'Meta supports scheduling; SocialCli API eligibility remains closed until the '
                     'account/format pilot is verified. Use gated native-schedule submit-api for Reels, or an approved Business Suite handoff.',
             },
@@ -31,7 +35,9 @@ def delivery_options(brand) -> dict:
                 'selected_delivery': 'publish_now',
                 'automatic_native_schedule': False,
                 'native_schedule_status': 'not_supported_by_posting_api',
+                'native_schedule_authorization_verified': False,
                 'authorization_verified': False,
+                'authorization_verified_scope': 'native_scheduling_only',
                 'instruction': 'Publish now. Legacy local scheduling requires the original file and a running '
                     'executor at delivery time; it is not unattended SaaS scheduling.',
             },
@@ -40,7 +46,9 @@ def delivery_options(brand) -> dict:
                 'direct_post_enabled': bool(mode == 'direct' and valid and audited),
                 'automatic_native_schedule': False,
                 'native_schedule_status': 'not_supported_by_posting_api',
+                'native_schedule_authorization_verified': False,
                 'authorization_verified': False,
+                'authorization_verified_scope': 'native_scheduling_only',
                 'instruction': 'Inbox uploads for creator review; the creator finishes in TikTok. Direct Post '
                     'requires an audited app and creator-specific permission checks. Neither mode schedules a future post.',
             },

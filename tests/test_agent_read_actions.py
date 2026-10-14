@@ -22,7 +22,7 @@ def test_stats_keeps_good_metrics_and_exposes_typed_read_failure(tmp_path,monkey
     monkeypatch.setitem(LECTORES,Platform.YOUTUBE,Good)
     monkeypatch.setitem(LECTORES,Platform.FACEBOOK,Failed)
     result=CliRunner().invoke(app,['stats','--brand','Example','--root',str(tmp_path),'--only','youtube','--only','facebook','--json'])
-    assert result.exit_code==1,result.output
+    assert result.exit_code==3,result.output
     payload=json.loads(result.stdout)
     assert payload['status']=='partial'
     assert payload['data']['snapshot']['redes']['youtube']['cuenta']['seguidores']==7

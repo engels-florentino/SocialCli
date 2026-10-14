@@ -110,8 +110,8 @@ select authenticated encrypted-file storage. Only creator connection capabilitie
 are stored; provider application secrets remain on the connection service.
 
 Create a private directory outside every Git repository (`chmod 700`) and an
-external Fernet key file (`chmod 600`). Generate the key using Python's
-`cryptography.fernet.Fernet.generate_key()` and write it directly to that file;
+external Fernet key file (`chmod 600`). In rc2, run `socialcli credentials generate-key --key-file /secure/socialcli/master.key`
+to write a Fernet key directly to that file (rc1 requires Python Fernet.generate_key);
 never put the key value in a command argument, chat, `.env` or Git.
 
 ```sh

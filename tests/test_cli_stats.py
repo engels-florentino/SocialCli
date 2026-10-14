@@ -86,7 +86,7 @@ def test_una_red_que_falla_no_aborta_las_demas(raiz, monkeypatch):
         app, ["stats", "--brand", "Histopast", "--root", str(raiz)]
     )
 
-    assert resultado.exit_code == 0
+    assert resultado.exit_code == 3
     assert "youtube: ok" in resultado.output
     assert "facebook: error" in resultado.output
     assert "video.list" in resultado.output
@@ -124,10 +124,11 @@ def test_stats_surfaces_optional_read_failure_with_account_data(raiz, monkeypatc
     result = runner.invoke(app, args + (['--json'] if structured else []))
     if structured:
         report = json.loads(result.stdout)
-        assert result.exit_code == 1 and report['status'] == 'partial'
+        assert result.exit_code == 3 and report['status'] == 'partial'
         assert report['data']['snapshot']['redes']['youtube']['cuenta']['seguidores'] == 4950
         assert not report['coverage'][0]['complete']
     else:
+        assert result.exit_code == 3
         assert 'partial' in result.stdout and 'Audience read' in result.stdout
     assert 'Audience read' in (raiz / 'Histopast' / 'metricas' / 'resumen.md').read_text()
 
@@ -146,7 +147,7 @@ def test_stats_timeout_in_first_provider_leaves_time_for_next(raiz, monkeypatch)
     result = runner.invoke(app, ['stats','--brand','Histopast','--only','youtube','--only','facebook','--root',str(raiz),'--json'])
     report = json.loads(result.stdout)
     assert report['data']['snapshot']['redes']['facebook']['cuenta']['seguidores'] == 4950
-    assert report['status'] == 'partial' and result.exit_code == 1
+    assert report['status'] == 'partial' and result.exit_code == 3
 
 
 def test_dos_ejecuciones_el_mismo_dia_no_duplican(raiz, monkeypatch):
@@ -291,7 +292,7 @@ def test_sin_only_sigue_sobrescribiendo(raiz, monkeypatch):
     resultado = runner.invoke(
         app, ["stats", "--brand", "Histopast", "--root", str(raiz)]
     )
-    assert resultado.exit_code == 0, resultado.output
+    assert resultado.exit_code == 3, resultado.output
 
     crudo = json.loads(
         (raiz / "Histopast" / "metricas" / f"{date.today().isoformat()}.json").read_text(encoding="utf-8")
@@ -395,7 +396,7 @@ def test_avisa_si_una_red_lleva_tres_dias_seguidos_fallando(raiz, monkeypatch):
         app, ["stats", "--brand", "Histopast", "--root", str(raiz)]
     )
 
-    assert resultado.exit_code == 0, resultado.output
+    assert resultado.exit_code == 3, resultado.output
     assert 'WARNING: tiktok has gone 3 days without a successful read' in resultado.output
     assert 'socialcli auth tiktok' in resultado.output
     assert 'WARNING: facebook' not in resultado.output, (
@@ -559,7 +560,7 @@ def test_stats_json_is_clean_and_reports_coverage(raiz, monkeypatch, failed):
     result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz),
                                 '--only','youtube','--only','facebook','--json'])
     value = json.loads(result.stdout)
-    assert result.exit_code == (1 if failed else 0)
+    assert result.exit_code == (3 if failed else 0)
     assert value['version'] == 1 and value['status'] == ('partial' if failed else 'ok')
     assert value['data']['snapshot_path']
     assert value['data']['snapshot']['redes']['youtube']['cuenta']['seguidores'] == 4950
@@ -581,7 +582,7 @@ def test_stats_json_partial_enrichment_is_not_complete(raiz, monkeypatch):
     _falsear(monkeypatch, {Platform.TIKTOK: reading})
     result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz), '--only', 'tiktok', '--json'])
     report = json.loads(result.stdout)
-    assert result.exit_code == 1
+    assert result.exit_code == 3
     assert report['status'] == 'partial'
     assert report['coverage'][0]['complete'] is False
     assert report['errors'] and report['data']['snapshot']['redes']['tiktok']['piezas']
@@ -594,7 +595,7 @@ def test_stats_json_persistence_failure_retains_observations(raiz, monkeypatch):
     monkeypatch.setattr('socialctl.cli.actualizar_piezas', broken)
     result = runner.invoke(app, ['stats', '--brand', 'Histopast', '--root', str(raiz), '--only', 'youtube', '--json'])
     report = json.loads(result.stdout)
-    assert result.exit_code == 1 and report['status'] == 'partial'
+    assert result.exit_code == 3 and report['status'] == 'partial'
     assert report['data']['snapshot']['redes']['youtube']['cuenta']['seguidores'] == 4950
     assert report['data']['persistence']['saved']
     assert 'piezas.yml' in report['data']['persistence']['not_saved']
