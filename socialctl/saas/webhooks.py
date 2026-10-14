@@ -53,7 +53,16 @@ def install_webhook_route(app,billing):
             with billing.vault.transaction() as db:
                 previous=db.execute('SELECT body_hash FROM saas_billing_events WHERE account_id=? AND mode=? AND event_id=?',identity).fetchone()
                 if previous:
-                    if previous['body_hash']!=digest:raise HTTPException(400,'Conflicting Stripe event.')
+                    if previous['body_hash']!=digest:
+                        # Stripe changes pending_webhooks between deliveries. Compare
+                        # authenticated event content, not JSON formatting or that
+                        # delivery counter; retain the original audit record unchanged.
+                        saved=billing.vault.get(db,'saas-stripe-event',':'.join(identity))
+                        original=saved['payload'] if saved else None
+                        if (original is None or
+                                {k:v for k,v in original.items() if k!='pending_webhooks'} !=
+                                {k:v for k,v in event.items() if k!='pending_webhooks'}):
+                            raise HTTPException(400,'Conflicting Stripe event.')
                     return
                 customer=event['data']['object'].get('customer')
                 if not isinstance(customer,str) or not re.fullmatch(r'cus_[A-Za-z0-9_]{1,200}',customer):customer=None

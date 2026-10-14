@@ -112,3 +112,31 @@ Sources checked through Context7 and official code:
 [CLI listen](https://github.com/stripe/stripe-cli/wiki/Listen-command),
 [custom Host forwarding](https://github.com/stripe/stripe-cli/blob/v1.53.1/pkg/proxy/endpoint.go),
 [subscription metadata update](https://docs.stripe.com/api/subscriptions/update).
+
+
+## Public HTTPS pilot — 14 October 2026
+
+The separate pilot is live at https://pilot.socialcli.app. The owner completed
+real Safari email OTP sign-in and reached the English account page. It showed
+USD 10/month and a 14-day trial awaiting the first connection, with no card
+required. No social accounts or assistants have been linked by this verification.
+The account-form Referrer-Policy defect was fixed in c19e811, with strict Origin
+and CSRF validation retained; the full suite passed 2770 tests.
+
+A permanent Stripe test webhook now targets the pilot billing route, subscribes
+to the 14 supported event types and pins 2025-09-30.clover. Its signing secret is
+stored only in private server configuration and loaded into the healthy candidate.
+A diagnostic metadata update on the existing fictional subscription produced a
+real signed direct HTTPS delivery. The event was observed pending in SQLite,
+then done after actual systemd maintenance. Price/items, invoice, billing anchor,
+trial end, status and scheduled cancellation fields were verified unchanged.
+A forged signature returned400. No real payment or customer email was generated.
+
+Manual redelivery exposed a real bug: Stripe changed pending_webhooks from3 to1;
+the raw-body hash guard rejected this as a conflicting event. Stripe Workbench
+confirmed HTTP400 and “Conflicting Stripe event.” Parsed-event comparison found
+only that top-level delivery counter changed. The fix preserves raw signature
+verification and the original encrypted audit record, while accepting equivalent
+JSON content with a changed delivery counter. All other event-content differences
+remain rejected. Regression cases failed before the fix and pass afterwards.
+Deployment and successful Stripe redelivery must be recorded separately below.

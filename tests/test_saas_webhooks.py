@@ -142,3 +142,26 @@ def test_unresolved_event_retry_does_not_starve_new_delivery(tmp_path):
     send(client,now,event(event_id='evt_newer'));run_pending(billing,limit=1)
     with metadata.vault.transaction() as db:
         assert db.execute("SELECT next_attempt FROM saas_billing_events WHERE event_id='evt_newer'").fetchone()[0]>0
+
+
+@pytest.mark.parametrize('pending,pretty', [(1, False), (3, True)])
+def test_stripe_redelivery_preserves_original_record_when_delivery_metadata_changes(tmp_path,pending,pretty):
+    client,now,metadata,_,billing=setup(tmp_path);wire(client,billing)
+    original=event(pending_webhooks=3)
+    assert send(client,now,original).status_code==200
+    with metadata.vault.transaction() as db:
+        db.execute("UPDATE saas_billing_events SET state='done'")
+        before=dict(db.execute('SELECT * FROM saas_billing_events').fetchone())
+    repeated=event(pending_webhooks=pending)
+    raw=json.dumps(repeated,indent=2 if pretty else None,sort_keys=pretty).encode()
+    timestamp=int(now[0])
+    signature=hmac.new(b'whsec_fictional',str(timestamp).encode()+b'.'+raw,hashlib.sha256).hexdigest()
+    response=client.post('/api/saas/v1/billing/webhook',content=raw,
+        headers={'Stripe-Signature':f't={timestamp},v1={signature}'})
+    assert response.status_code==200
+    with metadata.vault.transaction() as db:
+        rows=db.execute('SELECT * FROM saas_billing_events').fetchall()
+        assert len(rows)==1 and dict(rows[0])==before
+        saved=metadata.vault.get(db,'saas-stripe-event',':'.join((billing.settings.account_id,'test','evt_social')))
+        assert saved['payload']==original
+    assert send(client,now,event(pending_webhooks=pending,created=901)).status_code==400
