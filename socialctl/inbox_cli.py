@@ -9,6 +9,8 @@ from socialctl.read_reports import emit_report,ReadReport,safe_error
 
 
 def register(app,default_root):
+    from socialctl.engagement_cli import register as register_engagement
+    register_engagement(app,default_root)
     from socialctl.brands import cargar_brand,BrandNoEncontrada,NombreDeMarcaInvalido,AccountsInvalido
     @app.command('inbox')
     def inbox(brand:str=typer.Option(...,'--brand'),since:str=typer.Option(...,'--since'),timezone_name:str|None=typer.Option(None,'--timezone'),json_output:bool=typer.Option(False,'--json'),timeout:float=typer.Option(120,'--timeout'),root:Path=typer.Option(default_root,'--root')):

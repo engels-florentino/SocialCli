@@ -52,13 +52,15 @@ class OperationOutput:
     def brand(self, root, name):
         return cargar_brand(root, name)
 
-    def approve(self, change, preview):
+    def approve(self, change, preview, approval=None):
         self.change_id = change.id
         typer.echo(preview, err=self.json_output)
         # Typer's input helper still prints the last prompt character to stdout
         # even with err=True. Route the entire prompt interaction, never results.
-        with redirect_stdout(sys.stderr) if self.json_output else nullcontext():
-            digest = typer.prompt('Enter the exact fingerprint to approve', err=self.json_output)
+        digest = approval
+        if digest is None:
+            with redirect_stdout(sys.stderr) if self.json_output else nullcontext():
+                digest = typer.prompt('Enter the exact fingerprint to approve', err=self.json_output)
         if digest != change.fingerprint:
             raise ApprovalMismatch('approval does not match exact fingerprint')
         return digest

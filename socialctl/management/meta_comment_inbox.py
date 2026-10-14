@@ -378,7 +378,7 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
 
 def prepare_inbox_draft(client: MetaCommentsClient, comment_store: CommentStore,
                         inbox_store: CommentInboxStore, *, media_id: str,
-                        comment_id: str, text: str):
+                        comment_id: str, text: str, on_prepared=None):
     if not isinstance(text, str) or not text.strip():
         raise CommentError("draft must contain explicit nonempty text")
     with inbox_store.lock():
@@ -397,6 +397,13 @@ def prepare_inbox_draft(client: MetaCommentsClient, comment_store: CommentStore,
                 "platform": client.platform.value, "account_id": client.account_id,
                 "media_id": media_id, "comment_id": comment_id,
                 "idempotency_key": key})
+        # The immutable child already exists even if the inbox save below fails.
+        # Observation must not change draft persistence or authorize any write.
+        if on_prepared is not None:
+            try:
+                on_prepared(change)
+            except Exception:
+                pass
         now = now_utc().isoformat()
         record.status = "draft"
         record.draft_text = text

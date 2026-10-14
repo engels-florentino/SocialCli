@@ -131,6 +131,20 @@ def dispatch(brand,reference,*,reconcile=False):
             from socialctl.management.meta_comments import MetaCommentsClient,apply_comment,reconcile_comment
             client=MetaCommentsClient(brand,Platform(reference.proposal['platform']),http)
             apply,read=apply_comment,reconcile_comment
+            child=store.load(reference.change_id)
+            if child.inbox_binding:
+                from socialctl.management.meta_comment_inbox import CommentInboxStore, apply_inbox_draft, reconcile_inbox_draft
+                inbox=CommentInboxStore(brand.raiz)
+                records=[r for r in inbox.load().comments if (r.platform,r.account_id,r.media_id,r.comment_id)==
+                    (child.platform,child.account_id,child.media_id,child.parent_id)]
+                if len(records)!=1 or records[0].change_id!=child.id or records[0].fingerprint!=child.fingerprint:
+                    raise ChangeError('inbox draft changed; prepare a new full batch preview')
+                kwargs={'media_id':child.media_id,'comment_id':child.parent_id}
+                if reconcile:
+                    reconcile_inbox_draft(client,store,inbox,**kwargs)
+                else:
+                    apply_inbox_draft(client,store,inbox,approval_digest=reference.fingerprint,**kwargs)
+                return store.load(reference.change_id)
         else:
             from socialctl.management.meta_client import MetaClient
             from socialctl.management.meta_changes import apply_meta,reconcile_meta

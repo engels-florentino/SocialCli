@@ -370,22 +370,66 @@ stale and partial sources remain explicit, and exit1 may contain useful results.
 The existing audience data has no audience-online-hours series: best posting time
 is unavailable. Do not invent peak hours or causal recommendations from top posts.
 
-For a Facebook or Instagram reply, choose the exact verified IDs and draft locally:
+For one supervised workflow across saved YouTube/Facebook/Instagram comments:
 
-    socialcli comments draft MEDIA_ID COMMENT_ID --platform facebook --text "Approved proposed reply" --brand MyBrand --dry-run
+    socialcli inbox-review --brand MyBrand --json
+    socialcli inbox-draft --file inbox-replies.yml --brand MyBrand --dry-run --timeout 120 --json
 
-Show the complete draft and fingerprint. `comments apply-draft` asks for that exact
-fingerprint after approval; never infer approval from the draft or inbox read.
-For headless batch application, prepare exact provider proposals, then:
+`inbox-review` is offline: it joins saved comments to the actual reply journals.
+`observed`, `draft`, `blocked`, `uncertain` and `replied` describe local evidence.
+`replied` means a previously verified reply; it does not recheck present visibility.
+Former-account observations and proposals are excluded with explicit counts;
+a foreign-brand journal still blocks review. An empty saved view never proves there
+are no comments. Refresh with `inbox` first,
+inspect its coverage, and preserve the selected account/comment identities.
 
-    socialcli changes prepare-batch --file replies.yml --brand MyBrand --dry-run
-    socialcli changes apply-batch BATCH_ID --approval APPROVED_DIGEST --brand MyBrand
-    socialcli changes reconcile-batch BATCH_ID --brand MyBrand
+The explicit reply file is:
 
-The last command only reads prior attempts. The batch references explicit
-`meta-comments` or `youtube-community` proposal IDs; preparation and application
-remain separate. Use `socialcli content youtube-community --help` for YouTube reply
-preparation. Never invent a supported flag or automatically respond to new comments.
+```yaml
+version: 1
+replies:
+  - platform: youtube
+    account_id: EXACT_CHANNEL_ID
+    comment_id: EXACT_TOP_LEVEL_COMMENT_ID
+    text: "Exact proposed reply"
+  - platform: facebook
+    account_id: EXACT_PAGE_ID
+    comment_id: EXACT_TOP_LEVEL_COMMENT_ID
+    text: "Exact proposed reply"
+```
+
+Replace IDs with observed values; never infer an account. Instagram uses the same
+schema with `platform: instagram`. Select 1–100 comments, each once. TikTok and
+nested-comment targets are unsupported in this unified drafting flow; select the
+actual top-level target explicitly instead of silently redirecting a response.
+
+Drafting checks every local selection before provider reads, rechecks author/text
+against the provider, and creates existing immutable child proposals plus one
+community batch. It does not send replies. The complete batch preview is on stderr;
+JSON stdout includes `batch.id`, `batch.fingerprint` and `prepared` child references.
+If a later preparation fails, `status: partial`, `batch: null` and `prepared` retain
+finished local drafts. Review them; no batch was approved or applied. Do not claim
+that the unprepared comments were handled. An existing uncertain or verified reply
+blocks a fresh unified draft. Resolve it before considering another response.
+
+Show the full preview and obtain explicit approval of that exact fingerprint:
+
+    socialcli changes apply-batch BATCH_ID --approval APPROVED_DIGEST --brand MyBrand --json
+    socialcli changes status-batch BATCH_ID --brand MyBrand --json
+    socialcli changes reconcile-batch BATCH_ID --brand MyBrand --json
+    socialcli inbox-review --brand MyBrand --json
+
+Reconciliation only reads existing attempts and never starts pending replies.
+An interrupted apply reports the batch ID; inspect its status and child journals.
+Meta inbox-bound replies retain their existing frequency limit and durable inbox
+status. Partial batches are not cross-provider transactions and have no rollback.
+
+Existing individual `comments draft/apply-draft` and YouTube community proposal
+commands remain available. To group already reviewed child proposals, use
+`changes prepare-batch --file children.yml --brand MyBrand --dry-run --json` with
+`version: 1` and `children: [{provider: meta-comments, change_id: EXACT_UUID}]`.
+The `children` reference file is different from the explicit `replies` file above.
+Never automatically reply merely because an inbox read found a new comment.
 
 ## Recovery and error actions
 
