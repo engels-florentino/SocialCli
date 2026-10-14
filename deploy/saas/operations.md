@@ -67,3 +67,13 @@ The candidate has a separate hourly encrypted backup timer; see
 [backup and recovery](backup-restore.md). Automatic alert delivery and an off-host
 recovery destination remain rollout work; no operational email has been
 authorized/sent by this module.
+
+## Isolated candidate scheduling
+
+On Florentino, `socialcli-saas-candidate-billing.service` and `.timer` target only
+`socialcli-saas-candidate`. The five-minute timer is enabled. The reviewed
+configuration accepts Stripe test keys, disables provider connections and disables
+reminder delivery. Both manual execution and actual systemd execution exited zero;
+private diagnostics reported no outstanding work. The public 0.2.6 container and
+its schedules were not changed. This does not verify public webhook delivery or
+external alerting.

@@ -23,7 +23,8 @@ cancelación al final del periodo verificados. Se corrigió la cancelación medi
 `cancel_at` descubierta en esa prueba. Quedan pendientes la marca global de Stripe,
 DNS/ruta del piloto y webhook real. El respaldo local cifrado de la candidata y
 Auth ya se ejecuta cada hora y se restauró de forma aislada. Google Drive externo
-sigue pendiente de acceso; mantenimiento y alertas siguen sin activar. El piloto sigue en preparación:
+sigue pendiente de acceso; el mantenimiento privado ya corre cada cinco minutos,
+y las alertas siguen pendientes. El piloto sigue en preparación:
 no hay publicación PyPI ni despliegue público del SaaS. La revisión de la rama
 completa detectó cuatro fallos de sesión/recuperación, corregidos y revisados de
 nuevo; el ensayo aislado de Nginx pasó 52 casos entre ambos dominios/versiones.

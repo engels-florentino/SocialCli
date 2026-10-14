@@ -1,0 +1,11 @@
+[Unit]
+Description=Maintain the private SocialCli candidate every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=10s
+Unit=socialcli-saas-candidate-billing.service
+
+[Install]
+WantedBy=timers.target

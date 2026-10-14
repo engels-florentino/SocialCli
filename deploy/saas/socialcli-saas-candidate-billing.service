@@ -1,0 +1,11 @@
+[Unit]
+Description=Private SocialCli candidate billing and account maintenance
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Install only after deploying the reviewed SaaS service image/configuration.
+ExecStart=/usr/bin/docker exec socialcli-saas-candidate python -m socialctl.saas.maintenance
+TimeoutStartSec=240
+UMask=0077

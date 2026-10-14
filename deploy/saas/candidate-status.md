@@ -15,8 +15,8 @@ Code checkpoint: `a5461a3`, SocialCli **0.3.0rc1**. Public SocialCli remains
   candidate uses 8789; the unrelated listener was not changed.
 - Stripe test account/product/price/Portal configuration only. Webhook signature
   key is a local placeholder; no Stripe endpoint delivers to this candidate yet.
-- Social providers and trial reminder delivery disabled; no maintenance timer
-  enabled. Auth OTP remains configured separately.
+- Social providers and trial reminder delivery disabled. Candidate-only maintenance
+  runs every five minutes; Auth OTP remains configured separately.
 - Container runs as UID/GID 1000, root filesystem read-only, capabilities dropped,
   bounded memory/process/log limits. Build context explicitly excludes secrets
   and state via `candidate.dockerignore` installed as `.dockerignore`.
@@ -58,3 +58,8 @@ A fresh encrypted backup completed before recreation; installed hashes of all
 three changed modules match the reviewed checkout. Candidate/public service
 health and the four HTTP route checks above passed after deployment. See
 [branch review](branch-review.md) for findings, fixes and acceptance limits.
+
+Candidate maintenance timer activation: configuration rechecked as Stripe test
+only, with reminder delivery and social providers disabled. Manual and systemd
+runs exited zero with no pending/review work. Timer is enabled/active/waiting;
+private operations report is healthy. Public-service maintenance remains untouched.

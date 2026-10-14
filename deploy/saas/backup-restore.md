@@ -110,7 +110,8 @@ host remain trusted; repository encryption does not protect a compromised host.
 On 13 October 2026, the included candidate-only service and hourly timer were
 installed and enabled on Florentino. A real run under the systemd restrictions
 exited zero. This covers the isolated candidate vault and private SocialCli Auth,
-not the public 0.2.6 connection vault. The billing/reminder timer remains disabled.
+not the public 0.2.6 connection vault. The separate candidate maintenance timer now runs every five minutes; reminder
+delivery remains disabled.
 
 Both encrypted repositories passed `restic check --read-data`. An exact completed
 snapshot pair was restored into disposable containers with networking disabled:

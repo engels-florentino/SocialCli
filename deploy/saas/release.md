@@ -91,3 +91,21 @@ TestPyPI/PyPI verification, every host's keyring, or a real Muse/Grok pilot.
 The newer maintenance/server checkpoint and artifact hashes are recorded in
 [candidate-status.md](candidate-status.md). The hashes above identify the earlier
 distribution verification, not the latest candidate deployment.
+
+## External setup checkpoint
+
+The GitHub `testpypi` environment now exists with `engels-florentino` as required
+reviewer and administrator bypass disabled. Prevent-self-review remains off so
+the owner can approve a manually initiated release; agents must not approve the
+publication on the owner's behalf. Tag selection mode has been enabled, but its
+actual tag rules still need adding. No `pypi` environment or immutable-tag ruleset
+has been created yet, and no workflow was dispatched.
+
+PyPI is awaiting the owner's completion of its sign-in/recovery setup in Safari.
+No publisher was registered. The public JSON endpoints for `socialcli` on both
+indexes returned404 at this checkpoint; this does not reserve the name.
+
+When dispatching the release workflow, select **the reviewed tag** in GitHub's
+“Use workflow from” selector, as well as entering that same tag in the `tag` input.
+Checking out a tag inside a workflow started from `main` does not make that run a
+tag deployment; the environment tag policy applies to the workflow run ref.
