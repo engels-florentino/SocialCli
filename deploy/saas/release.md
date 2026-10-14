@@ -148,3 +148,29 @@ This is a published test candidate, not a stable PyPI release or proof of actual
 Muse/Grok/Dots completion. The owner will perform those real-agent tests.
 The separate GitHub Pages deployment hit an external deployment timeout; the
 self-hosted socialcli.app deployment and all package release jobs succeeded.
+
+## Meta and TikTok SaaS activation — 2026-10-14
+
+Reused the existing Meta app 1551964416681979 and existing TikTok sandbox
+7683933049130649621 under app 7683931582042720277. Provider credentials were
+transferred entirely on the server from the previous connection service into
+the candidate's protected environment. No customer account grants were migrated.
+Facebook, Instagram and TikTok are enabled alongside YouTube; container health
+and generated OAuth callback/scopes were verified. Real SaaS account authorization
+and publishing have not been performed in this activation.
+
+Meta accepted the Facebook/Instagram callback URLs for both socialcli.app and
+pilot.socialcli.app. TikTok sandbox saved the pilot callback, new public website
+and legal URLs; its existing target user and user.info.basic/video.upload scopes
+remain unchanged, with Direct Post disabled.
+
+TikTok Production remains Draft. Its SaaS description, review explanation, website,
+legal URLs and Web callback were saved; socialcli.app URL-prefix ownership was
+verified using TikTok's signature file. Nothing was submitted for review. Existing
+demo recordings are from the previous version and must be replaced before a
+future review submission. The running SaaS continues using sandbox credentials.
+
+Server rollback copies: private/pre-meta-tiktok-service.env and
+private/pre-meta-tiktok-compose.yaml (secrets stay server-side). Existing matched
+local/Drive backup receipts were checked before deployment, maintenance timers
+restored afterwards, and a new encrypted backup was started.

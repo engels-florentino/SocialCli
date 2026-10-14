@@ -6,9 +6,9 @@ services:
     environment:
       SOCIALCLI_PUBLIC_URL: https://pilot.socialcli.app
       SOCIALCLI_ENABLE_YOUTUBE: '1'
-      SOCIALCLI_ENABLE_FACEBOOK: '0'
-      SOCIALCLI_ENABLE_INSTAGRAM: '0'
-      SOCIALCLI_ENABLE_TIKTOK: '0'
+      SOCIALCLI_ENABLE_FACEBOOK: '1'
+      SOCIALCLI_ENABLE_INSTAGRAM: '1'
+      SOCIALCLI_ENABLE_TIKTOK: '1'
     networks: [identity, pilot_edge]
 networks:
   pilot_edge:

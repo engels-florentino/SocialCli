@@ -9,7 +9,7 @@ verifies its SHA256, installs it separately and asks which brand to use. Keep it
 workspace and protected credentials across conversations.
 
 The agent gives you a sign-in link. Open that link yourself, enter the email code
-on the SocialCli page, and approve the assistant and the YouTube connection. Never
+on the SocialCli page, and approve the assistant and your selected social account connection. Never
 paste codes or provider credentials into the agent conversation. Google currently
 allows configured test users only; this is not production provider approval.
 
@@ -18,8 +18,11 @@ conversation and ask it to use the same workspace and check the connection again
 Installation and account connection never authorize publishing. Any later publishing
 requires your original media, the complete preview and your explicit approval.
 
-The hosted pilot currently enables YouTube. Meta and TikTok remain unavailable on
-this SaaS service. Existing 0.2.6 installations remain separate. Stripe uses test
+The SaaS is the successor to 0.2.6. Its pilot enables YouTube, Facebook, Instagram
+and TikTok. Meta access depends on app roles and granted permissions. TikTok uses
+the existing sandbox and configured target users, with draft uploads only.
+Provider configuration is verified; real SaaS account authorization still needs
+the owner acceptance test. Stripe uses test
 mode; no real subscriptions are collected. The planned price is USD10/month with
 14free days beginning at the first successful social connection.
 
