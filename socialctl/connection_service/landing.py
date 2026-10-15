@@ -34,24 +34,33 @@ def _icon(name: str) -> str:
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths[name] + '</svg>'
 
 
-def _page(title: str, content: str) -> str:
+def _page(title: str, content: str, *, platform=None) -> str:
+    provider = PROVIDERS.get(platform)
+    logo = PROVIDER_LOGOS[platform] if provider else 'socialcli-logo.png'
+    mime = {'svg': 'image/svg+xml', 'png': 'image/png', 'webp': 'image/webp'}[logo.rsplit('.', 1)[1]]
+    label = provider[0].upper() + ' CONNECTION' if provider else 'ACCOUNT CONNECTION'
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="color-scheme" content="light">
 <title>{escape(title)} · SocialCli</title>
-<link rel="icon" type="image/png" href="{ASSETS}/socialcli-logo.png">
+<link rel="icon" type="{mime}" href="{ASSETS}/{logo}">
 <link rel="stylesheet" href="{ASSETS}/connection.css">
 </head><body>
 <header class="site-header"><a class="wordmark" href="/" aria-label="SocialCli home">
 <img src="{ASSETS}/socialcli-logo.png" alt="SocialCli" width="42" height="42"><span>SocialCli</span></a>
-<span class="header-label">ACCOUNT CONNECTION</span></header>
+<span class="header-label">{label}</span></header>
 <main id="main-content"><section class="connection-card" aria-labelledby="page-title">{content}</section>
 <p class="trust-note">{_icon('lock')} Your account. Your permissions. Your choice.</p></main>
 <footer class="site-footer"><span>Social tools. Human control.</span>
 <nav aria-label="Legal and support"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/connections.html">Help</a></nav>
 </footer></body></html>'''
+
+
+def connection_symbols(platform):
+    return f'''<div class="connection-symbols" aria-hidden="true"><img src="{ASSETS}/socialcli-logo.png" alt="" width="64" height="64">
+<span class="connection-line"></span><span class="provider-mark provider-{platform}{" provider-app-icon" if platform != "youtube" else ""}"><img class="provider-logo" src="{ASSETS}/{PROVIDER_LOGOS[platform]}" alt="" width="32" height="32"></span></div>'''
 
 
 def landing_page(authorization_id: str, form_token: str, *, platform='youtube', browser_selection=False) -> str:
@@ -61,8 +70,7 @@ def landing_page(authorization_id: str, form_token: str, *, platform='youtube', 
     confirmation = ('After signing in, choose and confirm your account in this browser.'
                     if browser_selection else 'Return there to choose and confirm your account.')
     content = f'''
-<div class="connection-symbols" aria-hidden="true"><img src="{ASSETS}/socialcli-logo.png" alt="" width="64" height="64">
-<span class="connection-line"></span><span class="provider-mark provider-{platform}{" provider-app-icon" if platform != "youtube" else ""}"><img class="provider-logo" src="{ASSETS}/{PROVIDER_LOGOS[platform]}" alt="" width="32" height="32"></span></div>
+{connection_symbols(platform)}
 <p class="eyebrow">LET'S GET CONNECTED</p>
 <h1 id="page-title">Connect to {name}</h1>
 <p class="description">{description}</p>
@@ -75,23 +83,25 @@ def landing_page(authorization_id: str, form_token: str, *, platform='youtube', 
 <div class="detail">{_icon('terminal')}<div><h2>Keep SocialCli open</h2><p>{confirmation}</p></div></div></div>
 <p class="quiet-notice">Connecting does not publish content.</p>
 <p class="expiry-note">This link expires 10 minutes after it was created.</p>'''
-    return _page('Connect to ' + name, content)
+    return _page('Connect to ' + name, content, platform=platform)
 
 
-def result_page(message: str, *, success=False, cancelled=False) -> str:
+def result_page(message: str, *, success=False, cancelled=False, platform=None) -> str:
     title = 'Authorization received' if success else 'Authorization cancelled' if cancelled else "We couldn't connect"
+    if platform in PROVIDERS:
+        title += ' · ' + PROVIDERS[platform][0]
     description = ('One more step: return to SocialCli to choose and confirm your account.' if success else
                    'Nothing was connected. You can start again whenever you are ready.' if cancelled else
                    'Return to SocialCli and request a new connection link to try again.')
     icon = 'check' if success else 'close' if cancelled else 'refresh'
     state = 'success' if success else 'neutral' if cancelled else 'warning'
-    content = f'''<div class="result-symbol {state}">{_icon(icon)}</div>
+    content = f'''{connection_symbols(platform) if platform in PROVIDERS else ''}<div class="result-symbol {state}">{_icon(icon)}</div>
 <p class="eyebrow">{'READY FOR THE NEXT STEP' if success else 'ACCOUNT CONNECTION'}</p>
 <h1 id="page-title">{escape(title)}</h1><p class="description">{description}</p>
 <div class="return-panel">{_icon('terminal')}<div><h2>Return to SocialCli</h2><p>{'Choose and confirm your account to finish.' if success else 'Your assistant or terminal can help you start again.'}</p></div></div>
 <p class="quiet-notice">{escape(message)}</p>
 <a class="text-link" href="/connections.html">Connection help <span aria-hidden="true">↗</span></a>'''
-    return _page(title, content)
+    return _page(title, content, platform=platform)
 
 
 def error_page(status_code: int) -> str:

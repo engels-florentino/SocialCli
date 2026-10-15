@@ -127,3 +127,18 @@ def test_connection_names_destination_and_serves_local_platform_logo(tmp_path, p
                    for element in svg.iter())
     assert not any('href' in key and not value.startswith('#')
                    for element in svg.iter() for key, value in element.attrib.items())
+
+
+@pytest.mark.parametrize('platform', ['youtube', 'facebook', 'instagram', 'tiktok'])
+def test_provider_identity_persists_in_landing_and_callback_shell(platform):
+    from socialctl.connection_service.landing import landing_page, result_page, PROVIDER_LOGOS, PROVIDERS
+    name = PROVIDERS[platform][0]
+    for html in [landing_page('fictional-id', 'fictional-token', platform=platform),
+                 result_page('No content was published.', success=True, platform=platform),
+                 result_page('No account was connected.', cancelled=True, platform=platform)]:
+        tags = Elements(html).tags
+        icon = next(a for t,a in tags if t == 'link' and a.get('rel') == 'icon')
+        assert icon['href'] == '/connect/assets/' + PROVIDER_LOGOS[platform]
+        assert name in html.split('<title>',1)[1].split('</title>',1)[0]
+        assert name.upper() + ' CONNECTION' in html
+    assert 'Continue with Facebook' in landing_page('fictional-id','fictional-token',platform='instagram')

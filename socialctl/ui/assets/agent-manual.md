@@ -1,6 +1,6 @@
-# SocialCli for AI agents — Candidate 0.3.0rc6
+# SocialCli for AI agents — Candidate 0.3.0rc7
 
-Candidate 0.3.0rc6 instructions. Require published metadata before installing;
+Candidate 0.3.0rc7 instructions. Require published metadata before installing;
 do not replace an existing 0.2.6 installation or migrate its credentials silently.
 Stripe remains in test mode. Google is in testing and permits configured test users.
 Real-agent acceptance is performed by the owner; do not claim it from installation.
@@ -13,16 +13,16 @@ availability depends on account eligibility; Google production is still pending.
 ## Install the reviewed candidate
 
 Use the official TestPyPI release metadata:
-https://test.pypi.org/pypi/socialcli/0.3.0rc6/json
+https://test.pypi.org/pypi/socialcli/0.3.0rc7/json
 
-1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc6`. If this
+1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc7`. If this
    release is unavailable, stop and report it; do not install a similarly named package.
-2. Select exactly `socialcli-0.3.0rc6-py3-none-any.whl` from `urls`. Download its
+2. Select exactly `socialcli-0.3.0rc7-py3-none-any.whl` from `urls`. Download its
    HTTPS `url` and verify the file against that entry's `digests.sha256`.
 3. Install that verified local wheel into an isolated environment. Resolve
    dependencies from normal PyPI, not TestPyPI. For example:
 
-       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc6-py3-none-any.whl[headless-credentials]'
+       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc7-py3-none-any.whl[headless-credentials]'
        socialcli --version
        socialcli agent-guide
 
@@ -31,7 +31,7 @@ https://test.pypi.org/pypi/socialcli/0.3.0rc6/json
    If an existing SocialCli tool is installed, use a separate virtual environment
    for this pilot and its absolute executable; do not upgrade it automatically.
 
-Verify the installed version is exactly 0.3.0rc6 before continuing. The stable
+Verify the installed version is exactly 0.3.0rc7 before continuing. The stable
 `uv tool install socialcli` command is not the installation path for this pilot.
 
 For headless agents, configure encrypted-file storage with an external0600 key in

@@ -1,3 +1,13 @@
+# Next candidate: 0.3.0rc7
+
+Includes all rc6 fixes plus network-specific favicons, browser titles, headers and
+account selection/confirmation identity. rc6 build was cancelled before publication
+when the additional UI request arrived; its immutable tag is preserved. The public
+pilot remains rc5 until protected publication and rollout finish.
+See [rc7 verification](audit-rc7-2026-10-15.md).
+
+## Superseded unpublished preparation
+
 # Next candidate: 0.3.0rc6
 
 Reply evidence after reinstall, SaaS auth routing (including TikTok), actionable

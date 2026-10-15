@@ -223,9 +223,11 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
         for index,account in enumerate(data['result']['accounts']):
             choices+=f'<label for="choice-{index}"><input id="choice-{index}" name="account_id" type="radio" value="{escape(account["id"],quote=True)}" required> {escape(account.get("name",account["id"]))} <small>({escape(account["id"])})</small></label>'
         replacement='<p class="status-notice">The existing connection stays active until your assistant finishes installing this replacement.</p>' if data['saas']['expected_grant'] else ''
-        return HTMLResponse(pages.page('Choose your account',f'''<p class="eyebrow">REVIEW YOUR CONNECTION</p><h1 id="page-title">Choose your account</h1>
-<p class="description">Connect one {escape(data['platform'])} account to {escape(data['saas']['brand'])}. Only choose an account you own or manage.</p>{replacement}
-<form method="post" action="/account/connect/{escape(auth_id,quote=True)}" class="form-stack">{pages.hidden('csrf',csrf(request,'select:'+auth_id))}{choices}<button class="primary-button" type="submit">Confirm this account</button></form><p class="expiry-note">Confirming does not publish content.</p>'''))
+        from socialctl.connection_service.landing import PROVIDERS
+        name = PROVIDERS[data['platform']][0]
+        return HTMLResponse(pages.page('Choose your account · ' + name,f'''<p class="eyebrow">REVIEW YOUR CONNECTION</p><h1 id="page-title">Choose your {name} account</h1>
+<p class="description">Connect one {name} account to {escape(data['saas']['brand'])}. Only choose an account you own or manage.</p>{replacement}
+<form method="post" action="/account/connect/{escape(auth_id,quote=True)}" class="form-stack">{pages.hidden('csrf',csrf(request,'select:'+auth_id))}{choices}<button class="primary-button" type="submit">Confirm this account</button></form><p class="expiry-note">Confirming does not publish content.</p>''',platform=data['platform']))
 
     @app.post('/account/connect/{auth_id}',response_class=HTMLResponse)
     async def select(auth_id:str,request:Request):
@@ -245,8 +247,11 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
                     grant=grant,expected=owner['expected_grant'])
                 data.pop('result',None);data['selection']=result;data['status']='selected'
                 vault.put(db,'authorization',auth_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
-        await asyncio.to_thread(commit)
-        return HTMLResponse(pages.page('Account confirmed','<p class="eyebrow">ACCOUNT CONFIRMED</p><h1 id="page-title">Return to your assistant</h1><p class="description">Keep the SocialCli command open while it finishes installing your connection. No content was published.</p><a class="secondary-button" href="/account/">Your account</a>'))
+                return data['platform']
+        platform = await asyncio.to_thread(commit)
+        from socialctl.connection_service.landing import PROVIDERS
+        name = PROVIDERS[platform][0]
+        return HTMLResponse(pages.page('Account confirmed · ' + name,f'<p class="eyebrow">{name.upper()} ACCOUNT CONFIRMED</p><h1 id="page-title">Return to your assistant</h1><p class="description">You can close this page and continue with your assistant.</p><p class="button-note">Keep the SocialCli command running while it finishes connecting your {name} account. No content was published.</p><a class="secondary-button" href="/account/">My Account</a>',platform=platform))
 
     @app.post('/api/saas/v1/authorizations/{auth_id}/poll')
     def poll(auth_id:str,request:Request):

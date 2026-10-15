@@ -49,9 +49,9 @@ def safe_account(account: dict) -> dict:
     return {key: account[key] for key in ('id', 'name', 'page_id') if key in account}
 
 
-def browser_page(message: str, *, success=False, cancelled=False):
+def browser_page(message: str, *, success=False, cancelled=False, platform=None):
     # The copy is fixed; no provider errors, tokens or account-controlled HTML.
-    return HTMLResponse(result_page(message, success=success, cancelled=cancelled))
+    return HTMLResponse(result_page(message, success=success, cancelled=cancelled, platform=platform))
 
 
 class StartAuthorization(BaseModel):
@@ -326,7 +326,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
             data['status'] = 'denied' if 'error' in query else 'exchanging'
             vault.put(db,'authorization',authorization_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
         if data['status'] == 'denied':
-            response = browser_page('Authorization was cancelled. No account was connected.', cancelled=True)
+            response = browser_page('Authorization was cancelled. No account was connected.', cancelled=True, platform=platform)
         else:
             code = query.get('code','')
             try:
@@ -345,7 +345,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
                         app.state.saas_connections.authorization(db,authorization_id)
                     vault.put(db,'authorization',authorization_id,data,expires=current['expires'],credential_hash=current['credential_hash'])
             response = browser_page('Authorization received. No content was published.' if data['status']=='ready'
-                                    else 'Authorization could not be completed. Check permissions and app configuration.', success=data['status']=='ready')
+                                    else 'Authorization could not be completed. Check permissions and app configuration.', success=data['status']=='ready', platform=platform)
         if data.get('saas') and data['status']=='ready':
             response = RedirectResponse('/account/connect/'+authorization_id,status_code=303)
         response.delete_cookie('socialcli-'+authorization_id,path='/',secure=not settings.allow_http_local,httponly=True,samesite='lax')

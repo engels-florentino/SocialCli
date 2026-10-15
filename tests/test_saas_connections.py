@@ -37,7 +37,9 @@ def select(client,value,account='UC-two'):
     response=begin_browser(client,value['browser_url'])
     state=parse_qs(urlsplit(response.headers['location']).query)['state'][0]
     page=client.get('/oauth/youtube/callback',params={'state':state,'code':'fictional-code'})
-    assert page.status_code==200 and 'Choose your account' in page.text
+    assert page.status_code==200 and 'Choose your YouTube account' in page.text
+    assert '<title>Choose your account · YouTube · SocialCli</title>' in page.text
+    assert 'href="/connect/assets/youtube.svg"' in page.text
     data=fields(page);data['account_id']=account
     return client.post('/account/connect/'+value['authorization_id'],data=data,headers={'Origin':'https://social.example'})
 
@@ -58,7 +60,13 @@ def test_user_selects_exact_account_in_browser_then_local_install_activation_sta
     client,now,cap=setup(tmp_path)
     value,proof=start(client,cap)
     assert value['expires_in']==600
-    assert select(client,value).status_code==200
+    confirmation=select(client,value)
+    assert confirmation.status_code==200
+    assert 'Account confirmed · YouTube' in confirmation.text
+    assert 'You can close this page and continue with your assistant.' in confirmation.text
+    assert 'href="/account/">My Account</a>' in confirmation.text
+    assert 'Keep the SocialCli command running' in confirmation.text
+    assert 'href="/connect/assets/youtube.svg"' in confirmation.text
     result=selected(client,value,proof)
     assert result['status']=='selected' and result['account']['id']=='UC-two'
     assert 'social-refresh' not in str(result) and 'social-access' not in str(result)

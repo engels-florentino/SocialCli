@@ -1,10 +1,12 @@
 """Escaped server-rendered account views using the approved SocialCli shell."""
 from html import escape
-from socialctl.connection_service.landing import _page
+from socialctl.connection_service.landing import _page, connection_symbols, PROVIDERS
 
 
-def page(title,content):
-    return _page(title,content).replace('ACCOUNT CONNECTION','YOUR SOCIALCLI ACCOUNT').replace(
+def page(title,content,*,platform=None):
+    if platform in PROVIDERS:
+        content = connection_symbols(platform) + content
+    return _page(title,content,platform=platform).replace('ACCOUNT CONNECTION','YOUR SOCIALCLI ACCOUNT').replace(
         '<main id="main-content">','<a class="skip-link" href="#main-content">Skip to content</a><main id="main-content">')
 
 
