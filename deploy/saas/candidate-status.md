@@ -1,11 +1,16 @@
-# Isolated server candidate — updated 14 October 2026
+# Candidate deployment history — superseded by 0.3.0rc4
 
-Current code checkpoint: `57efd47`, SocialCli **0.3.0rc1**, schema7. Public SocialCli remains
-**0.2.6**. This is a private server deployment, not a public SaaS launch.
-The dated checkpoints below retain historical evidence; the final section records
-the current deployment and its schema-compatible recovery image.
+**Current public pilot: SocialCli 0.3.0rc4**, deployed from immutable commit
+`393b2b3` and published on TestPyPI. Use the [current rollout](rollout-rc4-2026-10-14.md),
+[findings closure](findings-closure-2026-10-14.md) and [release instructions](release.md).
+The current agent installation entry point is https://socialcli.app/agents?v=0.3.0rc4.
 
-## Deployed boundaries
+Everything below is historical deployment evidence. References to rc1, 0.2.6,
+private-only access and then-pending deployment steps are not current status.
+
+Historical checkpoint: `57efd47`, SocialCli 0.3.0rc1, schema7.
+
+## Historical deployed boundaries
 
 - Dedicated Compose project/container `socialcli-saas-candidate`.
 - Host directory `/home/blades3/projects/socialcli-saas/candidate`, private to root.

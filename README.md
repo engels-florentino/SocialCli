@@ -27,7 +27,7 @@ Install SocialCli where your agent can run shell commands, point it at your crea
 
 Copy this line into your terminal-enabled AI assistant:
 
-> Install SocialCli: https://socialcli.app/agents
+> Install SocialCli: https://socialcli.app/agents?v=0.3.0rc4
 
 The installation guide verifies the selected release download and uses
 https://pilot.socialcli.app for email sign-in, assistant approval and account
