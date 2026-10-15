@@ -250,7 +250,7 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
 
     @app.post('/api/saas/v1/authorizations/{auth_id}/poll')
     def poll(auth_id:str,request:Request):
-        with vault.transaction() as db:
+        with vault.read_transaction() as db:
             data=connections.authorization(db,auth_id,request)['payload']
             return data['selection'] if data['status']=='selected' else {'version':1,'status':data['status']}
 
@@ -268,7 +268,7 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
 
     @app.get('/api/saas/v1/connections/{connection_id}')
     def status(connection_id:str,request:Request):
-        with vault.transaction() as db:
+        with vault.read_transaction() as db:
             cap=connections.capability(db,connection_id,request,require_access=False);data=cap['payload']
             grant=vault.get(db,'saas-grant',data['grant_id'])
             if grant is None or grant['expires']<=clock():
@@ -287,6 +287,7 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
             record=connections.capability(db,connection_id,request,require_slot=False);data=record['payload']
             db.execute('DELETE FROM saas_slots WHERE user_id=? AND platform=? AND grant_id=?',(data['user_id'],data['platform'],data['grant_id']))
             vault.delete(db,'saas-grant',data['grant_id']);vault.delete(db,'saas-capability',connection_id)
+            app.state.saas_lifecycle.release_empty_brand(db,data['user_id'])
         return {'version':1,'status':'disconnected','provider_authorization_revoked':False}
 
     @app.post('/api/saas/v1/connections/{connection_id}/token')

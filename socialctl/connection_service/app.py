@@ -5,6 +5,7 @@ import hashlib
 import asyncio
 import hmac
 import secrets
+import re
 import time
 import logging
 import traceback
@@ -13,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 
 import httpx
+from socialctl.connection_service.peer import client_ip
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse
 from fastapi.exception_handlers import http_exception_handler
@@ -79,7 +81,21 @@ def create_app(settings: Settings, *, store: Store | None = None,
 
     @asynccontextmanager
     async def lifespan(app):
-        yield
+        async def cleanup_media():
+            while True:
+                try:
+                    await asyncio.to_thread(app.state.temporary_media.cleanup)
+                except OSError:
+                    logging.getLogger('socialcli.connection_service').error('temporary_media_cleanup_failed')
+                await asyncio.sleep(1)
+        janitor=asyncio.create_task(cleanup_media()) if hasattr(app.state,'temporary_media') else None
+        try:
+            yield
+        finally:
+            if janitor:
+                janitor.cancel()
+                from contextlib import suppress
+                with suppress(asyncio.CancelledError):await janitor
         if identity_client is None and auth_client is not None:
             auth_client.close()
         if provider_client is None:
@@ -111,7 +127,9 @@ def create_app(settings: Settings, *, store: Store | None = None,
     @app.middleware('http')
     async def secure_headers(request: Request, call_next):
         try:
-            if int(request.headers.get('content-length', '0')) > (1048576 if request.url.path=='/api/saas/v1/billing/webhook' else 16384):
+            upload=(request.method=='PUT' and hasattr(app.state,'temporary_media') and re.fullmatch(r'/api/saas/v1/connections/[A-Za-z0-9_-]{1,256}/media/[A-Za-z0-9_-]{32}',request.url.path))
+            limit=512*1024*1024 if upload else (1048576 if request.url.path=='/api/saas/v1/billing/webhook' else 16384)
+            if int(request.headers.get('content-length', '0')) > limit:
                 response = (HTMLResponse(error_page(413), status_code=413) if is_browser_path(request) else
                             JSONResponse({'detail':'request is too large'}, status_code=413))
             else:
@@ -173,7 +191,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
         with vault.transaction() as db:
             legacy.allow_creation(db)
             vault.purge(db, now=clock())
-            if not vault.admit(db, request.client.host if request.client else 'unknown', now=clock()):
+            if not vault.admit(db, client_ip(request,settings), now=clock()):
                 raise HTTPException(429, 'too many connection attempts; try again later', headers={'Retry-After':'60'})
             count = db.execute("SELECT count(*) FROM records WHERE kind='authorization'").fetchone()[0]
             if count >= 1000:
@@ -421,6 +439,9 @@ def create_app(settings: Settings, *, store: Store | None = None,
         from socialctl.saas.rotation import install_rotation_routes
         install_rotation_routes(app,app.state.saas,clock)
         app.state.saas_connections.legacy=legacy
+        if settings.temporary_media_dir:
+            from socialctl.saas.temporary_media import TemporaryMedia,install_media_routes
+            install_media_routes(app,TemporaryMedia(app.state.saas,settings.temporary_media_dir,clock),app.state.saas_connections,settings.public_url)
         from socialctl.saas.migration import install_migration_routes
         install_migration_routes(app,settings,app.state.saas,app.state.saas_sessions,clock)
         if settings.saas.billing:

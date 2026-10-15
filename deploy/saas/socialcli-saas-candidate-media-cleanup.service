@@ -1,0 +1,13 @@
+[Unit]
+Description=Remove expired SocialCli temporary media independently of its container
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/blades3/projects/socialcli-saas/ops/temporary_media_cleanup.py /home/blades3/projects/socialcli-saas/temporary-media
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/blades3/projects/socialcli-saas/temporary-media
+PrivateTmp=true

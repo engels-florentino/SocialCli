@@ -85,12 +85,11 @@ def expire(metadata,now):
     now[0]=1210600
 
 
-def test_checkout_only_after_trial_and_reuses_session_with_fixed_server_price(tmp_path):
+def test_checkout_after_trial_reuses_session_with_fixed_server_price(tmp_path):
     _,now,metadata,stripe,billing=setup(tmp_path)
     with pytest.raises(HTTPException) as error:billing.checkout(USER)
     assert error.value.status_code==409 and not stripe.calls
     with metadata.vault.transaction() as db:AccessControl(metadata).activate_trial(db,USER,1000)
-    with pytest.raises(HTTPException):billing.checkout(USER)
     now[0]=1210600
     first=billing.checkout(USER);second=billing.checkout(USER)
     assert first==second=='https://checkout.stripe.com/c/pay/cs_test_social'
@@ -287,3 +286,57 @@ def test_non_timestamp_values_do_not_report_scheduled_cancellation(tmp_path,canc
     billing.reconcile(USER)
     with metadata.vault.transaction() as db:
         assert db.execute('SELECT cancel_at_period_end FROM saas_billing').fetchone()[0]==0
+
+
+@pytest.mark.parametrize('seconds_left',[11*86400,3600,10])
+def test_subscribe_during_trial_keeps_original_deadline_without_proration(tmp_path,seconds_left):
+    _,now,metadata,stripe,billing=setup(tmp_path)
+    with metadata.vault.transaction() as db:
+        AccessControl(metadata).activate_trial(db,USER,1000)
+        deadline=db.execute('SELECT trial_end FROM saas_entitlements WHERE user_id=?',(USER,)).fetchone()[0]
+    now[0]=deadline-seconds_left
+    billing.checkout(USER)
+    posted=next(c[2] for c in stripe.calls if c[:2]==('POST','/v1/checkout/sessions'))
+    assert int(posted['subscription_data[billing_cycle_anchor]'])==int(deadline)
+    assert posted['subscription_data[proration_behavior]']=='none'
+    assert posted['payment_method_collection']=='always'
+    assert AccessControl(metadata).access_for(USER,now[0]).reason=='trial'
+
+
+@pytest.mark.parametrize('amount_paid',[0,700,1200])
+def test_paid_invoice_with_credit_or_tax_keeps_access(tmp_path,amount_paid):
+    _,now,metadata,stripe,billing=setup(tmp_path);expire(metadata,now);billing.checkout(USER);stripe.paid()
+    stripe.invoices[0]['amount_paid']=amount_paid
+    stripe.invoices[0]['lines']['data'].append({'amount':200,'currency':'usd','description':'Tax adjustment'})
+    billing.reconcile(USER)
+    assert AccessControl(metadata).access_for(USER,now[0]).allowed
+
+
+def test_live_mode_requires_matching_keys_and_objects(tmp_path):
+    from dataclasses import replace
+    from socialctl.saas.billing import fixed_price
+    _,_,_,stripe,billing=setup(tmp_path)
+    live=replace(billing.settings,mode='live',secret_key='sk_live_fictional')
+    assert live.expected_livemode is True
+    billing.settings=live
+    assert not billing.owned({'livemode':False,'metadata':{'app':'socialcli','user_id':USER}},USER)
+    assert billing.owned({'livemode':True,'metadata':{'app':'socialcli','user_id':USER}},USER)
+    price=stripe.price();price['livemode']=True
+    assert fixed_price(price,live.price_id,expected_livemode=True)
+    with pytest.raises(ValueError):replace(live,secret_key='sk_test_fictional')
+
+
+def test_definitively_rejected_past_trial_anchor_allows_new_checkout_intent(tmp_path):
+    _,now,metadata,stripe,billing=setup(tmp_path)
+    expire(metadata,now);now[0]-=10
+    original=stripe.__call__;first=[True]
+    def api(request):
+        if request.method=='POST' and request.url.path=='/v1/checkout/sessions' and first[0]:
+            now[0]+=20;first[0]=False
+            return httpx.Response(400,json={'error':{'type':'invalid_request_error','param':'subscription_data[billing_cycle_anchor]','message':'must be in future'}})
+        return original(request)
+    billing.client=httpx.Client(transport=httpx.MockTransport(api))
+    with pytest.raises(HTTPException):billing.checkout(USER)
+    assert billing.checkout(USER).startswith('https://checkout.stripe.com/')
+    posted=next(c[2] for c in stripe.calls if c[:2]==('POST','/v1/checkout/sessions'))
+    assert 'subscription_data[billing_cycle_anchor]' not in posted

@@ -201,3 +201,27 @@ def test_missing_expired_facebook_grant_does_not_crash_instagram_activation(tmp_
             {'id':'ig-fictional','page_id':'fb-fictional'},grant={'access_token':'fictional','expires_at':now[0]+3600,'granted_scopes':[]})
     reply=activate(client,candidate)
     assert reply.status_code==200,reply.text
+
+
+def test_last_disconnect_releases_brand_but_preserves_trial(tmp_path):
+    client,now,installation,connection=connected(tmp_path);metadata=client.app.state.saas
+    with metadata.vault.read_transaction() as db:
+        deadline=db.execute('SELECT trial_end FROM saas_entitlements WHERE user_id=?',(USER,)).fetchone()[0]
+    assert post(client,'/account/connections/youtube/disconnect',fields(client.get('/account/'))).status_code==303
+    with metadata.vault.read_transaction() as db:
+        assert db.execute('SELECT * FROM saas_brands WHERE user_id=?',(USER,)).fetchone() is None
+        assert db.execute('SELECT trial_end FROM saas_entitlements WHERE user_id=?',(USER,)).fetchone()[0]==deadline
+
+
+def test_rename_brand_preserves_connections_and_escapes_label(tmp_path):
+    client,now,installation,connection=connected(tmp_path);metadata=client.app.state.saas
+    page=client.get('/account/')
+    form=fields(page);form['brand']='New & Better'
+    assert post(client,'/account/brand',form).status_code==303
+    assert 'New &amp; Better' in client.get('/account/').text
+    assert token(client,connection).status_code==200
+    with metadata.vault.read_transaction() as db:
+        assert db.execute('SELECT label FROM saas_brands WHERE user_id=?',(USER,)).fetchone()[0]=='New & Better'
+    form['brand']='  '
+    assert post(client,'/account/brand',form).status_code==400
+    assert post(client,'/account/brand',{'brand':'Attacker'}).status_code==403

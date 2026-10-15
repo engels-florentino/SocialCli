@@ -5,6 +5,7 @@ import re
 import secrets
 from html import escape
 from urllib.parse import quote
+from socialctl.connection_service.peer import client_ip
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,7 +68,7 @@ def install_pairing_routes(app,settings,metadata,sessions,clock):
     def start(body:PairRequest,request:Request):
         pair_id=secrets.token_urlsafe(24)
         with vault.transaction() as db:
-            peer=request.client.host if request.client else 'unknown'
+            peer=client_ip(request,settings)
             if not metadata.admit(db,'pair-peer:'+peer,clock(),limit=60):
                 raise HTTPException(429,'Too many sign-in links. Please wait a minute.')
             active=db.execute("SELECT count(*) FROM records WHERE kind='saas-pair' AND expires>?",(clock(),)).fetchone()[0]
@@ -80,7 +81,7 @@ def install_pairing_routes(app,settings,metadata,sessions,clock):
 
     @app.get('/account/pair/{pair_id}',response_class=HTMLResponse)
     def approve_page(pair_id:str,request:Request):
-        with vault.transaction() as db:
+        with vault.read_transaction() as db:
             record=pairing(db,pair_id)
             if record['payload']['status']!='pending':
                 raise HTTPException(409,'This assistant has already been linked.')
@@ -121,7 +122,7 @@ def install_pairing_routes(app,settings,metadata,sessions,clock):
 
     @app.post('/api/saas/v1/pairings/{pair_id}/poll')
     def poll(pair_id:str,request:Request):
-        with vault.transaction() as db:
+        with vault.read_transaction() as db:
             payload=pairing(db,pair_id,request)['payload']
             return {'version':1,**{k:v for k,v in payload.items() if k in {'status','installation_id','installation_secret'}}}
 
@@ -138,7 +139,7 @@ def install_pairing_routes(app,settings,metadata,sessions,clock):
 
     @app.get('/api/saas/v1/installations/{installation_id}')
     def status(installation_id:str,request:Request):
-        with vault.transaction() as db:
+        with vault.read_transaction() as db:
             record=installations.require(db,installation_id,request)
         return {'version':1,'installation_id':installation_id,'label':record['payload']['label'],'expires_at':record['expires'],
                 'platform_access':permissions.describe(record['payload'])}

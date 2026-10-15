@@ -17,8 +17,8 @@ def test_installed_guide_is_available_without_workspace_or_network(tmp_path, mon
     result = runner.invoke(app, ['agent-guide'])
     assert result.exit_code == 0, result.output
     assert 'socialcli account login' in result.stdout
-    assert 'socialcli publish' in result.stdout
-    assert 'socialcli inbox' in result.stdout
+    assert 'agent-guide publish' in result.stdout
+    assert 'agent-guide inbox' in result.stdout
     assert list(tmp_path.iterdir()) == []
 
 
@@ -29,7 +29,7 @@ def test_packaged_native_examples_support_preview_and_local_reconciliation(tmp_p
     from datetime import datetime, timedelta, timezone
     from zoneinfo import ZoneInfo
     from socialctl.native_schedule.store import NativeStore
-    guide = runner.invoke(app, ['agent-guide']).stdout
+    guide = runner.invoke(app, ['agent-guide','schedule']).stdout
     def example(name):
         section = guide.split(f'Example `{name}`', 1)[1]
         return json.loads(section.split('```json\n', 1)[1].split('```', 1)[0])
@@ -112,3 +112,25 @@ def test_tiktok_direct_preview_cannot_look_like_inbox(tmp_path):
     preview = render_preview(post, {}, brand=brand)
     assert 'direct public publication' in preview
     assert 'creator review' not in preview
+
+
+def test_bootstrap_is_compact_and_topic_guides_work_offline(tmp_path,monkeypatch):
+    from importlib.resources import files
+    bootstrap=files('socialctl.ui').joinpath('assets/agents.md').read_text()
+    assert len(bootstrap.encode())<=2000
+    monkeypatch.chdir(tmp_path)
+    for topic,expected in [('setup','credentials configure'),('publish','--dry-run'),('schedule','native-calendar.json'),('inbox','inbox'),('errors','action')]:
+        result=runner.invoke(app,['agent-guide',topic])
+        assert result.exit_code==0,result.output
+        assert expected in result.stdout
+    assert runner.invoke(app,['agent-guide','../../secrets']).exit_code==2
+    assert not list(tmp_path.iterdir())
+
+
+def test_instagram_preview_discloses_temporary_server_upload(tmp_path):
+    brand=crear_brand(tmp_path,'Example')
+    brand.guardar_secreto(Platform.INSTAGRAM,{'auth_mode':'broker','protocol':'saas-v1'})
+    post=Post(slug='clip',brand='Example',campaign=CampaignType.CLIP_VERTICAL,
+        platforms={Platform.INSTAGRAM:PlatformPost(platform=Platform.INSTAGRAM,body='Approved caption')})
+    preview=render_preview(post,{},brand=brand)
+    assert '15 minutes' in preview and 'temporary' in preview and 'florentino.pro' in preview

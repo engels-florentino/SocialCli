@@ -15,7 +15,7 @@ class SaaSStore:
         with vault.transaction() as db:
             db.execute('CREATE TABLE IF NOT EXISTS saas_schema (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)')
             version = db.execute('SELECT coalesce(max(version),0) FROM saas_schema').fetchone()[0]
-            if version > 7:
+            if version > 8:
                 raise ValueError('SaaS database is newer than this release; keep commercial access closed')
             if version < 1:
                 db.execute('CREATE TABLE saas_users (id TEXT PRIMARY KEY, created REAL NOT NULL, suspended INTEGER NOT NULL DEFAULT 0, deleting INTEGER NOT NULL DEFAULT 0, session_version INTEGER NOT NULL DEFAULT 0)')
@@ -50,6 +50,26 @@ class SaaSStore:
                                        expires=record['expires'], credential_hash=record['credential_hash'])
                 db.execute('INSERT INTO saas_schema(version) VALUES(7)')
 
+            if version < 8:
+                db.execute('CREATE TABLE IF NOT EXISTS saas_media_allocations (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,size INTEGER NOT NULL,expires REAL NOT NULL)')
+                db.execute('CREATE INDEX IF NOT EXISTS saas_media_allocations_owner ON saas_media_allocations(user_id,expires)')
+                for row in db.execute("SELECT kind,id FROM records WHERE kind LIKE 'saas-%' OR kind='authorization'").fetchall():
+                    record = vault.get(db, row['kind'], row['id'])
+                    vault.index_owner(db, row['kind'], row['id'], record['payload'])
+                db.execute("ALTER TABLE saas_billing_events ADD COLUMN semantic_hash TEXT NOT NULL DEFAULT ''")
+                from socialctl.saas.webhooks import semantic_hash
+                for event in db.execute('SELECT account_id,mode,event_id FROM saas_billing_events').fetchall():
+                    record=vault.get(db,'saas-stripe-event',':'.join(event))
+                    if record:
+                        db.execute('UPDATE saas_billing_events SET semantic_hash=? WHERE account_id=? AND mode=? AND event_id=?',(semantic_hash(record['payload']),*event))
+                        state=db.execute('SELECT state,received FROM saas_billing_events WHERE account_id=? AND mode=? AND event_id=?',tuple(event)).fetchone()
+                        if state['state'] in {'done','ignored'}:
+                            vault.delete(db,'saas-stripe-event',':'.join(event))
+                        else:
+                            vault.put(db,'saas-stripe-event',':'.join(event),record['payload'],expires=min(record['expires'],state['received']+7*86400))
+                db.execute('ALTER TABLE saas_rates ADD COLUMN expires REAL NOT NULL DEFAULT 0')
+                db.execute('INSERT INTO saas_schema(version) VALUES(8)')
+
     def user(self, db, user_id):
         return db.execute('SELECT * FROM saas_users WHERE id=?',(user_id,)).fetchone()
 
@@ -65,5 +85,5 @@ class SaaSStore:
         count = row['count'] if row and row['bucket'] == bucket else 0
         if count >= limit:
             return False
-        db.execute('INSERT OR REPLACE INTO saas_rates VALUES(?,?,?)',(hashed,bucket,count+1))
+        db.execute('INSERT OR REPLACE INTO saas_rates VALUES(?,?,?,?)',(hashed,bucket,count+1,(bucket+1)*seconds))
         return True

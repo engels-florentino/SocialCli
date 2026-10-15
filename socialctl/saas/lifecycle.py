@@ -14,11 +14,18 @@ class AccountLifecycle:
     def __init__(self,metadata,clock):
         self.metadata,self.vault,self.clock=metadata,metadata.vault,clock
 
-    def owned_records(self,db,user_id):
+    def owned_records(self,db,user_id,*,kinds=None):
         owned=[]
-        rows=db.execute("SELECT kind,id FROM records WHERE kind LIKE 'saas-%' OR kind='authorization'").fetchall()
+        query='SELECT kind,id FROM saas_record_owners WHERE user_id=?'
+        params=[user_id]
+        if kinds:
+            query+=' AND kind IN ('+','.join('?' for _ in kinds)+')'
+            params.extend(kinds)
+        rows=db.execute(query,params).fetchall()
         for row in rows:
-            record=self.vault.get(db,row['kind'],row['id']);data=record['payload']
+            record=self.vault.get(db,row['kind'],row['id'])
+            if record is None:continue
+            data=record['payload']
             if data.get('user_id')==user_id or data.get('saas',{}).get('user_id')==user_id:
                 owned.append((row['kind'],row['id'],record))
         return owned
@@ -40,6 +47,19 @@ class AccountLifecycle:
             if entry['payload'].get('grant_id')==slot['grant_id'] or kind=='saas-grant' and record_id==slot['grant_id']:
                 self.vault.delete(db,kind,record_id)
         db.execute('DELETE FROM saas_slots WHERE user_id=? AND platform=?',(user_id,platform))
+        self.release_empty_brand(db,user_id)
+
+    def release_empty_brand(self,db,user_id):
+        db.execute('DELETE FROM saas_brands WHERE user_id=? AND NOT EXISTS (SELECT 1 FROM saas_slots WHERE user_id=?)',(user_id,user_id))
+
+    def rename_brand(self,db,user_id,label):
+        label=label.strip()
+        if not label or len(label)>80 or any(ord(c)<32 or ord(c)==127 for c in label):
+            raise HTTPException(400,'Enter a brand name of 1–80 characters without control characters.')
+        if not db.execute('UPDATE saas_brands SET label=? WHERE user_id=?',(label,user_id)).rowcount:
+            raise HTTPException(404,'Connect a social account before renaming your brand.')
+        # Pending authorizations retain their reviewed label and cannot silently
+        # activate under the new name. Existing capabilities use stable grant IDs.
 
     def request_delete(self,user_id):
         with self.vault.transaction() as db:
@@ -79,11 +99,15 @@ class AccountLifecycle:
                 if (self.vault.get(db,'saas-grant',data['grant_id']) is None
                         or self.vault.get(db,'saas-installation',data['installation_id']) is None):
                     self.vault.delete(db,'saas-capability',row['id'])
+            db.execute('DELETE FROM saas_brands WHERE NOT EXISTS (SELECT 1 FROM saas_slots WHERE saas_slots.user_id=saas_brands.user_id)')
+            db.execute('DELETE FROM saas_rates WHERE expires<=?',(self.clock(),))
+            db.execute('DELETE FROM saas_media_allocations WHERE expires<=?',(self.clock(),))
             db.execute('DELETE FROM saas_trial_markers WHERE retain_until<=?',(self.clock(),))
 
     def panel(self,user_id,csrf):
-        with self.vault.transaction() as db:
-            records=self.owned_records(db,user_id)
+        with self.vault.read_transaction() as db:
+            records=self.owned_records(db,user_id,kinds=('saas-grant','saas-installation'))
+            brand=db.execute('SELECT label FROM saas_brands WHERE user_id=?',(user_id,)).fetchone()
         connections=[];installations=[]
         for kind,record_id,record in records:
             data=record['payload']
@@ -99,7 +123,8 @@ class AccountLifecycle:
                 label=escape(data['label']);rid=escape(record_id,quote=True)
                 expired=' · Expired' if record['expires']<=self.clock() else ''
                 installations.append(f'<li><strong>{label}{expired}</strong>{permissions.summary_html(data)}<form method="post" action="/account/installations/{rid}/revoke">{pages.hidden("csrf",csrf)}<button class="secondary-button" type="submit">Revoke assistant</button></form></li>')
-        return '<section aria-label="Connected accounts"><h2>Connected accounts</h2>'+('<ul class="account-list">'+''.join(connections)+'</ul>' if connections else '<p class="description">No social accounts connected yet. Ask your assistant to connect your account.</p>')+'</section><section aria-label="Assistants"><h2>Assistants</h2>'+('<ul class="account-list">'+''.join(installations)+'</ul>' if installations else '<p class="description">No assistants linked yet.</p>')+'<p class="expiry-note">Selections control access to SocialCli connections. They do not narrow provider permissions, including permissions for linked accounts or individual actions. Previously issued provider tokens may remain usable until they expire or are revoked at the provider. To change an assistant’s selected platforms, revoke it and link it again.</p></section><a class="text-link" href="/account/delete">Delete my account</a>'
+        brand_panel=(f'<section aria-label="Brand"><h2>Brand</h2><form method="post" action="/account/brand" class="form-stack">{pages.hidden("csrf",csrf)}<label for="brand">Brand name</label><input id="brand" name="brand" maxlength="80" required value="{escape(brand["label"],quote=True)}"><button class="secondary-button" type="submit">Rename brand</button></form><p class="expiry-note">Existing connections stay active. Use this name when connecting another network; update your assistant’s local brand name separately.</p></section>' if brand else '')
+        return brand_panel+'<section aria-label="Connected accounts"><h2>Connected accounts</h2>'+('<ul class="account-list">'+''.join(connections)+'</ul>' if connections else '<p class="description">No social accounts connected yet. Ask your assistant to connect your account.</p>')+'</section><section aria-label="Assistants"><h2>Assistants</h2>'+('<ul class="account-list">'+''.join(installations)+'</ul>' if installations else '<p class="description">No assistants linked yet.</p>')+'<p class="expiry-note">Selections control access to SocialCli connections. They do not narrow provider permissions, including permissions for linked accounts or individual actions. Previously issued provider tokens may remain usable until they expire or are revoked at the provider. To change an assistant’s selected platforms, revoke it and link it again.</p></section><a class="text-link" href="/account/delete">Delete my account</a>'
 
 
 def run_deletions(metadata,identity,billing,clock,limit=100,*,budget=None):
@@ -172,6 +197,14 @@ def install_lifecycle_routes(app,settings,metadata,sessions,clock):
         user,_=await verified(request)
         def commit():
             with metadata.vault.transaction() as db:lifecycle.disconnect(db,user.id,platform)
+        await asyncio.to_thread(commit)
+        return RedirectResponse('/account/',status_code=303)
+
+    @app.post('/account/brand')
+    async def rename_brand(request:Request):
+        user,form=await verified(request)
+        def commit():
+            with metadata.vault.transaction() as db:lifecycle.rename_brand(db,user.id,form.get('brand',''))
         await asyncio.to_thread(commit)
         return RedirectResponse('/account/',status_code=303)
 

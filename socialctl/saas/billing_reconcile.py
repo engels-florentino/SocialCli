@@ -8,15 +8,17 @@ def paid_until(billing,customer,subscription,invoices):
     for invoice in invoices:
         parent=invoice.get('parent') or {}
         details=parent.get('subscription_details') or {}
-        if (invoice.get('livemode') is not False or invoice.get('customer')!=customer
+        if (invoice.get('livemode') is not billing.settings.expected_livemode or invoice.get('customer')!=customer
                 or invoice.get('status')!='paid' or invoice.get('paid_out_of_band')
-                or invoice.get('currency')!='usd' or invoice.get('amount_paid')!=1000
+                or invoice.get('currency')!='usd'
                 or details.get('subscription')!=subscription['id']):
             continue
         lines=invoice.get('lines') or {}
         data=lines.get('data',[])
-        if lines.get('has_more') is not False or len(data)!=1:continue
-        line=data[0];price=(line.get('pricing') or {}).get('price_details') or {}
+        if lines.get('has_more') is not False:continue
+        matches=[line for line in data if ((line.get('pricing') or {}).get('price_details') or {}).get('price')==billing.settings.price_id]
+        if len(matches)!=1:continue
+        line=matches[0];price=(line.get('pricing') or {}).get('price_details') or {}
         if line.get('currency')!='usd' or line.get('amount')!=1000 or line.get('quantity')!=1 or price.get('price')!=billing.settings.price_id:continue
         period=line.get('period') or {}
         start,finish=period.get('start'),period.get('end')
@@ -41,7 +43,7 @@ def reconcile(billing,user_id):
             for sub in candidates:
                 items=sub.get('items') or {};data=items.get('data',[])
                 valid=(billing.owned(sub,user_id) and sub.get('customer')==customer and items.get('has_more') is False
-                       and len(data)==1 and data[0].get('quantity')==1 and fixed_price(data[0].get('price',{}),billing.settings.price_id))
+                       and len(data)==1 and data[0].get('quantity')==1 and fixed_price(data[0].get('price',{}),billing.settings.price_id,expected_livemode=billing.settings.expected_livemode))
                 if not valid:
                     review='subscription_mismatch';continue
                 until=paid_until(billing,customer,sub,invoices)
@@ -90,7 +92,12 @@ def _run_pending(billing,limit,budget):
         if not row:
             # A customer write may still be in flight. Preserve the event until
             # that write finishes; unrelated deliveries eventually need review.
-            state='review' if billing.clock()-event['received']>86400 else 'pending'
+            state='ignored' if billing.clock()-event['received']>86400 else 'pending'
+            if state=='ignored':
+                with billing.vault.read_transaction() as db:
+                    saved=billing.vault.get(db,'saas-stripe-event',':'.join(key))
+                if saved and (saved['payload']['data']['object'].get('metadata') or {}).get('app')=='socialcli':
+                    state='review'
         else:
             user_id=row['user_id']
             try:
@@ -100,6 +107,8 @@ def _run_pending(billing,limit,budget):
                 state='pending';failed+=1
         with billing.vault.transaction() as db:
             db.execute("UPDATE saas_billing_events SET state=?,next_attempt=? WHERE account_id=? AND mode=? AND event_id=? AND state='pending'",(state,billing.clock()+300,*key))
+            if state in {'done','ignored'}:
+                billing.vault.delete(db,'saas-stripe-event',':'.join(key))
     if budget:billing.budget=budget
     for user_id in due:
         if budget and budget.expired():break

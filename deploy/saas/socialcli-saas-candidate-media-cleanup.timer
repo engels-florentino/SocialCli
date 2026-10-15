@@ -1,0 +1,9 @@
+[Unit]
+Description=SocialCli temporary media expiry fallback
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=socialcli-saas-candidate-media-cleanup.service
+[Install]
+WantedBy=timers.target

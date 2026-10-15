@@ -150,6 +150,8 @@ def test_unstarted_trial_never_creates_reminder_and_schema_upgrade_preserves_ide
     metadata,now=setup(tmp_path)
     with metadata.vault.transaction() as db:
         db.execute('DROP TABLE saas_reminders');db.execute('DELETE FROM saas_schema WHERE version>=6')
+        db.execute('ALTER TABLE saas_rates DROP COLUMN expires')
+        db.execute('ALTER TABLE saas_billing_events DROP COLUMN semantic_hash')
     upgraded=SaaSStore(metadata.vault,metadata.eligibility_keys)
     assert Reminders(upgraded,lambda:now[0],'https://social.example').run(Mailbox())['accepted']==0
     assert states(upgraded)==[]
@@ -223,3 +225,12 @@ def test_maintenance_reports_disabled_sender_backlog_then_prunes_receipts(tmp_pa
     now[0]=end+31*86400;maintenance.main()
     assert json.loads(capsys.readouterr().out)['reminders']['uncertain']==0
     assert states(metadata)==[]
+
+
+def test_early_subscription_suppresses_trial_purchase_reminder(tmp_path):
+    reminders,metadata,now,end=prepared(tmp_path);now[0]=end-3*86400
+    with metadata.vault.transaction() as db:
+        db.execute("UPDATE saas_entitlements SET subscription_status='active',paid_until=0 WHERE user_id=?",(USER,))
+    mailbox=Mailbox()
+    assert reminders.run(mailbox)['accepted']==0
+    assert not mailbox.messages

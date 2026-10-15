@@ -47,11 +47,22 @@ class SupabaseAuth:
         user=self.parse_user(data.get('user',{}))
         if user.email.casefold()!=email.casefold():
             raise IdentityError()
-        token=data.get('access_token')
-        expiry=data.get('expires_in')
-        if not isinstance(token,str) or not 16<=len(token)<=16384 or not isinstance(expiry,(int,float)) or not 0<expiry<=86400:
+        token,expiry,refresh=self.tokens(data)
+        return user,token,expiry,refresh
+
+    @staticmethod
+    def tokens(data):
+        token=data.get('access_token');expiry=data.get('expires_in');refresh=data.get('refresh_token')
+        if (not isinstance(token,str) or not 16<=len(token)<=16384
+                or type(expiry) not in (int,float) or not 0<expiry<=86400
+                or not isinstance(refresh,str) or not 1<=len(refresh)<=16384 or any(ord(c)<33 or ord(c)==127 for c in refresh)):
             raise IdentityError()
-        return user,token,min(expiry,3600)
+        return token,expiry,refresh
+
+    def refresh(self,refresh_token):
+        data=self.request('POST','/token?grant_type=refresh_token',data={'refresh_token':refresh_token})
+        user=self.parse_user(data.get('user',{}))
+        return user,*self.tokens(data)
 
     def get_user(self,token):
         return self.parse_user(self.request('GET','/user',token=token))
@@ -86,47 +97,86 @@ class SupabaseAuth:
 
 class WebSessions:
     cookie='socialcli-session'
+    max_lifetime=12*3600
+    verification_seconds=45
 
     def __init__(self,metadata,identity,clock):
         self.metadata,self.vault,self.identity,self.clock=metadata,metadata.vault,identity,clock
 
-    def create(self,db,user,token,lifetime):
+    def create(self,db,user,token,lifetime,refresh_token=None):
         secret=secrets.token_urlsafe(32)
         row=self.metadata.user(db,user.id)
         if row['deleting']:
             raise IdentityError()
         self.vault.put(db,'saas-session',digest(secret),{'user_id':user.id,'email':user.email,
-            'access_token':token,'version':row['session_version']},expires=self.clock()+lifetime)
+            'access_token':token,'version':row['session_version'],'refresh_token':refresh_token,
+            'access_expires':self.clock()+lifetime,'verified_until':0},
+            expires=self.clock()+(self.max_lifetime if refresh_token else lifetime))
         return secret
+
+    def checked(self,db,key):
+        record=self.vault.get(db,'saas-session',key)
+        if record is None or record['expires']<=self.clock():
+            raise HTTPException(401,'Your session expired. Sign in again.')
+        data=record['payload'];row=self.metadata.user(db,data['user_id'])
+        if row is None or row['deleting'] or row['session_version']!=data['version']:
+            raise HTTPException(401,'Sign in to SocialCli to continue.')
+        return record
 
     def require_user(self,request):
         secret=request.cookies.get(self.cookie,'')
         if not 16<=len(secret)<=512:
             raise HTTPException(401,'Sign in to SocialCli to continue.')
-        with self.vault.transaction() as db:
-            record=self.vault.get(db,'saas-session',digest(secret))
-            if record is None or record['expires']<=self.clock():
-                raise HTTPException(401,'Your session expired. Sign in again.')
-            data=record['payload']; row=self.metadata.user(db,data['user_id'])
-            if row is None or row['deleting'] or row['session_version']!=data['version']:
-                raise HTTPException(401,'Sign in to SocialCli to continue.')
+        key=digest(secret);lease=None
+        with self.vault.read_transaction() as db:
+            record=self.checked(db,key)
+        data=record['payload']
+        refresh=bool(data.get('refresh_token') and data.get('access_expires',record['expires'])<=self.clock()+60)
+        if not refresh and data.get('verified_until',0)>self.clock():
+            request.state.saas_session=data
+            return AuthenticatedUser(data['user_id'],data['email'])
+        if refresh:
+            with self.vault.transaction() as db:
+                record=self.checked(db,key);data=record['payload']
+                if data.get('access_expires',0)>self.clock()+60:
+                    request.state.saas_session=data
+                    return AuthenticatedUser(data['user_id'],data['email'])
+                if data.get('refresh_lease'):
+                    # An ambiguous rotation must never replay an old refresh token.
+                    if data['refresh_until']<=self.clock():
+                        raise HTTPException(401,'Your session needs a fresh sign-in.')
+                    raise HTTPException(503,'Your session is refreshing. Please try again shortly.')
+                lease=secrets.token_urlsafe(24)
+                data.update(refresh_lease=lease,refresh_until=self.clock()+30)
+                self.vault.put(db,'saas-session',key,data,expires=record['expires'])
         try:
-            user=self.identity.get_user(data['access_token'])
+            if lease:
+                user,access,expiry,refresh_token=self.identity.refresh(data['refresh_token'])
+            else:
+                user=self.identity.get_user(data['access_token'])
             if user.id!=data['user_id'] or user.email!=data['email']:
                 raise IdentityError()
         except IdentityError:
             with self.vault.transaction() as db:
-                self.vault.delete(db,'saas-session',digest(secret))
+                current=self.vault.get(db,'saas-session',key)
+                if current and current['payload'].get('access_token')==data['access_token']:
+                    self.vault.delete(db,'saas-session',key)
             raise HTTPException(401,'Sign in to SocialCli to continue.') from None
         except IdentityUnavailable:
             raise HTTPException(503,'Sign-in is temporarily unavailable. Please try again.') from None
-        # Recheck after network I/O: concurrent logout/deletion must win.
+        # A concurrent logout, deletion or credential rotation must win.
         with self.vault.transaction() as db:
-            current=self.vault.get(db,'saas-session',digest(secret))
-            row=self.metadata.user(db,user.id)
-            if current is None or current['expires']<=self.clock() or row is None or row['deleting'] or row['session_version']!=data['version']:
-                raise HTTPException(401,'Sign in to SocialCli to continue.')
-        request.state.saas_session=data
+            current=self.checked(db,key);latest=current['payload']
+            if lease:
+                if latest.get('refresh_lease')!=lease:
+                    raise HTTPException(401,'Sign in to SocialCli to continue.')
+                latest.update(access_token=access,refresh_token=refresh_token,access_expires=self.clock()+expiry)
+                latest.pop('refresh_lease',None);latest.pop('refresh_until',None)
+            elif latest['access_token']!=data['access_token']:
+                raise HTTPException(503,'Your session changed. Please try again.')
+            latest['verified_until']=min(self.clock()+self.verification_seconds,latest.get('access_expires',current['expires']))
+            self.vault.put(db,'saas-session',key,latest,expires=current['expires'])
+        request.state.saas_session=latest
         return user
 
     def revoke(self,request):

@@ -57,7 +57,8 @@ class InstagramAdapter(Adapter):
                 )
             )
 
-        if not cuenta.get("media_url_base"):
+        from socialctl.connections.temporary_media import available
+        if not cuenta.get("media_url_base") and not available(brand):
             errores.append(
                 ValidationError(
                     platform=self.platform,
@@ -83,13 +84,17 @@ class InstagramAdapter(Adapter):
             )
 
         try:
+            from socialctl.connections.temporary_media import available,upload
+            if not (brand.cuentas.get('instagram') or {}).get('media_url_base') and available(brand) and post.media:
+                with upload(brand,post.media[0].path,client) as url:
+                    return self._publicar(post,brand,client,media_url=url)
             return self._publicar(post, brand, client)
         except Exception as exc:
             return self._error(
                 f"an unexpected Instagram error occurred ({type(exc).__name__})"
             )
 
-    def _publicar(self, post: PlatformPost, brand: Brand, client: httpx.Client) -> PostResult:
+    def _publicar(self, post: PlatformPost, brand: Brand, client: httpx.Client, *, media_url=None) -> PostResult:
         'Execute publication with explicit handling of expected failures.'
         cuenta = brand.cuentas.get("instagram") or {}
 
@@ -98,7 +103,7 @@ class InstagramAdapter(Adapter):
             return self._error(f"missing ig_user_id in {brand.raiz / 'accounts.yml'}")
 
         base = cuenta.get("media_url_base")
-        if not base:
+        if not base and not media_url:
             return self._error(
                 'missing media_url_base in accounts.yml: Instagram requires a '
                 'public media URL (it does not support direct '
@@ -128,7 +133,7 @@ class InstagramAdapter(Adapter):
         # que la carpeta real-.
         segmentos_media = ruta_relativa_efectiva(asset).split("/")
         ruta_codificada = "/".join(quote(segmento) for segmento in segmentos_media)
-        url_media = f"{base.rstrip('/')}/{ruta_codificada}"
+        url_media = media_url or f"{base.rstrip('/')}/{ruta_codificada}"
 
         # Instagram descarga la media desde esta URL en un proceso asíncrono
         # (el sondeo del paso 2): si el archivo aún no está subido al host,

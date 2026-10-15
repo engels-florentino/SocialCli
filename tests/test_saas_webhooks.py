@@ -165,3 +165,24 @@ def test_stripe_redelivery_preserves_original_record_when_delivery_metadata_chan
         saved=metadata.vault.get(db,'saas-stripe-event',':'.join((billing.settings.account_id,'test','evt_social')))
         assert saved['payload']==original
     assert send(client,now,event(pending_webhooks=pending,created=901)).status_code==400
+
+
+def test_foreign_product_is_ignored_without_storing_large_blob(tmp_path):
+    client,now,metadata,_,billing=setup(tmp_path);wire(client,billing)
+    value=event();value['data']['object']['metadata']={'app':'other-product'}
+    assert send(client,now,value).status_code==200
+    with metadata.vault.read_transaction() as db:
+        assert db.execute('SELECT state FROM saas_billing_events').fetchone()[0]=='ignored'
+        assert db.execute("SELECT count(*) FROM records WHERE kind='saas-stripe-event'").fetchone()[0]==0
+
+
+def test_reconciled_blob_deleted_but_semantic_redelivery_still_validated(tmp_path):
+    client,now,metadata,stripe,billing=setup(tmp_path);expire(metadata,now);billing.checkout(USER);stripe.paid();wire(client,billing)
+    assert send(client,now,event(pending_webhooks=3)).status_code==200
+    from socialctl.saas.billing_reconcile import run_pending
+    run_pending(billing)
+    with metadata.vault.read_transaction() as db:
+        assert db.execute("SELECT count(*) FROM records WHERE kind='saas-stripe-event'").fetchone()[0]==0
+        assert db.execute('SELECT body_hash FROM saas_billing_events').fetchone()[0]
+    assert send(client,now,event(pending_webhooks=1)).status_code==200
+    assert send(client,now,event(created=901)).status_code==400

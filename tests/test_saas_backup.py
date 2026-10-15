@@ -38,7 +38,7 @@ def test_online_snapshot_contains_wal_commit_not_uncommitted_rows_and_private_fi
         writer.execute("INSERT INTO rates VALUES('uncommitted',1,99)")
         destination=tmp_path/'backups'/'state.sqlite3'
         report=snapshot(vault.path,destination,keys)
-        assert report['records']==2 and report['schema_version']==7
+        assert report['records']==2 and report['schema_version']==8
         assert report==verify(destination,keys)
         assert stat.S_IMODE(destination.stat().st_mode)==0o600
         assert stat.S_IMODE(destination.parent.stat().st_mode)==0o700
@@ -73,7 +73,7 @@ def test_existing_target_and_missing_source_are_never_overwritten_or_created(tmp
 
 def test_busy_source_has_bounded_wait_and_no_completed_artifact(tmp_path):
     snapshot,_,Error=api();vault,keys=fixture(tmp_path)
-    lock=sqlite3.connect(vault.path);lock.execute('BEGIN EXCLUSIVE')
+    lock=sqlite3.connect(vault.path);lock.execute('PRAGMA journal_mode=DELETE');lock.execute('BEGIN EXCLUSIVE')
     start=time.monotonic()
     try:
         with pytest.raises(Error):snapshot(vault.path,tmp_path/'backups'/'locked.sqlite3',keys,timeout=.05)

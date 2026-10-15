@@ -2,7 +2,7 @@
 
 # SocialCli
 
-**Current source version: 0.3.0rc3.** SocialCli SaaS is the current SocialCli
+**Current source version: 0.3.0rc4.** SocialCli SaaS is the current SocialCli
 product. The repository root on `main` is its single development workspace;
 the CLI, hosted connection service and account/billing components live together
 here. Earlier versions remain in Git history for reference and migration.

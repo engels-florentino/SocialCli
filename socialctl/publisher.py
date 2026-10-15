@@ -128,6 +128,10 @@ def render_preview(
                 lineas.append('Delivery: direct public publication after approval and provider checks; not automatically scheduled.')
             else:
                 lineas.append('Delivery: TikTok mode unverified; inspect the explicit brand accounts.yml before approval.')
+        if platform is Platform.INSTAGRAM and brand:
+            from socialctl.connections.temporary_media import available
+            if available(brand) and not (brand.cuentas.get('instagram') or {}).get('media_url_base'):
+                lineas.append('Delivery: original media uses temporary hosting on florentino.pro; URL expires after 15 minutes including upload time, then automatic deletion. No media backups.')
         if pp.title:
             lineas.append(f"Title: {pp.title}")
         if spec.valores_privacidad is not None:

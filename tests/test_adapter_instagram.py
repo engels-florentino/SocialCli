@@ -1535,3 +1535,40 @@ def test_message_vacio_no_da_un_error_sin_motivo(brand, post):
     assert resultado.status is PostStatus.ERROR
     assert resultado.error
     assert "HTTP 400" in resultado.error
+
+
+def test_saas_instagram_uploads_local_file_and_cleans_after_publish(brand,post,monkeypatch):
+    brand.cuentas['instagram'].pop('media_url_base')
+    metadata={'auth_mode':'broker','protocol':'saas-v1','version':1,'service_url':'https://social.example',
+              'connection_id':'connection-fixture','account_id':'999'}
+    brand.guardar_secreto(Platform.INSTAGRAM,metadata)
+    from socialctl.connections import keychain
+    monkeypatch.setattr(keychain,'get',lambda *args:'fictional-connection-secret')
+    monkeypatch.setattr('socialctl.adapters.instagram.obtener_token',lambda *args:'provider-token')
+    calls=[]
+    def api(request):
+        calls.append(request)
+        path=request.url.path
+        if path.endswith('/media') and request.url.host=='social.example':
+            return httpx.Response(201,json={'version':1,'media_id':'a'*32,'expires_at':time.time()+900,
+                'upload_url':'https://social.example/api/saas/v1/connections/connection-fixture/media/'+'a'*32,
+                'download_url':'https://social.example/media/'+'a'*32+'/'+'b'*43})
+        if request.method=='PUT':
+            assert request.read()==b'bytes'
+            assert request.headers['authorization']=='Bearer fictional-connection-secret'
+            return httpx.Response(200,json={'version':1,'status':'ready'})
+        if request.method=='DELETE':return httpx.Response(200,json={'version':1,'status':'deleted'})
+        if request.method=='HEAD':return httpx.Response(200)
+        if path=='/v26.0/999/media':
+            assert b'video_url=https%3A%2F%2Fsocial.example%2Fmedia%2F' in request.content
+            return httpx.Response(200,json={'id':'container'})
+        if path=='/v26.0/container':return httpx.Response(200,json={'status_code':'FINISHED'})
+        if path=='/v26.0/999/media_publish':return httpx.Response(200,json={'id':'published'})
+        if path=='/v26.0/published':return httpx.Response(200,json={'permalink':'https://www.instagram.com/p/example/'})
+        raise AssertionError(path)
+    adapter=InstagramAdapter(espera_s=0)
+    assert not any('media_url_base' in e.motivo for e in adapter.validate(post,brand))
+    with httpx.Client(transport=httpx.MockTransport(api)) as client:
+        result=adapter.publish(post,brand,client)
+    assert result.status is PostStatus.PUBLICADO
+    assert calls[-1].method=='DELETE'

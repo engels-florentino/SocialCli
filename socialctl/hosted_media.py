@@ -129,6 +129,11 @@ def verify_scheduled_instagram(post, brand, *, entry, client: httpx.Client | Non
     from socialctl.scheduler import now_utc
     base = brand.cuentas.get("instagram", {}).get("media_url_base", "")
     stored = _migration_attestations(brand, entry)
+    from socialctl.connections.temporary_media import available
+    if not base and stored is None and available(brand):
+        # Approval fingerprints already bind local bytes. Upload at dispatch,
+        # never when scheduling: a 15-minute URL cannot survive a future queue.
+        return
     results = []
     for asset in post.platforms[Platform.INSTAGRAM].media:
         url = public_url(base, ruta_relativa_efectiva(asset))

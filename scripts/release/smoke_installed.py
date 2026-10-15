@@ -25,6 +25,8 @@ def main():
             return result.stdout
         assert run('--version').strip()=='SocialCli '+expected
         run('--help');run('account','login','--help')
+        for topic in ('setup','publish','schedule','inbox','errors'):
+            assert 'SocialCli agent guide' in run('agent-guide',topic)
         run('brand','new','InstallSmoke')
         run('credentials','configure','--backend','encrypted-file','--store-file',str(private/'capabilities.json'),
             '--key-file',str(key),'--brand','InstallSmoke','--yes')

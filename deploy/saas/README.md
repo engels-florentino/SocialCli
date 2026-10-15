@@ -1,7 +1,6 @@
 # SocialCli SaaS billing — test candidate
 
-The branch adds test-only billing to the connection service. It is not enabled
-on the existing public service. Do not enable commercial access until the legacy
+The SaaS includes mode-validated billing; the deployed pilot stays in test mode. Do not enable commercial access until the legacy
 cutoff/migration and remaining account lifecycle work are verified.
 
 ## Private configuration
@@ -10,12 +9,12 @@ Merge `billing.env.example` into the **server's private** `service.env` alongsid
 `SOCIALCLI_SAAS_ENABLED=1`, the private Auth URL/key and existing vault keys.
 Map the parent's `SECRET_KEY` to `STRIPE_SECRET_KEY` and `PUBLISH_KEY` to
 `STRIPE_PUBLISHABLE_KEY` during provisioning, never in the distributed CLI.
-The API key must start with `sk_test_`; live keys fail configuration validation.
+The API key must match the configured mode: `sk_test_` for test or `sk_live_` for live.
 Keep test and live state/databases separate. API version: `2025-09-30.clover`.
 
 Price validation requires USD 1000 cents, monthly interval count 1, licensed
-quantity 1. Checkout starts only after the original SocialCli 14-day trial.
-No Stripe trial, advance card collection, discount code or variable client price.
+quantity 1. Checkout is available during the original 14-day trial. A fixed billing-cycle anchor and disabled prorations preserve the original free period.
+Early Checkout collects a payment method for the original trial-end charge. No discount code or variable client price is accepted.
 Checkout uses SocialCli's blue/background and the compatible Stripe default font.
 The dedicated Portal configuration allows invoices, card updates and cancellation
 at period end; it disables plan changes. Portal/receipt colors and logos inherit
@@ -226,3 +225,13 @@ to restore the same approved account without repeating OAuth. Existing local
 capabilities are replaced only after their installation is confirmed inactive.
 While any connection recovery is pending, finish `account recover PLATFORM`
 before changing that brand or signing out.
+
+
+## Schema 8 and temporary media rollout
+
+See [temporary-media.md](temporary-media.md). Billing mode must explicitly match
+the Stripe key and object livemode; keep `SOCIALCLI_BILLING_MODE=test` in the pilot.
+Live mode requires a live price, webhook secret, customer configuration and
+a separately verified rollout. Test customer IDs are never accepted as live objects.
+Account sessions rotate encrypted refresh tokens within a fixed 12-hour lifetime.
+Ownership lookup uses schema 8; do not run schema-7 binaries against that database.

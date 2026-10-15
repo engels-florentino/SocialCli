@@ -142,7 +142,7 @@ def test_verified_other_user_cannot_select_or_attach_connection_by_shared_brand_
     other_id='22222222-2222-4222-8222-222222222222';other_email='other@example.test'
     def identity(request):
         if request.url.path=='/verify' and json.loads(request.content).get('email')==other_email:
-            return httpx.Response(200,json={'access_token':'other-identity-secret','expires_in':3600,
+            return httpx.Response(200,json={'access_token':'other-identity-secret','refresh_token':'other-refresh-secret','expires_in':3600,
                 'user':{'id':other_id,'email':other_email,'email_confirmed_at':'2026-10-13T00:00:00Z'}})
         if request.url.path=='/user' and request.headers.get('authorization')=='Bearer other-identity-secret':
             return httpx.Response(200,json={'id':other_id,'email':other_email,'email_confirmed_at':'2026-10-13T00:00:00Z'})

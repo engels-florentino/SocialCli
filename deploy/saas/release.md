@@ -1,6 +1,15 @@
-# Candidate distribution and publication
+# Current candidate: 0.3.0rc4
 
-Current source version: **0.3.0rc3**, consolidated in the repository root on
+The canonical `main` workspace includes trial enrollment before expiry, billing
+mode validation, credit/tax-aware invoice reconciliation, schema 8 owner-indexed
+WAL reads, brand rename/release, 12-hour renewable sessions, trusted proxy rate
+identity, compact agent bootstrap and 15-minute Instagram media staging.
+The rc3 tag remains immutable. rc4 must be built, reviewed and published separately.
+The runtime remains a pilot with Stripe test billing and provider test restrictions.
+Publication/deployment evidence is recorded below after each gate completes.
+
+
+Current source version: **0.3.0rc4**, consolidated in the repository root on
 `main`. SocialCli SaaS supersedes the former 0.2.6 working copy; it is the same
 product. Source includes post-tag fixes, so the immutable `v0.3.0rc3` artifact
 must not be overwritten or represented as containing later commits.

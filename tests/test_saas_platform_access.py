@@ -103,13 +103,16 @@ def test_schema_seven_makes_legacy_approval_explicit_without_broadening_new_poli
     from socialctl.saas.store import SaaSStore
     client,_,cap=setup(tmp_path);metadata=client.app.state.saas
     mutate_policy(client,cap,None)
-    with metadata.vault.transaction() as db:db.execute('DELETE FROM saas_schema WHERE version>=7')
+    with metadata.vault.transaction() as db:
+        db.execute('DELETE FROM saas_schema WHERE version>=7')
+        db.execute('ALTER TABLE saas_rates DROP COLUMN expires')
+        db.execute('ALTER TABLE saas_billing_events DROP COLUMN semantic_hash')
     upgraded=SaaSStore(metadata.vault,metadata.eligibility_keys)
     with upgraded.vault.transaction() as db:
         data=upgraded.vault.get(db,'saas-installation',cap['installation_id'])['payload']
         assert data['platform_access']['source']=='legacy_approval'
         assert set(data['platform_access']['platforms'])=={'youtube','facebook','instagram','tiktok'}
-        assert db.execute('SELECT max(version) FROM saas_schema').fetchone()[0]==7
+        assert db.execute('SELECT max(version) FROM saas_schema').fetchone()[0]==8
     mutate_policy(client,cap,{'version':1,'platforms':['youtube']})
     SaaSStore(metadata.vault,metadata.eligibility_keys)
     with metadata.vault.transaction() as db:

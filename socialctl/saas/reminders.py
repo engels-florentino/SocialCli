@@ -27,7 +27,7 @@ def message_for(job,recipient,public_url,now):
     message['Date']=formatdate(now,usegmt=True)
     message['Message-ID']=f"<socialcli.trial.{job['id']}@socialcli.app>"
     message.set_content(f'Your SocialCli free trial ends {deadline}.\n\n'
-        'There is no automatic charge. After your trial, subscribe for USD 10/month '
+        'Subscribe now for USD 10/month without losing your remaining free days. The first charge is due at the original trial end '
         'to continue using your connected accounts. Cancel anytime.\n\n'
         f'Manage your account: {link}\n\nYour accounts. Your permissions. Your choice.\n')
     template=files('socialctl.ui').joinpath('email/trial.html').read_text()
@@ -41,8 +41,9 @@ class Reminders:
         self.access=AccessControl(metadata)
 
     def eligible(self,db,job,now):
-        entitlement=db.execute('SELECT trial_end FROM saas_entitlements WHERE user_id=?',(job['user_id'],)).fetchone()
+        entitlement=db.execute('SELECT trial_end,subscription_status FROM saas_entitlements WHERE user_id=?',(job['user_id'],)).fetchone()
         if (entitlement is None or entitlement['trial_end']!=job['trial_end']
+                or entitlement['subscription_status'] not in ('','canceled','incomplete_expired')
                 or self.access.decision(db,job['user_id'],now).reason!='trial'):
             return False
         end=job['trial_end']

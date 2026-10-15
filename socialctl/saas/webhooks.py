@@ -15,6 +15,11 @@ EVENTS={'checkout.session.completed','checkout.session.expired','invoice.paid','
         'charge.refunded','charge.dispute.created','charge.dispute.updated','charge.dispute.closed'}
 
 
+def semantic_hash(event):
+    value={k:v for k,v in event.items() if k!='pending_webhooks'}
+    return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+
+
 def verified_event(raw,signature,settings,now):
     try:
         parts=[part.split('=',1) for part in signature.split(',')]
@@ -25,7 +30,7 @@ def verified_event(raw,signature,settings,now):
         expected=hmac.new(settings.webhook_secret.encode(),timestamps[0].encode()+b'.'+raw,hashlib.sha256).hexdigest()
         if abs(now-timestamp)>300 or not any(hmac.compare_digest(expected,s) for s in signatures):raise ValueError()
         event=json.loads(raw)
-        if (not isinstance(event,dict) or event.get('object')!='event' or event.get('livemode') is not False
+        if (not isinstance(event,dict) or event.get('object')!='event' or event.get('livemode') is not settings.expected_livemode
                 or event.get('api_version')!=API_VERSION or event.get('account') not in (None,settings.account_id)
                 or not re.fullmatch(r'evt_[A-Za-z0-9_]{1,200}',event.get('id',''))
                 or not isinstance(event.get('type'),str) or not isinstance(event.get('data',{}).get('object'),dict)):
@@ -49,28 +54,23 @@ def install_webhook_route(app,billing):
         event=verified_event(bytes(raw),request.headers.get('stripe-signature',''),billing.settings,billing.clock())
         def persist():
             digest=hashlib.sha256(raw).hexdigest()
-            identity=(billing.settings.account_id,'test',event['id'])
+            identity=(billing.settings.account_id,billing.settings.mode,event['id'])
             with billing.vault.transaction() as db:
-                previous=db.execute('SELECT body_hash FROM saas_billing_events WHERE account_id=? AND mode=? AND event_id=?',identity).fetchone()
+                previous=db.execute('SELECT body_hash,semantic_hash FROM saas_billing_events WHERE account_id=? AND mode=? AND event_id=?',identity).fetchone()
                 if previous:
-                    if previous['body_hash']!=digest:
-                        # Stripe changes pending_webhooks between deliveries. Compare
-                        # authenticated event content, not JSON formatting or that
-                        # delivery counter; retain the original audit record unchanged.
-                        saved=billing.vault.get(db,'saas-stripe-event',':'.join(identity))
-                        original=saved['payload'] if saved else None
-                        if (original is None or
-                                {k:v for k,v in original.items() if k!='pending_webhooks'} !=
-                                {k:v for k,v in event.items() if k!='pending_webhooks'}):
-                            raise HTTPException(400,'Conflicting Stripe event.')
+                    if previous['body_hash']!=digest and previous['semantic_hash']!=semantic_hash(event):
+                        raise HTTPException(400,'Conflicting Stripe event.')
                     return
                 customer=event['data']['object'].get('customer')
                 if not isinstance(customer,str) or not re.fullmatch(r'cus_[A-Za-z0-9_]{1,200}',customer):customer=None
                 state='pending' if event['type'] in EVENTS else 'ignored'
                 # Refunds/disputes remain available for explicit operator review.
                 if event['type'].startswith(('charge.refund','charge.dispute')):state='review'
-                db.execute('INSERT INTO saas_billing_events(account_id,mode,event_id,body_hash,customer_id,type,state,received) VALUES(?,?,?,?,?,?,?,?)',
-                           (*identity,digest,customer,event['type'],state,billing.clock()))
-                billing.vault.put(db,'saas-stripe-event',':'.join(identity),event,expires=billing.clock()+365*86400)
+                product=(event['data']['object'].get('metadata') or {}).get('app')
+                if product is not None and product!='socialcli':state='ignored'
+                db.execute('INSERT INTO saas_billing_events(account_id,mode,event_id,body_hash,customer_id,type,state,received,semantic_hash) VALUES(?,?,?,?,?,?,?,?,?)',
+                           (*identity,digest,customer,event['type'],state,billing.clock(),semantic_hash(event)))
+                if state!='ignored':
+                    billing.vault.put(db,'saas-stripe-event',':'.join(identity),event,expires=billing.clock()+7*86400)
         await asyncio.to_thread(persist)
         return {'received':True}

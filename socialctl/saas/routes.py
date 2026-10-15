@@ -4,6 +4,7 @@ import hmac
 import re
 import secrets
 from urllib.parse import parse_qs, urlencode
+from socialctl.connection_service.peer import client_ip
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from socialctl.connection_service.landing import LandingTokens
@@ -84,7 +85,7 @@ def install_account_routes(app,settings,vault,identity_client,clock):
             with vault.transaction() as db:
                 limits=[('email-minute:'+email,3,60),('email-hour:'+email,10,3600),
                         ('browser:'+request.cookies[PREAUTH],5,60),
-                        ('login-peer:'+(request.client.host if request.client else 'unknown'),120,60)]
+                        ('login-peer:'+(client_ip(request,settings)),120,60)]
                 if not all(metadata.admit(db,key,clock(),limit=limit,seconds=period) for key,limit,period in limits):
                     return None
                 attempt=secrets.token_urlsafe(24)
@@ -129,7 +130,7 @@ def install_account_routes(app,settings,vault,identity_client,clock):
         try:
             if not re.fullmatch(r'[0-9]{6,8}',code):
                 raise IdentityError()
-            user,access,lifetime=await asyncio.to_thread(identity.verify,payload['email'],code)
+            user,access,lifetime,refresh_token=await asyncio.to_thread(identity.verify,payload['email'],code)
         except IdentityError:
             return HTMLResponse(pages.verify(csrf(request,attempt,authenticated=False),attempt,payload['email'],'That code is invalid or expired. Please try again.',input_error=True),status_code=400)
         except IdentityUnavailable:
@@ -145,9 +146,9 @@ def install_account_routes(app,settings,vault,identity_client,clock):
                 previous=request.cookies.get(sessions.cookie,'')
                 if previous:
                     vault.delete(db,'saas-session',digest(previous))
-                return sessions.create(db,user,access,lifetime)
+                return sessions.create(db,user,access,lifetime,refresh_token)
         secret=await asyncio.to_thread(commit)
-        return response_cookie(RedirectResponse(payload['next'],status_code=303),secret,sessions.cookie,lifetime)
+        return response_cookie(RedirectResponse(payload['next'],status_code=303),secret,sessions.cookie,sessions.max_lifetime)
 
     @app.get('/account/',response_class=HTMLResponse)
     def account_page(request:Request):
@@ -158,7 +159,7 @@ def install_account_routes(app,settings,vault,identity_client,clock):
                 raise
             return RedirectResponse('/account/login',status_code=303)
         from socialctl.saas.access import AccessControl
-        with vault.transaction() as db:
+        with vault.read_transaction() as db:
             decision=AccessControl(metadata).decision(db,user.id,clock())
             entitlement=db.execute('SELECT * FROM saas_entitlements WHERE user_id=?',(user.id,)).fetchone()
             billing=db.execute('SELECT * FROM saas_billing WHERE user_id=?',(user.id,)).fetchone()

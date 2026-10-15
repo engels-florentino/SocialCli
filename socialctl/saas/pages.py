@@ -60,7 +60,15 @@ def subscription(decision,entitlement,billing,csrf,*,enabled,processing=False):
     if reason=='trial_not_started':
         message='Your 14 free days start when you connect your first social account. No card required.'
     elif reason=='trial':
-        message='Your free trial ends '+utc_date(entitlement['trial_end'])+'. You can subscribe then; no automatic charge.'
+        message='Your free trial ends '+utc_date(entitlement['trial_end'])+'.'
+        ongoing=entitlement['subscription_status'] not in ('','canceled','incomplete_expired')
+        if ongoing:
+            message+=' Your subscription is arranged. The first USD 10 monthly payment is due when your trial ends.'
+            if billing and billing['cancel_at_period_end']:
+                message+=' Cancellation is scheduled; check Manage billing for the final date.'
+        elif enabled:
+            message+=' Subscribe now to keep access. Your first USD 10 payment is due at the end of your trial, then monthly. Cancel anytime.'
+            action=f'<form method="post" action="/account/billing/checkout" class="form-stack">{hidden("csrf",csrf)}<button type="submit" class="primary-button">Subscribe — USD 10/month</button></form>'
     elif reason=='paid':
         heading='Subscription active'
         ending=billing and billing['cancel_at_period_end'] or entitlement['subscription_status']=='canceled'
@@ -78,7 +86,7 @@ def subscription(decision,entitlement,billing,csrf,*,enabled,processing=False):
             message='Your subscription needs attention. Open Manage billing to check your payment and restore access.'
         elif enabled:
             action=f'<form method="post" action="/account/billing/checkout" class="form-stack">{hidden("csrf",csrf)}<button type="submit" class="primary-button">Subscribe — USD 10/month</button></form>'
-    checking=processing and enabled and not decision.allowed and reason in {'trial_expired','subscription_required'}
+    checking=processing and enabled and reason in {'trial','trial_expired','subscription_required'}
     if checking:
         heading='Checking your payment'
         message='Payment confirmation can take a few minutes. Check your account status before trying to subscribe again. If access is still unavailable, check Manage billing when available or contact support.'

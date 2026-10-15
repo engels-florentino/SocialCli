@@ -92,10 +92,14 @@ app = typer.Typer(help="Publish and manage your social content. Setup: brand new
 
 
 @app.command('agent-guide')
-def agent_guide():
-    """Read the packaged agent guide offline, without an account or workspace."""
-    from importlib.resources import files
-    typer.echo(files('socialctl.ui').joinpath('assets/agents.md').read_text(encoding='utf-8'))
+def agent_guide(topic: str = typer.Argument('setup', help='setup, publish, schedule, inbox, errors, permissions or all')):
+    """Read a focused agent guide offline, without an account or workspace."""
+    from socialctl.agent_guide import guide
+    try:
+        typer.echo(guide(topic))
+    except ValueError as error:
+        typer.echo(str(error),err=True)
+        raise typer.Exit(2) from None
 
 
 @app.command('report')

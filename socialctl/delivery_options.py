@@ -6,8 +6,13 @@ def delivery_options(brand) -> dict:
     account = brand.cuentas.get('tiktok') or {}
     mode = account.get('mode', 'inbox')
     audited, valid = _interpretar_auditada(account.get('auditada'))
+    from socialctl.connections.temporary_media import available
+    temporary=available(brand) and not (brand.cuentas.get('instagram') or {}).get('media_url_base')
     return {
-        'version': 1, 'brand': brand.nombre, 'server_media_storage': False,
+        'version': 1, 'brand': brand.nombre, 'server_media_storage': bool(temporary),
+        'temporary_media': {'instagram_enabled_for_connection':bool(temporary),
+            'max_lifetime_seconds':900,'backed_up':False,'uploads_at_dispatch':True,
+            'server_availability_verified':False},
         'platforms': {
             'youtube': {
                 'selected_delivery': 'upload',

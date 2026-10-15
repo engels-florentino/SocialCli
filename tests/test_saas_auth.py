@@ -127,7 +127,7 @@ def test_expired_or_invalid_provider_identity_fails_closed(tmp_path):
     assert client.get('/account/',follow_redirects=False).status_code == 303
     revoked[0] = False
     login(client)
-    now[0] += 3600
+    now[0] += 43200
     assert client.get('/account/',follow_redirects=False).status_code == 303
 
 
@@ -205,3 +205,92 @@ def test_browser_account_forms_preserve_same_origin_without_accepting_null_origi
     assert verify.status_code==200 and verify.headers['referrer-policy']=='same-origin'
     assert rejected.headers['referrer-policy']=='same-origin'
     assert client.get('/healthz').headers['referrer-policy']=='no-referrer'
+
+
+def test_web_session_refreshes_and_caches_identity_with_absolute_limit(tmp_path):
+    refreshed=[]
+    def handler(request):
+        if request.url.path=='/token':
+            import json
+            refreshed.append(json.loads(request.content)['refresh_token'])
+            return httpx.Response(200,json={'access_token':'identity-access-secret','refresh_token':'rotated-refresh-secret',
+                'expires_in':3600,'user':{'id':USER,'email':EMAIL,'email_confirmed_at':'verified'}})
+    client,now,calls=service(tmp_path,handler);reply=login(client)
+    assert 'Max-Age=43200' in reply.headers['set-cookie']
+    assert client.get('/account/').status_code==200
+    count=sum(r.url.path=='/user' for r in calls)
+    assert client.get('/account/').status_code==200
+    assert sum(r.url.path=='/user' for r in calls)==count
+    now[0]+=3601
+    assert client.get('/account/').status_code==200
+    assert refreshed==['identity-refresh-secret']
+    from socialctl.saas.auth import digest
+    vault=client.app.state.saas.vault
+    with vault.read_transaction() as db:
+        session=vault.get(db,'saas-session',digest(client.cookies.get('socialcli-session')))
+        assert session['payload']['refresh_token']=='rotated-refresh-secret'
+        assert session['expires']==44200
+    now[0]=44201
+    assert client.get('/account/',follow_redirects=False).status_code==303
+    assert refreshed==['identity-refresh-secret']
+
+
+def test_refresh_cannot_resurrect_session_deleted_during_network_call(tmp_path):
+    from socialctl.saas.auth import digest
+    holder={}
+    def handler(request):
+        if request.url.path=='/token':
+            client=holder['client'];vault=client.app.state.saas.vault
+            with vault.transaction() as db:vault.delete(db,'saas-session',digest(client.cookies.get('socialcli-session')))
+            return httpx.Response(200,json={'access_token':'new-access-secret','refresh_token':'new-refresh-secret',
+                'expires_in':3600,'user':{'id':USER,'email':EMAIL,'email_confirmed_at':'verified'}})
+    client,now,_=service(tmp_path,handler);holder['client']=client;login(client);now[0]+=3601
+    assert client.get('/account/',follow_redirects=False).status_code==303
+    with client.app.state.saas.vault.read_transaction() as db:
+        assert db.execute("SELECT count(*) FROM records WHERE kind='saas-session'").fetchone()[0]==0
+
+
+def test_real_gotrue_twelve_character_refresh_token_is_accepted(tmp_path):
+    def handler(request):
+        if request.url.path in {'/verify','/token'}:
+            return httpx.Response(200,json={'access_token':'identity-access-secret','refresh_token':'aB3dE6gH9jK2',
+                'expires_in':3600,'user':{'id':USER,'email':EMAIL,'email_confirmed_at':'verified'}})
+    client,now,_=service(tmp_path,handler)
+    login(client)
+    now[0]+=3601
+    assert client.get('/account/').status_code==200
+
+
+def test_ambiguous_refresh_never_replays_old_provider_token(tmp_path):
+    refreshes=[]
+    def handler(request):
+        if request.url.path=='/token':
+            refreshes.append(request)
+            raise httpx.ReadTimeout('private provider transport',request=request)
+    client,now,_=service(tmp_path,handler);login(client);now[0]+=3601
+    assert client.get('/account/',follow_redirects=False).status_code==503
+    assert client.get('/account/',follow_redirects=False).status_code==503
+    now[0]+=31
+    assert client.get('/account/',follow_redirects=False).status_code==303
+    assert len(refreshes)==1
+
+
+def test_concurrent_refresh_issues_exactly_one_rotation(tmp_path):
+    from threading import Event
+    from concurrent.futures import ThreadPoolExecutor
+    entered=Event();release=Event();refreshes=[]
+    def handler(request):
+        if request.url.path=='/token':
+            refreshes.append(request);entered.set();assert release.wait(5)
+            return httpx.Response(200,json={'access_token':'identity-access-secret','refresh_token':'AbCdEf123456',
+                'expires_in':3600,'user':{'id':USER,'email':EMAIL,'email_confirmed_at':'verified'}})
+    client,now,_=service(tmp_path,handler);login(client);now[0]+=3601
+    other=TestClient(client.app,base_url='https://social.example')
+    other.cookies.set('socialcli-session',client.cookies.get('socialcli-session'))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first=pool.submit(client.get,'/account/')
+        assert entered.wait(3)
+        try:assert other.get('/account/',follow_redirects=False).status_code==503
+        finally:release.set()
+        assert first.result().status_code==200
+    assert len(refreshes)==1

@@ -1,4 +1,4 @@
-"""Test-mode Stripe billing with durable checkout intents and short local locks."""
+"""Mode-validated Stripe billing with durable checkout intents and short local locks."""
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 import os
@@ -13,6 +13,11 @@ from socialctl.saas.budget import BudgetExpired
 API_VERSION = '2025-09-30.clover'
 
 
+class AnchorRejected(Exception):
+    """Stripe rejected the anchor before starting Checkout execution."""
+
+
+
 @dataclass(frozen=True)
 class BillingSettings:
     secret_key: str = field(repr=False)
@@ -23,12 +28,16 @@ class BillingSettings:
     mode: str = 'test'
 
     def __post_init__(self):
-        if self.mode != 'test' or not self.secret_key.startswith('sk_test_'):
-            raise ValueError('This release only supports Stripe test mode')
+        if self.mode not in {'test','live'} or not self.secret_key.startswith('sk_'+self.mode+'_'):
+            raise ValueError('Stripe mode and secret key must match')
         for value, prefix in [(self.webhook_secret,'whsec_'),(self.price_id,'price_'),
                               (self.account_id,'acct_'),(self.portal_configuration,'bpc_')]:
             if not re.fullmatch(re.escape(prefix)+r'[A-Za-z0-9_]+',value):
-                raise ValueError('Incomplete Stripe test configuration')
+                raise ValueError('Incomplete Stripe configuration')
+
+    @property
+    def expected_livemode(self):
+        return self.mode == 'live'
 
     @classmethod
     def from_environment(cls):
@@ -52,9 +61,9 @@ def stripe_id(value,prefix):
     return value
 
 
-def fixed_price(price,expected,*,active=False):
+def fixed_price(price,expected,*,active=False,expected_livemode=False):
     recurring=price.get('recurring') or {}
-    return (price.get('id')==expected and price.get('livemode') is False
+    return (price.get('id')==expected and price.get('livemode') is expected_livemode
             and price.get('type')=='recurring' and price.get('currency')=='usd'
             and price.get('unit_amount')==1000 and recurring.get('interval')=='month'
             and recurring.get('interval_count')==1 and recurring.get('usage_type')=='licensed'
@@ -81,9 +90,15 @@ class BillingService:
                     if self.budget and self.budget.expired():raise BudgetExpired()
                     content.extend(chunk)
                     if len(content)>2*1024*1024:raise unavailable()
-                if response.status_code!=200:raise unavailable()
                 import json
                 value=json.loads(content)
+                if response.status_code!=200:
+                    error=value.get('error',{}) if isinstance(value,dict) else {}
+                    if (response.status_code==400 and method=='POST' and path=='/checkout/sessions'
+                            and error.get('type')=='invalid_request_error'
+                            and error.get('param')=='subscription_data[billing_cycle_anchor]'):
+                        raise AnchorRejected()
+                    raise unavailable()
                 if not isinstance(value,dict):raise unavailable()
                 return value
         except (httpx.HTTPError,ValueError,TypeError,BudgetExpired):
@@ -92,11 +107,11 @@ class BillingService:
     def verify_configuration(self):
         if self.api('GET','/account').get('id')!=self.settings.account_id:
             raise unavailable()
-        if not fixed_price(self.api('GET','/prices/'+self.settings.price_id),self.settings.price_id,active=True):
+        if not fixed_price(self.api('GET','/prices/'+self.settings.price_id),self.settings.price_id,active=True,expected_livemode=self.settings.expected_livemode):
             raise unavailable()
 
     def owned(self,obj,user_id):
-        return obj.get('livemode') is False and obj.get('metadata',{}).get('app')=='socialcli' and obj.get('metadata',{}).get('user_id')==user_id
+        return obj.get('livemode') is self.settings.expected_livemode and obj.get('metadata',{}).get('app')=='socialcli' and obj.get('metadata',{}).get('user_id')==user_id
 
     @contextmanager
     def lease(self,user_id,*,checkout=False):
@@ -105,8 +120,8 @@ class BillingService:
             user=self.metadata.user(db,user_id)
             if user is None or user['deleting']:
                 raise HTTPException(403,'This account is unavailable.')
-            if checkout and self.access.decision(db,user_id,self.clock()).reason!='trial_expired':
-                raise HTTPException(409,'A new subscription is available after your free trial and any paid access end.')
+            if checkout and self.access.decision(db,user_id,self.clock()).reason not in {'trial','trial_expired'}:
+                raise HTTPException(409,'Connect your first social account to start your trial, or manage your existing subscription.')
             db.execute('INSERT OR IGNORE INTO saas_billing(user_id,customer_key,customer_started) VALUES(?,?,?)',
                        (user_id,secrets.token_hex(20),0))
             row=db.execute('SELECT * FROM saas_billing WHERE user_id=?',(user_id,)).fetchone()
@@ -189,7 +204,7 @@ class BillingService:
                 session=opened[0]
                 if not self.owned(session,user_id) or session.get('customer')!=customer:raise unavailable()
                 items=self.listing('/checkout/sessions/'+stripe_id(session.get('id'),'cs_')+'/line_items',{})
-                if len(items)!=1 or items[0].get('quantity')!=1 or not fixed_price(items[0].get('price',{}),self.settings.price_id):raise unavailable()
+                if len(items)!=1 or items[0].get('quantity')!=1 or not fixed_price(items[0].get('price',{}),self.settings.price_id,expected_livemode=self.settings.expected_livemode):raise unavailable()
                 self.save(user_id,token,checkout_id=stripe_id(session.get('id'),'cs_'))
                 return self.redirect_url(session.get('url'),'checkout.stripe.com')
             previous=next((s for s in sessions if s.get('metadata',{}).get('attempt')==row['attempt']),None)
@@ -201,16 +216,38 @@ class BillingService:
                 self.save(user_id,token,attempt=attempt,attempt_started=self.clock(),checkout_id=None)
             elif self.clock()-row['attempt_started']>=23*3600:
                 raise HTTPException(409,'An earlier payment request needs review before another purchase.')
-            session=self.api('POST','/checkout/sessions',{
-                'mode':'subscription','customer':customer,'line_items[0][price]':self.settings.price_id,
-                'line_items[0][quantity]':1,'success_url':self.origin+'/account/?payment=processing',
-                'cancel_url':self.origin+'/account/?payment=canceled','client_reference_id':user_id,
-                'metadata[app]':'socialcli','metadata[user_id]':user_id,'metadata[attempt]':attempt,
-                'subscription_data[metadata][app]':'socialcli','subscription_data[metadata][user_id]':user_id,
-                'payment_method_types[0]':'card','allow_promotion_codes':'false',
-                'branding_settings[display_name]':'SocialCli','branding_settings[background_color]':'#f5f7fb',
-                'branding_settings[button_color]':'#1464ec','branding_settings[font_family]':'default',
-            },'socialcli-checkout-'+attempt)
+            # Persist the complete time-sensitive choice before the HTTP request.
+            # Retrying an uncertain request must retain exactly the same parameters.
+            with self.vault.transaction() as db:
+                intent=self.vault.get(db,'saas-checkout-intent',attempt)
+                if intent:
+                    deferred=intent['payload']['deferred']
+                else:
+                    entitlement=db.execute('SELECT trial_end FROM saas_entitlements WHERE user_id=?',(user_id,)).fetchone()
+                    deadline=int(entitlement['trial_end']) if entitlement and entitlement['trial_end'] else 0
+                    deferred=({'subscription_data[billing_cycle_anchor]':deadline,
+                               'subscription_data[proration_behavior]':'none',
+                               'payment_method_collection':'always'} if deadline>self.clock() else {})
+                    self.vault.put(db,'saas-checkout-intent',attempt,{'user_id':user_id,'deferred':deferred},expires=self.clock()+30*86400)
+            try:
+                session=self.api('POST','/checkout/sessions',{
+                    **deferred,
+                    'mode':'subscription','customer':customer,'line_items[0][price]':self.settings.price_id,
+                    'line_items[0][quantity]':1,'success_url':self.origin+'/account/?payment=processing',
+                    'cancel_url':self.origin+'/account/?payment=canceled','client_reference_id':user_id,
+                    'metadata[app]':'socialcli','metadata[user_id]':user_id,'metadata[attempt]':attempt,
+                    'subscription_data[metadata][app]':'socialcli','subscription_data[metadata][user_id]':user_id,
+                    'payment_method_types[0]':'card','allow_promotion_codes':'false',
+                    'branding_settings[display_name]':'SocialCli','branding_settings[background_color]':'#f5f7fb',
+                    'branding_settings[button_color]':'#1464ec','branding_settings[font_family]':'default',
+                },'socialcli-checkout-'+attempt)
+            except AnchorRejected:
+                if deferred.get('subscription_data[billing_cycle_anchor]',float('inf'))<=self.clock():
+                    # Only a definitive pre-execution validation failure releases
+                    # this intent. Timeouts and ambiguous failures keep the same key.
+                    self.save(user_id,token,attempt=None,attempt_started=None,checkout_id=None)
+                    raise HTTPException(409,'Your trial ended while Checkout was opening. Open Subscribe again to review your first payment.') from None
+                raise unavailable() from None
             if not self.owned(session,user_id) or session.get('customer')!=customer or session.get('mode')!='subscription':raise unavailable()
             self.save(user_id,token,checkout_id=stripe_id(session.get('id'),'cs_'))
             return self.redirect_url(session.get('url'),'checkout.stripe.com')
