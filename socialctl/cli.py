@@ -672,8 +672,13 @@ def auth(
     ),
     status_platform: Platform | None = typer.Option(None, "--platform", help="Explicit platform for auth status."),
     json_output: bool = typer.Option(False, "--json", help="auth status: versioned output."),
+    no_browser: bool = typer.Option(False, '--no-browser', help='Print the SaaS connection link for the user without opening it.'),
+    analytics: bool = typer.Option(False, '--analytics', help='Request analytics access through the SaaS connection flow.'),
+    timeout: float = typer.Option(600, '--timeout', min=1, max=600, help='Maximum SaaS browser connection wait in seconds.'),
+    replace_independent: bool = typer.Option(False, '--replace-independent', help='Permit replacing independent credentials with browser approval.'),
+    independent: bool = typer.Option(False, '--independent', help='Legacy developer-owned app setup; requires an interactive terminal and your own app credentials.'),
 ) -> None:
-    """Obtain and save a platform's initial credentials for an explicit brand."""
+    """Connect through SocialCli after account login; use connect for the full flow."""
     if red == "status":
         from socialctl.inventory_cli import show_auth_status
         show_auth_status(root, brand_nombre, status_platform, json_output)
@@ -686,14 +691,37 @@ def auth(
         validas = ", ".join(p.value for p in Platform)
         _fallar(f'unknown platform: {red!r}. Valid platforms: {validas}')
 
-    from socialctl.connections.cli import acquire_brand_lock
+    from socialctl.connections.cli import acquire_brand_lock, interactive_terminal
+    from socialctl.connections.account_cli import metadata as account_metadata, connect_saas
     try:
         lock_fd = acquire_brand_lock(brand)
     except ValueError as exc:
         _fallar(str(exc))
     try:
+        if account_metadata(brand):
+            if independent:
+                _fallar('This workspace uses SocialCli SaaS. Use socialcli connect; developer credentials are not required.')
+            if platform is Platform.TIKTOK and (management or analytics):
+                _fallar('TikTok does not accept --management or --analytics in this connection flow.')
+            connect_saas(brand, platform, no_browser=no_browser or not interactive_terminal(),
+                         management=management, analytics=analytics, timeout=timeout,
+                         replace_independent=replace_independent)
+            return
         if brand.leer_secreto(platform).get("auth_mode") == "broker":
+            if not independent:
+                _fallar('Existing shared credentials were preserved. Use socialcli account login --brand NAME --no-browser, '
+                        'then socialcli account migrate ' + platform.value + ' --brand NAME for an eligible legacy connection, '
+                        'or account attach for an existing SaaS connection. Do not repeat OAuth or replace credentials silently.')
             _fallar("a shared connection already exists; run socialcli disconnect for this platform before independent-app auth")
+
+        if not independent:
+            _fallar('Sign in first with socialcli account login --brand NAME --no-browser, then run socialcli connect '
+                    + platform.value + ' --brand NAME --no-browser. SocialCli users do not need developer app credentials. '
+                    'Legacy developer-owned app setup requires explicit --independent.')
+        if not interactive_terminal():
+            _fallar('Independent app setup requires an interactive terminal. For SocialCli SaaS, use account login followed by connect --no-browser.')
+        if no_browser or analytics or replace_independent:
+            _fallar('--no-browser, --analytics and --replace-independent belong to the SaaS connection flow.')
 
         if management and platform is not Platform.YOUTUBE:
             _fallar("--management is only available for YouTube")
@@ -704,6 +732,14 @@ def auth(
             _auth_oauth_redireccion(
                 brand, platform, youtube_management=management
             )
+    except typer.Exit:
+        raise
+    except (KeyboardInterrupt, typer.Abort):
+        _fallar('Connection cancelled.')
+    except ValueError as exc:
+        _fallar(str(exc))
+    except Exception:
+        _fallar('Could not connect safely; existing credentials were preserved.')
     finally:
         import os
         os.close(lock_fd)

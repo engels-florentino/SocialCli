@@ -12,6 +12,7 @@ from socialctl.read_reports import ReadReport,safe_error,annotate_partial_read
 from socialctl.agent_errors import error_document
 from socialctl.management.meta_comment_inbox import CommentInboxStore,sync_inbox
 from socialctl.migration_files import write_json
+from socialctl.management.reply_evidence import bound_evidence, retain_positive, reply_evidence, youtube_reply_evidence
 
 
 def resolve_since(value,timezone_name,now):
@@ -53,6 +54,8 @@ class UnifiedInboxStore:
             data=self.load()
             for row in rows:
                 key=self.key(row);old=data['items'].get(key)
+                evidence=retain_positive(bound_evidence(old) if old else None, bound_evidence(row))
+                if evidence: row={**row, 'reply_evidence':evidence}
                 if old and (old['media_id'],old.get('parent_id'))!=(row['media_id'],row.get('parent_id')):
                     raise ValueError('comment identity changed media/parent; observation is ambiguous')
                 history=list(old.get('history',[])) if old else []
@@ -121,8 +124,15 @@ def _youtube_rows(client, video_id):
         for thread in report['items']:
             top = thread['snippet']['topLevelComment']
             observe(top, None, thread['id'])
+            parent_row = next((r for r in rows if r['comment_id'] == top['id']), None)
+            if parent_row is not None:
+                parent_row['reply_evidence'] = reply_evidence('youtube', client.configured_channel_id, video_id, top['id'], thread_id=thread['id'])
             count = thread['snippet'].get('totalReplyCount')
-            if report.get('interrupted') or timed_out or (type(count) is int and count == 0):
+            if type(count) is int and count == 0:
+                if parent_row is not None:
+                    parent_row['reply_evidence'] = reply_evidence('youtube', client.configured_channel_id, video_id, top['id'], thread_id=thread['id'], complete=True)
+                continue
+            if report.get('interrupted') or timed_out:
                 continue
             try:
                 replies = client.list_replies(video_id, thread['id'], top['id'])
@@ -131,6 +141,8 @@ def _youtube_rows(client, video_id):
             except Exception as exc:
                 replies = {'items': [], 'complete': False, 'error': safe_error(str(exc)),
                            'error_detail': error_document(exc, read_only=True)}
+            if parent_row is not None:
+                parent_row['reply_evidence'] = youtube_reply_evidence(client, video_id, thread['id'], top['id'], replies)
             timed_out = replies.get('timed_out', False)
             complete = complete and replies['complete']
             if replies.get('error'):
@@ -223,10 +235,11 @@ def sync_brand_inbox(brand,*,since,budget,only=None):
                                     counts = row.setdefault('skipped_comments', {'own':0, 'before_since':0, 'unverifiable':0})
                                     for label in counts:
                                         counts[label] += observation.get('skipped_' + label, 0)
-                                    records=[r for r in inbox.load().comments if r.platform==platform.value and r.account_id==account and r.media_id==ident and r.last_observed_at==observation['observed_at']]
+                                    records=[r for r in inbox.load().comments if r.platform==platform.value and r.account_id==account and r.media_id==ident and (r.last_observed_at==observation['observed_at'] or r.comment_id==observation.get('reply_parent_id'))]
                                     fresh=[{'platform':r.platform,'account_id':r.account_id,'media_id':r.media_id,'parent_id':r.parent_id,
                                         'comment_id':r.comment_id,'author_id':r.author_id,'text':r.text,'created_time':r.created_time,
-                                        'provider_updated_at':r.provider_updated_at,'status':r.status,'draft_change_id':r.change_id} for r in records]
+                                        'provider_updated_at':r.provider_updated_at,'status':r.status,'draft_change_id':r.change_id,
+                                        **({'reply_evidence':r.reply_evidence} if r.reply_evidence else {})} for r in records]
                                     edited.update(store.observe(fresh,observed_at=observed))
                                     observed_keys.update(store.key(i) for i in fresh)
                                     items.extend(fresh)

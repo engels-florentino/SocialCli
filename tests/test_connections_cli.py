@@ -146,7 +146,7 @@ def test_second_connection_attempt_cannot_overwrite_a_brand_lock(tmp_path,monkey
 def test_legacy_auth_requires_disconnect_before_replacing_a_shared_connection(tmp_path):
     brand=crear_brand(tmp_path,'Example')
     brand.guardar_secreto(Platform.YOUTUBE,{'auth_mode':'broker','connection_id':'one'})
-    result=runner.invoke(app,['auth','youtube','--brand','Example','--root',str(tmp_path)])
+    result=runner.invoke(app,['auth','youtube','--independent','--brand','Example','--root',str(tmp_path)])
     assert result.exit_code==1
     assert 'disconnect' in result.output.lower()
     assert 'client_id' not in result.output

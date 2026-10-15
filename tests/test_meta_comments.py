@@ -57,8 +57,11 @@ class Graph:
             self.comments[ident] = self.row(ident, text)
             if previous:
                 self.comments[ident]['parent'] = previous['parent']
-            elif path == '800/comments':
-                self.comments[ident]['parent'] = {'id':'800'}
+            elif path.endswith(('/comments', '/replies')):
+                parent_id = path.split('/')[0]
+                self.comments[ident]['parent'] = {'id':parent_id}
+                if self.platform == 'instagram' and parent_id != '789':
+                    self.comments[ident]['parent_id'] = parent_id
             if self.after_write:
                 self.after_write()
             return httpx.Response(200, json={} if self.failure == "lost-id" else
@@ -69,10 +72,14 @@ class Graph:
         if path == "789":
             return httpx.Response(200, json={"id": "789",
                 "from" if self.platform == "facebook" else "owner": {"id": self.owner}})
-        if path in {"789/comments", "800/comments", "800/replies"}:
+        if path in {"789/comments", "800/comments", "800/replies"} or (path.endswith(("/comments", "/replies")) and path.split("/")[0] in self.comments):
             if self.pages:
                 return httpx.Response(200, json=self.pages(request))
-            return httpx.Response(200, json={"data": list(self.comments.values())})
+            rows = list(self.comments.values())
+            if path != "789/comments":
+                parent_id = path.split("/")[0]
+                rows = [row for row in rows if row.get("parent_id", (row.get("parent") or {}).get("id")) == parent_id]
+            return httpx.Response(200, json={"data": rows})
         if path in self.comments:
             return httpx.Response(200, json=self.comments[path])
         return httpx.Response(400, json={"error": {"message": "Unsupported request SECRET"}})

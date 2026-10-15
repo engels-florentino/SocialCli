@@ -14,8 +14,10 @@ main{width:100%;padding:30px 24px 35px;flex:1;display:flex;flex-direction:column
 .connection-line{width:48px;height:1px;margin:0 14px;background:#d6dfed;position:relative}
 .connection-line:before,.connection-line:after{content:"";position:absolute;width:5px;height:5px;border-radius:50%;background:#b9c8df;top:-2px}
 .connection-line:before{left:0}.connection-line:after{right:0}
-.provider-mark{width:64px;height:64px;display:grid;place-items:center;border:1px solid var(--line);border-radius:18px;font-size:21px;font-weight:750;background:#fff;letter-spacing:-1px}
-.provider-youtube{color:#d62b35}.provider-facebook{color:#1464ec;font-size:36px;font-family:Arial,sans-serif}.provider-instagram{color:#a53c86;font-size:20px;letter-spacing:-.8px}.provider-tiktok{color:#14213b;font-size:22px}
+.provider-mark{width:64px;height:64px;display:grid;place-items:center;border:1px solid var(--line);border-radius:18px;background:#fff}
+.connection-symbols .provider-logo{width:36px;height:36px;border-radius:0}
+.provider-app-icon{background:transparent;border:0;border-radius:0}
+.connection-symbols .provider-app-icon .provider-logo{width:100%;height:100%;object-fit:contain;border-radius:0}
 .eyebrow{margin:0 0 12px;font-size:10px;font-weight:700;letter-spacing:1.7px;color:var(--blue)}
 h1{font-size:clamp(30px,4vw,38px);line-height:1.13;font-weight:650;letter-spacing:-1.35px;margin:0;text-wrap:balance}
 .description{margin:16px auto 0;max-width:360px;font-size:14px;line-height:1.65;color:var(--muted);text-wrap:pretty}

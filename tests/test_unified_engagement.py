@@ -20,8 +20,9 @@ def fixture(tmp_path,monkeypatch):
     (brand.raiz/'accounts.yml').write_text(yaml.safe_dump(brand.cuentas))
     brand.guardar_secreto(Platform.YOUTUBE,{'access_token':'fictional'})
     graph.comments['800']=remote_row(graph,'800','Meta question')
+    graph.pages=lambda request: {'data':[r for r in graph.comments.values() if r.get('parent', {}).get('id')==request.url.path.split('/')[-2]]}
     sync_inbox(client,CommentInboxStore(brand.raiz),media_id='789')
-    api=API();api.threads=[thread(top=comment(author='viewer',text='YouTube question'))]
+    api=API();api.replies=[];api.threads=[thread(top=comment(author='viewer',text='YouTube question'))]
     api.threads[0]['snippet']['topLevelComment']['snippet']['textOriginal']='YouTube question'
     rows=[dict(platform='facebook',account_id='123',media_id='789',comment_id='800',author_id='999',text='Meta question',parent_id=None),
           dict(platform='youtube',account_id='channel-a',media_id='video-1',thread_id='UgxThread',comment_id='UgxTop',author_id='viewer',text='YouTube question',parent_id=None)]

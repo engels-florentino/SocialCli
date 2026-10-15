@@ -1,6 +1,6 @@
-# SocialCli for AI agents — Candidate 0.3.0rc5
+# SocialCli for AI agents — Candidate 0.3.0rc6
 
-Status: public SaaS pilot, Candidate 0.3.0rc5. Use the exact candidate below;
+Candidate 0.3.0rc6 instructions. Require published metadata before installing;
 do not replace an existing 0.2.6 installation or migrate its credentials silently.
 Stripe remains in test mode. Google is in testing and permits configured test users.
 Real-agent acceptance is performed by the owner; do not claim it from installation.
@@ -13,16 +13,16 @@ availability depends on account eligibility; Google production is still pending.
 ## Install the reviewed candidate
 
 Use the official TestPyPI release metadata:
-https://test.pypi.org/pypi/socialcli/0.3.0rc5/json
+https://test.pypi.org/pypi/socialcli/0.3.0rc6/json
 
-1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc5`. If this
+1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc6`. If this
    release is unavailable, stop and report it; do not install a similarly named package.
-2. Select exactly `socialcli-0.3.0rc5-py3-none-any.whl` from `urls`. Download its
+2. Select exactly `socialcli-0.3.0rc6-py3-none-any.whl` from `urls`. Download its
    HTTPS `url` and verify the file against that entry's `digests.sha256`.
 3. Install that verified local wheel into an isolated environment. Resolve
    dependencies from normal PyPI, not TestPyPI. For example:
 
-       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc5-py3-none-any.whl[headless-credentials]'
+       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc6-py3-none-any.whl[headless-credentials]'
        socialcli --version
        socialcli agent-guide
 
@@ -31,7 +31,7 @@ https://test.pypi.org/pypi/socialcli/0.3.0rc5/json
    If an existing SocialCli tool is installed, use a separate virtual environment
    for this pilot and its absolute executable; do not upgrade it automatically.
 
-Verify the installed version is exactly 0.3.0rc5 before continuing. The stable
+Verify the installed version is exactly 0.3.0rc6 before continuing. The stable
 `uv tool install socialcli` command is not the installation path for this pilot.
 
 For headless agents, configure encrypted-file storage with an external0600 key in
@@ -65,6 +65,18 @@ The user signs in by email and explicitly approves this installation. Do not ask
 for their OTP, password, session cookie or provider token in chat.
 
     socialcli connect youtube --brand MyBrand --management --analytics --no-browser
+
+Use the same browser handoff for TikTok:
+
+    socialcli connect tiktok --brand MyBrand --no-browser
+
+Facebook and Instagram also use `connect PLATFORM --no-browser`; add the
+documented management/analytics options only when needed and owner-authorized.
+Never ask SaaS users for a developer `client_key`, `client_secret` or localhost
+OAuth setup. After account login, `auth PLATFORM` also routes to the SaaS
+connection flow. Without a signed-in installation it fails with login guidance.
+Legacy developer-owned app prompts require explicit `auth --independent` in an
+interactive terminal. Do not use that mode for SaaS users.
 
 The provider step has its own 10-minute window. The user grants access and chooses
 the exact account in their browser; the SaaS flow does not require guessing an
@@ -430,9 +442,16 @@ For one supervised workflow across saved YouTube/Facebook/Instagram comments:
     socialcli inbox-review --brand MyBrand --json
     socialcli inbox-draft --file inbox-replies.yml --brand MyBrand --dry-run --timeout 120 --json
 
-`inbox-review` is offline: it joins saved comments to the actual reply journals.
-`observed`, `draft`, `blocked`, `uncertain` and `replied` describe local evidence.
-`replied` means a previously verified reply; it does not recheck present visibility.
+`inbox` reads owner replies from the platform and saves account/media/parent-bound
+evidence, including after reinstalling or attaching an existing connection.
+`inbox-review` is offline: it joins those observations to the actual reply journals.
+`reply_state` is `observed`, `draft`, `blocked`, `uncertain` or `replied`.
+`replied` can come from a verified local write or an observed platform reply by
+the connected account. It does not recheck present visibility. Local uncertain
+writes remain uncertain even if other owner replies are found.
+`platform_reply_state` distinguishes `owner_reply_found`, `no_owner_reply_found`
+and `unknown`. Unknown means incomplete or unverifiable evidence, never proof
+that a comment is unanswered. A partial later scan retains positive evidence.
 Former-account observations and proposals are excluded with explicit counts;
 a foreign-brand journal still blocks review. An empty saved view never proves there
 are no comments. Refresh with `inbox` first,
@@ -460,13 +479,18 @@ verified top-level `reply_parent_id` as described under Resumable batches and
 reply context; the preview shows the actual target without inventing deeper nesting.
 
 Drafting checks every local selection before provider reads, rechecks author/text
-against the provider, and creates existing immutable child proposals plus one
+and owner replies against the provider, and creates immutable child proposals plus one
 community batch. It does not send replies. The complete batch preview is on stderr;
 JSON stdout includes `batch.id`, `batch.fingerprint` and `prepared` child references.
 If a later preparation fails, `status: partial`, `batch: null` and `prepared` retain
 finished local drafts. Review them; no batch was approved or applied. Do not claim
 that the unprepared comments were handled. An existing uncertain or verified reply
 blocks a fresh unified draft. Resolve it before considering another response.
+Incomplete owner-reply coverage also blocks preparation. Follow-ups in an already
+answered thread require separate, deliberate review through the lower-level
+proposal commands; never bypass the guard automatically. Two independent agents
+can still race after preparation: this is read-backed prevention, not a provider
+transaction or a cross-installation lock.
 
 Show the full preview and obtain explicit approval of that exact fingerprint:
 

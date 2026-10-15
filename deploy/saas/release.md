@@ -1,3 +1,12 @@
+# Next candidate: 0.3.0rc6
+
+Reply evidence after reinstall, SaaS auth routing (including TikTok), actionable
+credential configuration errors and provider-specific connection pages are under
+release verification. The public service remains rc5 until the protected rc6
+publication and rollout finish. See [rc6 audit](audit-rc6-2026-10-15.md).
+
+## Previous release checkpoint
+
 # Current public candidate: 0.3.0rc5
 
 This release addresses the October 15 audit: deployment consistency, schema9

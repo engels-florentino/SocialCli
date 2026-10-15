@@ -61,6 +61,7 @@ class InboxComment(BaseModel):
     response_id: str | None = None
     last_error: str | None = None
     journal: list[dict] = Field(default_factory=list)
+    reply_evidence: dict | None = None
 
 
 class InboxCursor(BaseModel):
@@ -301,6 +302,10 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             'error': ((listing.get('error') + '; ') if listing.get('error') else '') +
                      'Some Meta comments lack creation time; interval membership unknown; observations retained'}
 
+    from socialctl.management.reply_evidence import meta_reply_evidence, retain_positive, reply_evidence
+    evidence = meta_reply_evidence(client, media_id, parent_id, listing,
+        from_start=resume_cursor is None or cursor_recovered) if parent_id else None
+
     added = updated = unchanged = skipped_own = skipped_before_since = unknown_author = 0
     with store.lock():
         data = store.load()
@@ -321,6 +326,9 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
                 name = author.get('name') or author.get('username')
                 previous.author_name = name if isinstance(name, str) else None
                 previous.last_observed_at = now
+                if parent_id is None:
+                    previous.reply_evidence = retain_positive(previous.reply_evidence,
+                        reply_evidence(client.platform.value, client.account_id, media_id, ident))
             if author_id == client.account_id:
                 skipped_own += 1
                 continue
@@ -361,6 +369,10 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             data.comments.append(record)
             existing[key] = record
             added += 1
+        if evidence:
+            parent_record = existing.get((client.platform.value, client.account_id, parent_id))
+            if parent_record and parent_record.media_id == media_id and parent_record.parent_id is None:
+                parent_record.reply_evidence = retain_positive(parent_record.reply_evidence, evidence)
         cursor = _cursor(data, client, media_id, parent_id)
         all_times = [row.created_time for row in data.comments
             if (row.platform, row.account_id, row.media_id, row.parent_id) ==
@@ -378,7 +390,7 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             data.cursors.append(new_cursor)
         store.save(data)
     return {"platform": client.platform.value, "account_id": client.account_id,
-        "media_id": media_id, "observed_at": now, "since_used": effective_since, "next_since": next_since,
+        "media_id": media_id, "reply_parent_id": parent_id, "observed_at": now, "since_used": effective_since, "next_since": next_since,
         "provider_cursor": listing.get("next_cursor"), "complete": listing["complete"],
         "cursor_recovered": cursor_recovered, "interrupted":listing.get("interrupted",False), "parent_ids": list(remote), "error": listing.get("error"),
         **({"error_detail": listing["error_detail"]} if "error_detail" in listing else {}),
@@ -401,9 +413,13 @@ def prepare_inbox_draft(client: MetaCommentsClient, comment_store: CommentStore,
         record = _record(data, client, media_id, comment_id)
         if record.author_id == record.account_id or (not record.author_id and client.platform.value != 'facebook'):
             raise CommentError('target must have a verified external author')
+        if record.reply_evidence and record.reply_evidence.get('state') == 'owner_reply_found':
+            raise CommentError('Verified owner reply exists; inspect before preparing an additional reply')
         key = response_key(client.account_id, comment_id, text)
         if record.status in {"aprobado", "respondido", "incierto"}:
             raise CommentError("comment already has an approved or uncertain reply; no additional POST created")
+        from socialctl.management.reply_evidence import check_reply_coverage
+        check_reply_coverage(client, record.model_dump())
         if record.idempotency_key == key and record.change_id:
             prior = comment_store.load(record.change_id)
             if prior.before.get('reply_context') != reply_context:

@@ -1,6 +1,6 @@
 # Connect your accounts with SocialCli
 
-The current hosted SaaS runs at **https://pilot.socialcli.app**. The public website is **https://socialcli.app**. SocialCli 0.3.0rc5 is the current published TestPyPI candidate. New connections through the former social.florentino.pro service are closed; do not point a new installation at that legacy origin.
+The current hosted SaaS runs at **https://pilot.socialcli.app**. The public website is **https://socialcli.app**. SocialCli 0.3.0rc6 is the next TestPyPI candidate; publication is pending verification. New connections through the former social.florentino.pro service are closed; do not point a new installation at that legacy origin.
 
 ## Sign in before connecting
 
@@ -42,6 +42,8 @@ socialcli account status --brand MyBrand --json
 ```
 
 Google remains in Testing, Meta in development and TikTok in sandbox for eligible test accounts. TikTok draft delivery requires the user to complete publication in TikTok. Installed code, a configured connector or a working connection does not establish provider production approval or every permission.
+
+In rc6, `auth PLATFORM` also routes signed-in SaaS installations through this same browser-owned connection flow. SaaS customers never supply a TikTok developer client key or secret. Without a signed-in installation, the command exits with setup guidance instead of waiting for credentials. Independent developer-app authentication requires explicit `--independent` and an interactive terminal.
 
 ## Manage your account
 

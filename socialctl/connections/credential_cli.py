@@ -64,6 +64,16 @@ def fail(exc):
     raise typer.Exit(1)
 
 
+def require_backend_options(backend, store_file, key_file):
+    """Report missing CLI inputs before opening any credential backend."""
+    if backend == 'encrypted-file':
+        missing = [flag for flag, value in (('--store-file', store_file), ('--key-file', key_file))
+                   if value is None]
+        if missing:
+            raise typer.BadParameter('Required for encrypted-file storage. Provide both --store-file and --key-file.',
+                                     param_hint=', '.join(missing))
+
+
 @credentials_app.command('status')
 def status(brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root')):
     try:
@@ -92,7 +102,8 @@ def stable_credentials(brand):
 
 
 @credentials_app.command('configure')
-def configure(backend:str=typer.Option(...,'--backend'),store_file:Path|None=typer.Option(None,'--store-file'),key_file:Path|None=typer.Option(None,'--key-file',help='External Fernet key file: 32 bytes in URL-safe base64. Create it with credentials generate-key.'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),yes:bool=typer.Option(False,'--yes')):
+def configure(backend:str=typer.Option(...,'--backend'),store_file:Path|None=typer.Option(None,'--store-file',help='Required for encrypted-file: external encrypted credential store path.'),key_file:Path|None=typer.Option(None,'--key-file',help='Required for encrypted-file: external Fernet key (32 bytes in URL-safe base64). Create it with credentials generate-key.'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),yes:bool=typer.Option(False,'--yes')):
+    require_backend_options(backend, store_file, key_file)
     try:
         from socialctl.connections.cli import acquire_brand_lock
         import os
@@ -113,6 +124,7 @@ def configure(backend:str=typer.Option(...,'--backend'),store_file:Path|None=typ
 
 @credentials_app.command('migrate')
 def migrate(to:str=typer.Option(...,'--to'),store_file:Path|None=typer.Option(None,'--store-file'),key_file:Path|None=typer.Option(None,'--key-file',help='External Fernet key file: 32 bytes in URL-safe base64. Create it with credentials generate-key.'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),yes:bool=typer.Option(False,'--yes')):
+    require_backend_options(to, store_file, key_file)
     try:
         from socialctl.connections.cli import acquire_brand_lock
         import os

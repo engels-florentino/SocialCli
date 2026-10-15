@@ -2,7 +2,7 @@
 
 ## Current SaaS distribution — October 14, 2026
 
-SocialCli 0.3.0rc5 is published on TestPyPI and deployed at
+SocialCli 0.3.0rc6 targets TestPyPI and the hosted service at
 https://pilot.socialcli.app. The SaaS callback is
 https://pilot.socialcli.app/oauth/tiktok/callback. Account selection and assistant
 approval occur in the user browser. Capabilities use OS keyring or explicit

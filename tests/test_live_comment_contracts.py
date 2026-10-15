@@ -113,6 +113,7 @@ def test_unknown_becomes_own_without_stale_inbox_or_reply_target(tmp_path,monkey
     from socialctl.models import Platform
     cm,brand,graph,client,comments=meta(tmp_path)
     hidden=remote_row(graph,'801','A comment',created='2026-10-10T12:00:00Z');hidden.pop('from')
+    graph.comments['801'] = hidden
     graph.pages=lambda r:{'data':[hidden] if r.url.path.endswith('/789/comments') else []}
     monkeypatch.setattr(mod,'read_client',lambda *a,**k:httpx.Client(transport=httpx.MockTransport(graph)))
     monkeypatch.setattr(MetaClient,'content_list',lambda *a,**k:{'data':[{'id':'789'}],'complete':True})

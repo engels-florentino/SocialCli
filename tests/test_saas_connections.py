@@ -197,3 +197,59 @@ def test_connection_return_paths_reject_external_or_malformed_targets():
         assert safe_next(path) == path
     for path in ['//evil.example/connect/'+'a'*24, '/connect/'+'a'*24+'?next=https://evil.example', '/connect/../account/', '/connect/short']:
         assert safe_next(path) == '/account/'
+
+
+def test_tiktok_web_login_reaches_browser_selection_without_client_credentials(tmp_path):
+    """TikTok shares the owner/browser flow; its app secret stays server-side."""
+    from socialctl.connection_service.settings import AppCredentials
+
+    def tiktok_provider(request):
+        assert request.url.host == 'open.tiktokapis.com'
+        if request.url.path == '/v2/oauth/token/':
+            body = parse_qs(request.content.decode())
+            assert body['client_key'] == ['fictional-tiktok-app']
+            assert body['redirect_uri'] == ['https://social.example/oauth/tiktok/callback']
+            assert body['grant_type'] == ['authorization_code']
+            assert 'client_id' not in body and 'code_verifier' not in body
+            return httpx.Response(200, json={
+                'access_token': 'fictional-tiktok-access', 'refresh_token': 'fictional-tiktok-refresh',
+                'expires_in': 86400, 'open_id': 'fictional-creator',
+                'scope': 'user.info.basic,video.upload,user.info.stats,video.list'})
+        assert request.url.path == '/v2/user/info/'
+        return httpx.Response(200, json={'data': {'user': {
+            'open_id': 'fictional-creator', 'display_name': 'Fictional creator'}}, 'error': {'code': 'ok'}})
+
+    client, _, _ = service(tmp_path, provider=tiktok_provider)
+    client.app.state.saas_connections.providers.settings.providers['tiktok'] = AppCredentials(
+        'fictional-tiktok-app', 'fictional-tiktok-secret')
+    login(client)
+    cap = new_installation(client)
+    secret = secrets.token_urlsafe(32)
+    proof = {'Authorization': 'Bearer ' + secret}
+    response = client.post('/api/saas/v1/installations/' + cap['installation_id'] + '/authorizations',
+        headers={'Authorization': 'Bearer ' + cap['installation_secret']}, json={
+            'platform': 'tiktok', 'brand': 'MyBrand', 'poll_challenge': hashlib.sha256(secret.encode()).hexdigest()})
+    assert response.status_code == 201
+    value = response.json()
+    page = client.get(value['browser_url'])
+    assert 'Connect to TikTok' in page.text
+    assert 'https://www.tiktok.com' in page.headers['content-security-policy']
+    redirect = begin_browser(client, value['browser_url'])
+    assert redirect.status_code == 303
+    url = urlsplit(redirect.headers['location'])
+    assert url.scheme == 'https' and url.netloc == 'www.tiktok.com' and url.path == '/v2/auth/authorize/'
+    params = parse_qs(url.query)
+    assert params['client_key'] == ['fictional-tiktok-app']
+    assert params['redirect_uri'] == ['https://social.example/oauth/tiktok/callback']
+    assert 'client_secret' not in params and 'code_challenge' not in params
+    callback = client.get('/oauth/tiktok/callback', params={'state': params['state'][0], 'code': 'fictional-code'})
+    assert callback.status_code == 200 and 'Fictional creator' in callback.text
+    assert 'fictional-tiktok-secret' not in callback.text
+    form = fields(callback); form['account_id'] = 'fictional-creator'
+    confirmed = client.post('/account/connect/' + value['authorization_id'], data=form,
+                            headers={'Origin': 'https://social.example'})
+    assert confirmed.status_code == 200
+    result = selected(client, value, proof)
+    assert result['account'] == {'id': 'fictional-creator', 'name': 'Fictional creator'}
+    assert activate(client, result).status_code == 200
+    assert token(client, result).json()['access_token'] == 'fictional-tiktok-access'

@@ -11,11 +11,14 @@ from cryptography.fernet import Fernet, MultiFernet
 
 ASSETS = '/connect/assets'
 
+PROVIDER_LOGOS = {'youtube': 'youtube.svg', 'facebook': 'facebook.webp',
+                  'instagram': 'instagram.svg', 'tiktok': 'tiktok.png'}
+
 PROVIDERS = {
-    'youtube': ('YouTube', 'Google', 'YT', 'Choose your channel and review access with Google.'),
-    'facebook': ('Facebook', 'Facebook', 'f', 'Choose the Page you want to connect with SocialCli.'),
-    'instagram': ('Instagram', 'Facebook', 'IG', 'Connect your professional account through Facebook Login.'),
-    'tiktok': ('TikTok', 'TikTok', 'tk', 'Sign in to TikTok and choose the access you want to share.'),
+    'youtube': ('YouTube', 'Google', 'Choose your channel and review access with Google.'),
+    'facebook': ('Facebook', 'Facebook', 'Choose the Page you want to connect with SocialCli.'),
+    'instagram': ('Instagram', 'Facebook', 'Connect your professional account through Facebook Login.'),
+    'tiktok': ('TikTok', 'TikTok', 'Sign in to TikTok and choose the access you want to share.'),
 }
 
 
@@ -54,14 +57,14 @@ def _page(title: str, content: str) -> str:
 def landing_page(authorization_id: str, form_token: str, *, platform='youtube', browser_selection=False) -> str:
     action = escape('/connect/' + authorization_id, quote=True)
     token = escape(form_token, quote=True)
-    name, login, mark, description = PROVIDERS[platform]
+    name, login, description = PROVIDERS[platform]
     confirmation = ('After signing in, choose and confirm your account in this browser.'
                     if browser_selection else 'Return there to choose and confirm your account.')
     content = f'''
 <div class="connection-symbols" aria-hidden="true"><img src="{ASSETS}/socialcli-logo.png" alt="" width="64" height="64">
-<span class="connection-line"></span><span class="provider-mark provider-{platform}">{mark}</span></div>
+<span class="connection-line"></span><span class="provider-mark provider-{platform}{" provider-app-icon" if platform != "youtube" else ""}"><img class="provider-logo" src="{ASSETS}/{PROVIDER_LOGOS[platform]}" alt="" width="32" height="32"></span></div>
 <p class="eyebrow">LET'S GET CONNECTED</p>
-<h1 id="page-title">Connect your<br>{name} account</h1>
+<h1 id="page-title">Connect to {name}</h1>
 <p class="description">{description}</p>
 <ol class="steps" aria-label="Connection steps"><li class="current"><span>1</span>Sign in</li><li><span>2</span>Review access</li><li><span>3</span>Confirm</li></ol>
 <form method="post" action="{action}">
@@ -72,7 +75,7 @@ def landing_page(authorization_id: str, form_token: str, *, platform='youtube', 
 <div class="detail">{_icon('terminal')}<div><h2>Keep SocialCli open</h2><p>{confirmation}</p></div></div></div>
 <p class="quiet-notice">Connecting does not publish content.</p>
 <p class="expiry-note">This link expires 10 minutes after it was created.</p>'''
-    return _page('Connect ' + name, content)
+    return _page('Connect to ' + name, content)
 
 
 def result_page(message: str, *, success=False, cancelled=False) -> str:

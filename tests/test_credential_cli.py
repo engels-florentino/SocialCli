@@ -26,6 +26,25 @@ def test_configure_status_and_selected_backend(tmp_path):
     assert keychain.get(brand,Platform.YOUTUBE,meta) is None
 
 
+@pytest.mark.parametrize('command,backend_flag', [('configure','--backend'), ('migrate','--to')])
+@pytest.mark.parametrize('missing', ['--store-file', '--key-file'])
+def test_encrypted_backend_names_missing_parameter_before_touching_storage(tmp_path, command, backend_flag, missing):
+    brand,store,_=setup_store(tmp_path)
+    original_key=store.key_path.read_bytes()
+    args=['credentials',command,backend_flag,'encrypted-file','--brand',brand.nombre,
+          '--root',str(brand.raiz.parent),'--yes']
+    supplied={'--store-file':store.path,'--key-file':store.key_path}
+    for flag,path in supplied.items():
+        if flag != missing:args.extend([flag,str(path)])
+    result=runner.invoke(app,args)
+    assert result.exit_code==2
+    assert missing in result.output and 'required' in result.output.lower()
+    assert 'Secure credential operation failed' not in result.output
+    assert original_key.decode() not in result.output
+    assert store.key_path.read_bytes()==original_key
+    assert not (brand.dir_secretos/'credential-store.json').exists()
+
+
 def test_rotation_all_records_and_failed_configuration_preserves_old(tmp_path,monkeypatch):
     from cryptography.fernet import Fernet
     from socialctl.connections import keychain

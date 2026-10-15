@@ -337,7 +337,7 @@ explicitly; OS keyring remains the default and no silent fallback is provided.
 
 ## SaaS candidate installation
 
-For the published 0.3.0rc5 TestPyPI candidate, protected persistent storage and
+For the 0.3.0rc6 TestPyPI candidate (require published metadata before installing), protected persistent storage and
 browser-owned SocialCli sign-in, use the [compact bootstrap guide](agents.md).
 Create the brand, configure credentials, run account login against
 https://pilot.socialcli.app, then connect. Stable production PyPI publication and
@@ -455,3 +455,18 @@ replies:
 ```
 
 The source and mapped parent must both be observed for the same account/media/thread. The parent must be top-level and satisfy the existing eligibility rules. Source membership/text/author are read again during preparation and immediately before the write. The full preview binds `before.reply_context` and the actual write parent. This is supported through the existing YouTube, Facebook and Instagram reply edges; it does not invent a deeper provider nesting relationship or imply a mention. Multiple selections mapping to the same parent are rejected. Existing replied/uncertain parent protections remain in effect. Inbox review links the resulting journal to both the parent and selected source observation.
+
+
+## Reply state after reconnecting or reinstalling
+
+Run a fresh inbox read before preparing replies. Supported YouTube, Facebook and
+Instagram readers reconcile verified replies by the connected account from the
+platform. An existing reply marks the observed parent as replied even without a
+local journal. Unknown or partial coverage never establishes that no reply exists.
+Both unified and Meta inbox draft preparation refresh the selected reply edge and
+block existing replies or unverified coverage. Local uncertain writes still require
+reconciliation. This reduces duplicates; it is not a cross-agent lock or an atomic
+platform transaction. See [reply evidence and limits](inbox-reply-evidence.md).
+
+`credentials configure --backend encrypted-file` requires both `--store-file` and
+`--key-file`. Missing arguments now name the required flags before opening storage.

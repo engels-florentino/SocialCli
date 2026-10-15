@@ -903,11 +903,19 @@ def test_auth_red_desconocida_da_error_util(tmp_path):
     assert "Traceback" not in resultado.output
 
 
+@pytest.fixture
+def independent_terminal(monkeypatch):
+    # These legacy OAuth tests explicitly simulate a developer at a terminal.
+    from socialctl.connections import cli as connection_cli
+    monkeypatch.setattr(connection_cli, 'interactive_terminal', lambda: True)
+
+
 # --- auth youtube / tiktok: flujo de redireccion (navegador y servidor local
 # monkeypatcheados; el resto -URL, PKCE, state, canje- corre de verdad) ---
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_youtube_guarda_las_credenciales_con_pkce_y_state_correctos(tmp_path, monkeypatch):
     crear_brand(tmp_path, "Histopast")
     capturado = {}
@@ -931,7 +939,7 @@ def test_auth_youtube_guarda_las_credenciales_con_pkce_y_state_correctos(tmp_pat
     )
 
     resultado = runner.invoke(app, [
-        "auth", "youtube", "--brand", "Histopast", "--root", str(tmp_path),
+        "auth", "youtube", "--independent", "--brand", "Histopast", "--root", str(tmp_path),
     ], input="cid\ncsecret\n")
 
     assert resultado.exit_code == 0, resultado.stdout
@@ -959,6 +967,7 @@ def test_auth_youtube_guarda_las_credenciales_con_pkce_y_state_correctos(tmp_pat
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_youtube_state_no_coincidente_aborta_sin_guardar_nada(tmp_path, monkeypatch):
     """Hallazgo de revisión (sexta vez que aparece este patrón en el
     proyecto): dos de las aserciones originales de este test -`exit_code ==
@@ -983,7 +992,7 @@ def test_auth_youtube_state_no_coincidente_aborta_sin_guardar_nada(tmp_path, mon
     ruta_token = respx.post("https://oauth2.googleapis.com/token")
 
     resultado = runner.invoke(app, [
-        "auth", "youtube", "--brand", "Histopast", "--root", str(tmp_path),
+        "auth", "youtube", "--independent", "--brand", "Histopast", "--root", str(tmp_path),
     ], input="cid\ncsecret\n")
 
     assert resultado.exit_code == 1
@@ -997,6 +1006,7 @@ def test_auth_youtube_state_no_coincidente_aborta_sin_guardar_nada(tmp_path, mon
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_tiktok_usa_client_key_y_challenge_hexadecimal(tmp_path, monkeypatch):
     crear_brand(tmp_path, "Histopast")
     capturado = {}
@@ -1016,7 +1026,7 @@ def test_auth_tiktok_usa_client_key_y_challenge_hexadecimal(tmp_path, monkeypatc
     )
 
     resultado = runner.invoke(app, [
-        "auth", "tiktok", "--brand", "Histopast", "--root", str(tmp_path),
+        "auth", "tiktok", "--independent", "--brand", "Histopast", "--root", str(tmp_path),
     ], input="ck\ncsecret\n")
 
     assert resultado.exit_code == 0, resultado.stdout
@@ -1056,13 +1066,14 @@ def _auth_tiktok_con_respuesta(tmp_path, monkeypatch, cuerpo_respuesta: dict):
     )
 
     resultado = runner.invoke(app, [
-        "auth", "tiktok", "--brand", "Histopast", "--root", str(tmp_path),
+        "auth", "tiktok", "--independent", "--brand", "Histopast", "--root", str(tmp_path),
     ], input="ck\ncsecret\n")
 
     return resultado, capturado
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_tiktok_auth_cli_requests_only_inbox_scopes(tmp_path, monkeypatch):
     crear_brand(tmp_path, "Histopast")
 
@@ -1076,6 +1087,7 @@ def test_tiktok_auth_cli_requests_only_inbox_scopes(tmp_path, monkeypatch):
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_tiktok_guarda_el_open_id_automaticamente_en_accounts_yml(tmp_path, monkeypatch):
     crear_brand(tmp_path, "Histopast")
 
@@ -1103,6 +1115,7 @@ def test_auth_tiktok_guarda_el_open_id_automaticamente_en_accounts_yml(tmp_path,
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_tiktok_sin_open_id_en_la_respuesta_avisa_y_no_falla(tmp_path, monkeypatch):
     crear_brand(tmp_path, "Histopast")
 
@@ -1128,6 +1141,7 @@ def test_auth_tiktok_sin_open_id_en_la_respuesta_avisa_y_no_falla(tmp_path, monk
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_tiktok_con_open_id_distinto_avisa_del_cambio(tmp_path, monkeypatch):
     brand = crear_brand(tmp_path, "Histopast")
     brand.guardar_open_id_tiktok("oid-antiguo")
@@ -1157,11 +1171,12 @@ def _marca_con_page_id(tmp_path, page_id: str = "111"):
     return brand
 
 
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_facebook_sin_page_id_da_error_util(tmp_path):
     crear_brand(tmp_path, "Histopast")  # accounts.yml de plantilla: page_id vacio
 
     resultado = runner.invoke(app, [
-        "auth", "facebook", "--brand", "Histopast", "--root", str(tmp_path),
+        "auth", "facebook", "--independent", "--brand", "Histopast", "--root", str(tmp_path),
     ], input="app-id\napp-secret\ntoken-usuario\n")
 
     assert resultado.exit_code == 1
@@ -1169,6 +1184,7 @@ def test_auth_facebook_sin_page_id_da_error_util(tmp_path):
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_facebook_guarda_el_token_de_pagina(tmp_path):
     _marca_con_page_id(tmp_path, "111")
 
@@ -1185,7 +1201,7 @@ def test_auth_facebook_guarda_el_token_de_pagina(tmp_path):
     )
 
     resultado = runner.invoke(app, [
-        "auth", "facebook", "--brand", "Histopast", "--root", str(tmp_path),
+        "auth", "facebook", "--independent", "--brand", "Histopast", "--root", str(tmp_path),
     ], input="app-id\napp-secret\ntoken-usuario-corto\n")
 
     assert resultado.exit_code == 0, resultado.stdout
@@ -1200,6 +1216,7 @@ def test_auth_facebook_guarda_el_token_de_pagina(tmp_path):
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_instagram_reutiliza_el_mismo_flujo_y_guarda_su_propio_secreto(tmp_path):
     _marca_con_page_id(tmp_path, "111")
 
@@ -1213,7 +1230,7 @@ def test_auth_instagram_reutiliza_el_mismo_flujo_y_guarda_su_propio_secreto(tmp_
     )
 
     resultado = runner.invoke(app, [
-        "auth", "instagram", "--brand", "Histopast", "--root", str(tmp_path),
+        "auth", "instagram", "--independent", "--brand", "Histopast", "--root", str(tmp_path),
     ], input="app-id\napp-secret\ntoken-usuario-corto\n")
 
     assert resultado.exit_code == 0, resultado.stdout
@@ -1224,6 +1241,7 @@ def test_auth_instagram_reutiliza_el_mismo_flujo_y_guarda_su_propio_secreto(tmp_
 
 
 @respx.mock
+@pytest.mark.usefixtures("independent_terminal")
 def test_auth_facebook_pagina_no_encontrada_lista_las_disponibles(tmp_path):
     _marca_con_page_id(tmp_path, "999-no-existe")
 
@@ -1237,7 +1255,7 @@ def test_auth_facebook_pagina_no_encontrada_lista_las_disponibles(tmp_path):
     )
 
     resultado = runner.invoke(app, [
-        "auth", "facebook", "--brand", "Histopast", "--root", str(tmp_path),
+        "auth", "facebook", "--independent", "--brand", "Histopast", "--root", str(tmp_path),
     ], input="app-id\napp-secret\ntoken-usuario-corto\n")
 
     assert resultado.exit_code == 1

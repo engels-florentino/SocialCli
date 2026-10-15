@@ -2,17 +2,17 @@
 
 Copy this line into Muse, Grok, Dots or another assistant that can run terminal commands:
 
-> Install SocialCli: https://socialcli.app/agents?v=0.3.0rc5
+> Install SocialCli: https://socialcli.app/agents
 
-The assistant follows a compact bootstrap, verifies the published 0.3.0rc5 wheel from TestPyPI by SHA256 and installs it in an isolated environment. Dependencies come from normal PyPI. The pilot is not a stable production PyPI release; do not substitute a similarly named package or overwrite an existing installation silently.
+The assistant follows a compact bootstrap, verifies the published 0.3.0rc6 wheel from TestPyPI by SHA256 and installs it in an isolated environment. Dependencies come from normal PyPI. The pilot is not a stable production PyPI release; do not substitute a similarly named package or overwrite an existing installation silently.
 
 ## If your assistant still reports rc1
 
 The server and the CLI installed in an assistant's environment update separately.
-Ask the assistant to fetch https://socialcli.app/agents?v=0.3.0rc5 again using its
+Ask the assistant to fetch https://socialcli.app/agents again using its
 terminal HTTP client, rather than reuse a previous conversation or search excerpt.
 It must follow the verified wheel installation instructions and run the selected
-executable with `--version`; the result must be exactly `0.3.0rc5`. If PATH still
+executable with `--version`; the result must be exactly `0.3.0rc6`. If PATH still
 selects an older installation, use the new environment's absolute executable for
 all commands. Never infer the installed version from the website.
 
@@ -39,7 +39,7 @@ Google Testing, Meta development and TikTok sandbox eligibility still apply. Str
 
 ## Commands and development
 
-Run socialcli --version to verify 0.3.0rc5. The packaged socialcli agent-guide provides offline setup, publish, schedule, inbox and error topics. The internal Python module is socialctl; socialctl remains a command alias.
+Run socialcli --version to verify 0.3.0rc6. The packaged socialcli agent-guide provides offline setup, publish, schedule, inbox and error topics. The internal Python module is socialctl; socialctl remains a command alias.
 
 For source development only:
 

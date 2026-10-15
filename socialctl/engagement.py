@@ -7,6 +7,7 @@ from socialctl.management.community_batches import (CommunityBatchStore, child_s
     child_details, prepare_community_batch)
 from socialctl.models import Platform
 from socialctl.read_budget import read_client
+from socialctl.management.reply_evidence import bound_evidence, check_reply_coverage, ReplyCoverageError
 
 ACCOUNT_FIELDS={'youtube':'channel_id','facebook':'page_id','instagram':'ig_user_id'}
 UNCERTAIN={'applying','uncertain','partial','accepted_unverifiable','applied_unverified'}
@@ -25,7 +26,7 @@ def draft_failure(exc, row, index, stage):
         **{key: row[key] for key in ('platform', 'account_id', 'comment_id', 'media_id')
            if isinstance(row, dict) and isinstance(row.get(key), str)},
         'reason': getattr(exc, 'reason', 'target_validation_failed' if stage == 'selection' else 'draft_preparation_failed')}
-    if isinstance(exc, DraftSelectionError):
+    if isinstance(exc, (DraftSelectionError, ReplyCoverageError)):
         exc.draft_failure['message'] = str(exc)
     return exc
 
@@ -76,14 +77,16 @@ def review_inbox(brand):
         proposals=links.get(key,[])
         if any(p['media_id']!=row['media_id'] for p in proposals):raise ChangeError('reply journal target differs from observed media')
         states={p['status'] for p in proposals}
-        state=('uncertain' if states & UNCERTAIN else 'replied' if 'verified' in states
+        evidence=bound_evidence(row)
+        platform_replied=bool(evidence and evidence['state']=='owner_reply_found')
+        state=('uncertain' if states & UNCERTAIN else 'replied' if 'verified' in states or platform_replied
                else 'draft' if 'proposed' in states else 'blocked' if states else 'observed')
-        items.append({**row,'reply_state':state,'proposals':proposals})
+        items.append({**row,'reply_state':state,'platform_reply_state':evidence['state'] if evidence else 'unknown','proposals':proposals})
     return {'version':1,'brand':brand.nombre,'status':'ok','items':items,
         'coverage':{'source':'saved_observations','live_verified':False,'complete':False,
             'excluded_accounts':excluded,'excluded_proposals':excluded_proposals,'watermarks':data['watermarks'],
             'limitations':['This is saved evidence, not a complete live inbox.',
-                'Replied means a stored verified result; present remote visibility is not rechecked.',
+                'Replied means a stored verified write or scoped owner reply observed on the platform; present remote visibility is not rechecked. Unknown platform reply state never proves absence.',
                 'TikTok comments are unsupported. Replying in an existing reply thread requires an explicit reply_parent_id mapping to its observed top-level comment; deeper nesting is not promised.']}}
 
 
@@ -165,6 +168,7 @@ def prepare_replies(brand,raw,*,budget,prepared,progress=None):
                         snippet=parent['snippet']
                         same_parent(row,{'id':parent['id'],'author_id':(snippet.get('authorChannelId') or {}).get('value'),
                             'text':snippet.get('textOriginal',snippet.get('textDisplay'))})
+                        check_reply_coverage(client, row)
                         child=prepare_community(client,child_store(brand,'youtube-community'),
                             dict(action='reply',video_id=row['media_id'],thread_id=row['thread_id'],parent_id=row['comment_id'],text=text),
                             reply_context=row.get('reply_context'))

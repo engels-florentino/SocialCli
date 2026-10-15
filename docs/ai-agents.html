@@ -278,7 +278,7 @@ unsupported action. For headless servers, select the documented
 <a href="connections.html#headless-encrypted-capability-storage">encrypted capability store</a>
 explicitly; OS keyring remains the default and no silent fallback is provided.</p>
 <h2 id="saas-candidate-installation">SaaS candidate installation</h2>
-<p>For the published 0.3.0rc5 TestPyPI candidate, protected persistent storage and
+<p>For the 0.3.0rc6 TestPyPI candidate (require published metadata before installing), protected persistent storage and
 browser-owned SocialCli sign-in, use the <a href="agents.md">compact bootstrap guide</a>.
 Create the brand, configure credentials, run account login against
 https://pilot.socialcli.app, then connect. Stable production PyPI publication and
@@ -367,4 +367,4 @@ replies:
     text: Exact supplied reply text
 </code></pre>
 <p>The source and mapped parent must both be observed for the same account/media/thread. The parent must be top-level and satisfy the existing eligibility rules. Source membership/text/author are read again during preparation and immediately before the write. The full preview binds <code>before.reply_context</code> and the actual write parent. This is supported through the existing YouTube, Facebook and Instagram reply edges; it does not invent a deeper provider nesting relationship or imply a mention. Multiple selections mapping to the same parent are rejected. Existing replied/uncertain parent protections remain in effect. Inbox review links the resulting journal to both the parent and selected source observation.</p>
-</main><footer><p>SocialCli · Operated by Florentino.pro · MIT-licensed software</p><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli/issues">Support</a></footer></body></html>
+<h2>Reply state after reconnecting or reinstalling</h2><p>Run a fresh inbox read before preparing replies. Supported YouTube, Facebook and Instagram readers recover verified replies by the connected account without a local journal. Partial or unknown coverage does not prove absence. Default draft preparation refreshes reply coverage; uncertain local writes still require reconciliation. This is not a cross-agent lock. See <a href="inbox-reply-evidence.md">reply evidence and limits</a>.</p><p>Encrypted-file credential configuration requires both --store-file and --key-file; missing arguments name the required flags.</p></main><footer><p>SocialCli · Operated by Florentino.pro · MIT-licensed software</p><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli/issues">Support</a></footer></body></html>

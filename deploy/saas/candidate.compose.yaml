@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: socialcli-saas-candidate:0.3.0rc5
+    image: socialcli-saas-candidate:0.3.0rc6
     container_name: socialcli-saas-candidate
     restart: unless-stopped
     env_file: service.env

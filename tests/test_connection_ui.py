@@ -93,3 +93,37 @@ def test_form_values_are_html_escaped():
     html = landing_page('id" onmouseover="bad','token" autofocus onfocus="bad')
     tags = Elements(html).tags
     assert not any(any(k.startswith('on') or k == 'autofocus' for k in attrs) for _,attrs in tags)
+
+
+@pytest.mark.parametrize('platform,name', [
+    ('youtube', 'YouTube'), ('facebook', 'Facebook'),
+    ('instagram', 'Instagram'), ('tiktok', 'TikTok'),
+])
+def test_connection_names_destination_and_serves_local_platform_logo(tmp_path, platform, name):
+    from socialctl.connection_service.landing import landing_page
+    from xml.etree import ElementTree
+
+    html = landing_page('fictional-authorization', 'fictional-form-token', platform=platform)
+    assert f'<h1 id="page-title">Connect to {name}</h1>' in html
+    assert f'<title>Connect to {name} · SocialCli</title>' in html
+    logos = [attrs for tag, attrs in Elements(html).tags
+             if tag == 'img' and attrs.get('class') == 'provider-logo']
+    assert len(logos) == 1
+    from socialctl.connection_service.landing import PROVIDER_LOGOS
+    filename = PROVIDER_LOGOS[platform]
+    assert logos[0]['src'] == f'/connect/assets/{filename}'
+    client, _ = make_service(tmp_path)
+    response = client.get(logos[0]['src'])
+    assert response.status_code == 200
+    asset = Path(__file__).parents[1] / 'socialctl/connection_service/assets' / filename
+    assert response.content == asset.read_bytes()
+    if not filename.endswith('.svg'):
+        assert response.headers['content-type'].startswith('image/' + filename.rsplit('.', 1)[1])
+        return
+    assert response.headers['content-type'].startswith('image/svg+xml')
+    svg = ElementTree.fromstring(response.content)
+    assert svg.findall('.//{http://www.w3.org/2000/svg}path')
+    assert not any(element.tag.rsplit('}', 1)[-1] in {'text', 'script', 'image', 'foreignObject'}
+                   for element in svg.iter())
+    assert not any('href' in key and not value.startswith('#')
+                   for element in svg.iter() for key, value in element.attrib.items())
