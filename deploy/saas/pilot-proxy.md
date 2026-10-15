@@ -1,6 +1,6 @@
-# Current deployment: 0.3.0rc4
+# Current deployment: 0.3.0rc8
 
-See [the rc4 rollout evidence](rollout-rc4-2026-10-14.md) for the current runtime,
+See [the rc8 rollout evidence](rollout-rc8-2026-10-15.md) for the current runtime,
 TLS, schema, backup and routing state. The checkpoints below are historical and
 do not describe the current deployed version.
 

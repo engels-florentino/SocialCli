@@ -1,6 +1,6 @@
 # Connect your accounts with SocialCli
 
-The current hosted SaaS runs at **https://pilot.socialcli.app**. The public website is **https://socialcli.app**. SocialCli 0.3.0rc8 is the next TestPyPI candidate; publication is pending verification. New connections through the former social.florentino.pro service are closed; do not point a new installation at that legacy origin.
+The current hosted SaaS runs at **https://pilot.socialcli.app**. The public website is **https://socialcli.app**. SocialCli 0.3.0rc8 is published on TestPyPI and deployed to the hosted pilot. New connections through the former social.florentino.pro service are closed; do not point a new installation at that legacy origin.
 
 ## Sign in before connecting
 

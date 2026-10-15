@@ -1,8 +1,8 @@
 # Current rollout status
 
-The public pilot runs rc5, published on TestPyPI with its artifacts verified.
+The public pilot runs rc8, published on TestPyPI with its artifacts verified.
 Schema9, maintenance and public agent guides were checked after deployment.
-See [rc5 rollout](rollout-rc5-2026-10-15.md) and [release.md](release.md).
+See [rc8 rollout](rollout-rc8-2026-10-15.md) and [release.md](release.md).
 
 ## Previous status and historical checkpoints
 

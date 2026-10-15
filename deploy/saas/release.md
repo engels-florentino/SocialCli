@@ -1,10 +1,12 @@
-# Next candidate: 0.3.0rc8
+# Current public candidate: 0.3.0rc8
 
 Includes all rc6/rc7 fixes and network-specific connection UI. rc7 publication was
 blocked by four ANSI-sensitive test assertions in GitHub Actions, corrected to
 compare rendered text while retaining raw-output secret checks. No runtime behavior
 changed in this correction. rc6 and rc7 tags remain immutable and unpublished.
-The public pilot remains rc5 until publication and rollout are confirmed.
+Published on TestPyPI and deployed to the public pilot. Both downloaded artifacts
+match the reviewed hashes; the landing and both /agents endpoints serve rc8.
+See [verified rollout evidence](rollout-rc8-2026-10-15.md).
 
 ## Earlier preparation records
 
