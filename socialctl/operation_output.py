@@ -76,8 +76,8 @@ class OperationOutput:
                 'rejected': 'operation_rejected', 'failed': 'operation_rejected',
                 'conflict': 'operation_rejected', 'bloqueado': 'operation_rejected',
                 'applying': 'operation_uncertain', 'uncertain': 'operation_uncertain',
-                'applied_unverified': 'operation_uncertain', 'partial': 'operation_uncertain',
-                'accepted_unverifiable': 'operation_uncertain', 'incierto': 'operation_uncertain',
+                'applied_unverified': 'operation_accepted_unverified', 'partial': 'operation_uncertain',
+                'accepted_unverifiable': 'operation_accepted_unverified', 'incierto': 'operation_uncertain',
             }.get(result.status, 'operation_failed')
             payload['error_detail'] = error_for_code(code, read_only=False)
         typer.echo(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))

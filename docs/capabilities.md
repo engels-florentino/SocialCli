@@ -94,3 +94,24 @@ Unknown Meta authors are represented by `author_id: null`; coverage counts them 
 person or proving own authorship. Own-comment edit/delete checks remain strict.
 YouTube `comments_disabled` means the video disables comments, not that the
 account needs to reconnect.
+
+## Facebook comment IDs and deletion receipts
+
+Facebook may return a video-scoped comment ID from creation and a different
+post-scoped ID in the owned video's comments edge. Follow-up reads and proposals
+resolve this only through the exact direct response and one matching specific
+official comment permalink, with consistent author, text and target. The complete
+preview shows the observed canonical target; matching numeric suffixes alone is
+never sufficient.
+
+A successful deletion receipt is distinct from independent proof of absence.
+Meta video deletion retains `accepted_unverifiable`; comment deletion retains
+`applied_unverified`. The output diagnostic `operation_accepted_unverified` means
+the provider accepted the request. Preserve the receipt and do not repeat the
+write. A generic missing/inaccessible object response is not definitive deletion
+evidence. Comment apply still exits 1 when the effect cannot be independently
+verified; agents must inspect the status and diagnostic instead of reporting a
+provider rejection or repeatedly reconciling an inherently unverifiable result.
+
+References: [Meta comments](https://developers.facebook.com/docs/graph-api/reference/object/comments/),
+[Meta Comment](https://developers.facebook.com/docs/graph-api/reference/comment/).

@@ -55,6 +55,7 @@ _CATALOG = {
     'request_rejected': ('correct_input', 'Review supported arguments and target before another request.'),
     'operation_rejected': ('inspect', 'Inspect the target, stored state and approval before another operation.'),
     'operation_uncertain': ('reconcile', 'Reconcile the existing operation. Do not replay its write.'),
+    'operation_accepted_unverified': ('inspect', 'The provider accepted the operation. Independent verification is unavailable; this is not a rejection. Preserve the receipt and do not replay the write.'),
     'provider_response_invalid': ('inspect', 'Preserve verified observations and inspect the incomplete provider response.'),
     'storage_failure': ('repair_storage', 'Inspect local storage and preserve saved observations before recovery.'),
     'persistence_failed': ('repair_storage', 'Preserve verified observations and repair local persistence before collecting again.'),

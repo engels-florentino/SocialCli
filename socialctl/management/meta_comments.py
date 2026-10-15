@@ -140,7 +140,7 @@ class MetaCommentsClient:
             raise CommentError("include_moderation must be boolean")
         self.inspect_media(media_id)
         if parent_id:
-            self.find_comment(media_id, parent_id)
+            parent_id = self.find_comment(media_id, parent_id)["id"]
         return self._list(parent_id or media_id,
             "replies" if parent_id and self.platform is Platform.INSTAGRAM else "comments", max_pages,
             include_moderation=include_moderation, after=after)
@@ -205,8 +205,25 @@ class MetaCommentsClient:
 
     def find_comment(self, media_id, comment_id, *, parent_id=None, own=False):
         comment_id = _id(comment_id)
+        if parent_id:
+            parent_id = self.find_comment(media_id, parent_id)["id"]
         result = self.list_comments(media_id, parent_id=parent_id)
         matches = [row for row in result["data"] if row.get("id") == comment_id]
+        if not matches and self.platform is Platform.FACEBOOK:
+            # Graph can return a video-scoped receipt but a post-scoped edge ID.
+            # Bind both through the specific provider permalink, never a suffix.
+            direct = self.inspect_comment(comment_id)
+            url = self._specific_permalink(direct)
+            author = (direct.get('from') or {}).get('id')
+            if (direct.get('id') != comment_id or not isinstance(author, str)
+                    or not author or not isinstance(direct.get('message'), str)
+                    or (direct.get('parent') or {}).get('id') not in {None, parent_id or media_id}
+                    or (direct.get('object') or {}).get('id') not in {None, media_id}):
+                raise CommentError('comment alias identity or target is not verified')
+            matches = [row for row in result['data'] if row.get('permalink_url') == url]
+            if len(matches) != 1 or ((matches[0].get('from') or {}).get('id') != author
+                    or matches[0].get('message') != direct['message']):
+                raise CommentError('comment alias membership is not unambiguous')
         if len(matches) != 1:
             raise CommentError("comment not verified on media; absence or permissions inconclusive")
         row = matches[0]
@@ -222,7 +239,7 @@ class MetaCommentsClient:
         author = row.get("from") or {}
         if own and author.get("id") != self.account_id:
             raise CommentError("comment's own author was not verified by ID")
-        return {"id": comment_id, "text": row[field], "author_id": author.get("id"),
+        return {"id": _id(row.get('id')), "text": row[field], "author_id": author.get("id"),
                 "media_id": media_id, "parent_id": parent_id}
 
     def inspect_comment(self, comment_id: str) -> dict:
@@ -232,9 +249,8 @@ class MetaCommentsClient:
         return self._request('GET', comment_id,
             params={'fields':'id,message,from{id},parent{id},object{id},permalink_url'})
 
-    def _permalink_membership(self, change, row):
-        # A received write ID and its exact direct GET are prerequisites. Never
-        # invent an alias from numeric suffixes or adopt a text-only candidate.
+    @staticmethod
+    def _specific_permalink(row):
         url = row.get('permalink_url')
         if not isinstance(url, str) or len(url) > 2048:
             raise CommentError('comment permalink unavailable')
@@ -249,6 +265,12 @@ class MetaCommentsClient:
             valid = False
         if not valid:
             raise CommentError('comment permalink is not a specific Facebook comment')
+        return url
+
+    def _permalink_membership(self, change, row):
+        # A received write ID and its exact direct GET are prerequisites. Never
+        # invent an alias from numeric suffixes or adopt a text-only candidate.
+        url = self._specific_permalink(row)
         listing = self.list_comments(change.media_id, parent_id=change.parent_id)
         matches = [candidate for candidate in listing['data']
                    if candidate.get('permalink_url') == url]
@@ -422,8 +444,10 @@ def prepare_comment(client, store, *, media_id, text=None, action="add", parent_
     before = {"media": media}
     if parent_id:
         before["parent"] = client.find_comment(media_id, parent_id)
+        parent_id = before["parent"]["id"]
     if comment_id:
         before["comment"] = client.find_comment(media_id, comment_id, parent_id=parent_id, own=True)
+        comment_id = before["comment"]["id"]
     change = CommentChange(id=str(uuid.uuid4()), platform=client.platform.value,
         brand=client.brand.nombre, brand_root=str(client.brand.raiz.resolve()),
         account_id=client.account_id, authenticated_page=media["authenticated_page"],
@@ -484,6 +508,34 @@ def operation_key(change):
     return json.dumps([change.brand_root, change.platform, change.account_id, change.media_id])
 
 
+def _same_verified_operation(client, previous, proposed):
+    if (previous.action, previous.text) != (proposed.action, proposed.text):
+        return False
+    old_parent, new_parent = previous.parent_id, proposed.parent_id
+    if (old_parent is None) != (new_parent is None):
+        return False
+    old_comment, new_comment = previous.comment_id, proposed.comment_id
+    if (old_comment is None) != (new_comment is None):
+        return False
+    if client.platform is Platform.FACEBOOK:
+        # Historical fingerprints and targets remain immutable. Resolve differing
+        # IDs only for comparison; an unreadable history cannot authorize replay.
+        try:
+            if old_parent != new_parent:
+                old_parent = client.find_comment(previous.media_id, old_parent)['id']
+                new_parent = client.find_comment(proposed.media_id, new_parent)['id']
+            if old_parent != new_parent:
+                return False
+            if old_comment != new_comment:
+                old_comment = client.find_comment(previous.media_id, old_comment,
+                    parent_id=old_parent)['id']
+                new_comment = client.find_comment(proposed.media_id, new_comment,
+                    parent_id=new_parent)['id']
+        except CommentError:
+            raise CommentError('previous verified operation cannot be distinguished safely; inspect its receipt before another write') from None
+    return (old_parent, old_comment) == (new_parent, new_comment)
+
+
 def apply_comment(client, store, change_id, approval_digest):
     with ExitStack() as locks:
         locks.enter_context(store.apply_lock(change_id))
@@ -499,7 +551,7 @@ def apply_comment(client, store, change_id, approval_digest):
             if other.id != change.id and operation_key(other) == operation_key(change):
                 if other.status in {'applying','uncertain'}:
                     raise CommentError(f'uncertain outcome pending in {other.id}; another UUID cannot replay it')
-                if other.status == 'verified' and (other.action,other.parent_id,other.comment_id,other.text) == (change.action,change.parent_id,change.comment_id,change.text):
+                if other.status == 'verified' and _same_verified_operation(client, other, change):
                     raise CommentError('identical verified operation already exists; do not duplicate')
         if change.parent_id and client.find_comment(change.media_id, change.parent_id) != change.before["parent"]:
             raise CommentError("parent comment changed since preview")

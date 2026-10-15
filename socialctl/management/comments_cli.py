@@ -42,7 +42,7 @@ def _json(value):
 
 
 def render_comment_preview(change):
-    return ("PREVIEW COMPLETO — comentario independiente\n" + _json(change.model_dump(mode="json")) +
+    return ("COMPLETE PREVIEW — standalone comment\n" + _json(change.model_dump(mode="json")) +
             "\nMedia is not modified. Creation does not prove the link is clickable or the comment is pinned."
             "\nDelete explicitly removes owned comment; an empty read does not prove absence."
             f"\nExact fingerprint for approval: {change.fingerprint}")

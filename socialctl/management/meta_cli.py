@@ -27,9 +27,17 @@ def _json(value):
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
 
 
+def render_result(change):
+    payload = change.model_dump(mode="json")
+    if change.status == "accepted_unverifiable":
+        from socialctl.agent_errors import error_for_code
+        payload["error_detail"] = error_for_code("operation_accepted_unverified", read_only=False)
+    return _json(payload)
+
+
 def render_preview(change):
     return (
-        "PREVIEW COMPLETO (meta-management)\n" + _json(change.model_dump(mode="json")) +
+        "COMPLETE PREVIEW (meta-management)\n" + _json(change.model_dump(mode="json")) +
         "\nExact fingerprint for approval: " + change.fingerprint
     )
 
@@ -66,7 +74,7 @@ def status(
         change = MetaStore(selected.raiz).load(change_id)
     except (ChangeError, OSError) as exc:
         _fail(str(exc))
-    typer.echo(_json(change.model_dump(mode="json")))
+    typer.echo(render_result(change))
 
 
 @meta_app.command("apply")
@@ -91,7 +99,7 @@ def apply(
             result = apply_meta(MetaClient(selected, Platform(change.platform), http), store, change_id, digest)
     except (ChangeError, OSError, MetaError) as exc:
         _fail(str(exc))
-    typer.echo(_json(result.model_dump(mode="json")))
+    typer.echo(render_result(result))
 
 
 @meta_app.command("reconcile")
@@ -109,7 +117,7 @@ def reconcile(
             result = reconcile_meta(MetaClient(selected, Platform(change.platform), http), store, change_id)
     except (ChangeError, OSError, MetaError) as exc:
         _fail(str(exc))
-    typer.echo(_json(result.model_dump(mode="json")))
+    typer.echo(render_result(result))
 
 
 @meta_app.command("webhook-verify")
