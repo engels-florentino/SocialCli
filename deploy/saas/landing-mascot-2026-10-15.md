@@ -22,8 +22,9 @@ publish a new CLI distribution or change provider permissions or billing mode.
 - Pause control and reduced-motion preference stop automatic movement. Reduced
   motion initially uses the poster without downloading the video. The phone
   shows a question, a brief typing indicator and a concise answer, then begins
-  the comments exchange after about eight seconds. It never automatically
-  approves the reply.
+  a scheduling example after about eight seconds. The complete fictional
+  conversation then continues through a reply preview and simulated user
+  approval before looping back to the start.
   Without JavaScript, the poster, example metrics and selectable install text
   remain available. Mobile places installation before the larger phone demo.
 
@@ -89,14 +90,43 @@ CLI release, provider configuration or billing change was needed.
 
 The phone now shows each question first, a three-dot typing bubble after 650 ms,
 and the assistant's answer after 1.25–1.5 seconds of typing. The account summary
-has six seconds of reading time before the comments exchange begins. Short
+has six seconds of reading time before the scheduling exchange begins. Short
 message entrance transitions replace the static 18-second wait. Pause and tab
 visibility preserve the remaining delay; reduced motion shows complete messages
-without the animated sequence. Manual navigation remains available, and sending
-the fictional reply still requires the demo approval button.
+without the animated sequence. Manual navigation remains available. The later looping refinement also shows
+a fictional user approving the reply automatically, as part of the simulation.
 
 Safari verified the question-only start, summary response, automatic progression
 into the reply draft, deliberate simulated approval and replay control. JS syntax,
 UI asset consistency and both UI build tests passed. Three static files were
 published with backup `landing-chat-20261015T191107Z`; all three public downloads
 matched the local SHA256 hashes. Application version remains rc8.
+
+## Scheduling example and continuous loop
+
+The demonstration now cycles through account insights, scheduling an already
+approved YouTube Short for tomorrow at 8:00 AM, a comment reply draft, and a
+simulated user approval with confirmation. Every exchange starts with the user
+message and a typing indicator. After the last response, the conversation returns
+to insights automatically. A full cycle is approximately 29 seconds. Manual
+navigation or the demo approval button pauses autoplay; Play restarts the loop.
+Reduced motion keeps a static, manually selectable example.
+
+The scheduling confirmation states the example timezone (America/New_York),
+explains that YouTube holds the video privately until its scheduled publication,
+and explicitly says no real video was scheduled. The entire phone is labeled
+as a simulated conversation with sample data and no real actions. No platform
+requests, uploads, scheduling operations or comments are performed by the demo.
+
+
+The loop refinement passed the JS syntax, UI consistency and two UI build checks.
+Safari displayed the scheduling card, advanced automatically through simulated
+approval, and continued into the next conversation cycle. The three deployed
+files matched their public SHA256 hashes; private backup:
+`landing-loop-20261015T191641Z`. Agent names beside the installation command were
+subsequently emphasized in blue bold text without implying support for chat
+modes that lack terminal access.
+
+The emphasis update was deployed with backup
+`landing-emphasis-20261015T191729Z`; public HTML, CSS and demo JavaScript matched
+local SHA256 hashes after deployment. The application runtime was unchanged.

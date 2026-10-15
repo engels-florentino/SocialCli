@@ -62,3 +62,14 @@ body.mascot-landing{background:#f5f7fb;color:var(--ink);min-height:100svh;font-s
 @keyframes typing-pulse{0%,70%,100%{opacity:.35;transform:translateY(0)}35%{opacity:1;transform:translateY(-3px)}}
 @keyframes message-arrive{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.typing-bubble span,.conversation-playing .bubble{animation:none!important}}
+
+.schedule-preview{padding:12px;background:#fff;border:1px solid #dce7f5;border-radius:10px;margin:10px 0}
+.schedule-preview span,.schedule-preview strong,.schedule-preview small{display:block}
+.schedule-preview span{font-size:8px;letter-spacing:.1em;color:#6b82a2}
+.schedule-preview strong{font-size:15px;color:#245fb4;margin:4px 0}
+.schedule-preview small{font-size:9px;color:#6b7e96}
+.demo-controls{gap:2px}.demo-controls button{padding-left:8px;padding-right:8px}
+@media(max-width:640px){.demo-controls button{padding-left:7px;padding-right:7px;font-size:10px}}
+
+.mascot-landing .install-label{font-size:12px;line-height:1.5}.compatible-agents{color:#245fb4;font-weight:700}
+@media(max-width:640px){.mascot-landing .install-label{font-size:11px}}

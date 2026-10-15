@@ -14,7 +14,7 @@
   let remaining = 0;
   let started = 0;
   let videoLoaded = false;
-  const titles = ['Account insights example', 'Reply draft example', 'Approval example. No real comment was posted.'];
+  const titles = ['Account insights example', 'Scheduling example. No real video was scheduled.', 'Reply draft example', 'Approval example. No real comment was posted.'];
   const typing = scenes.map(panel => {
     const bubble = document.createElement('div');
     bubble.className = 'bubble assistant-bubble typing-bubble';
@@ -67,8 +67,11 @@
         response.hidden = false;
         scenes[scene].querySelectorAll('.chat-suggestion').forEach(button => { button.hidden = false; });
         // Reading time follows the response, not a blank/static 18-second page.
-        // The preview stops here: only a deliberate demo click approves a reply.
+        // This entire conversation is fictional, including the displayed approval.
         if (scene === 0) after(6000, () => render(1, false, true));
+        if (scene === 1) after(4500, () => render(2, false, true));
+        if (scene === 2) after(6000, () => render(3, false, true));
+        if (scene === 3) after(4000, () => render(0, false, true));
       });
     });
   }
@@ -92,7 +95,7 @@
     button.addEventListener('click', () => { paused = true; render(Number(button.dataset.goto), true); synchronize(); });
   });
   document.getElementById('demo-approve').addEventListener('click', () => {
-    paused = true; render(2, true); synchronize();
+    paused = true; render(3, true); synchronize();
   });
   motion.addEventListener('click', () => {
     paused = !paused;
