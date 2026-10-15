@@ -21,7 +21,9 @@ publish a new CLI distribution or change provider permissions or billing mode.
   restrictions and TikTok draft delivery remain visible.
 - Pause control and reduced-motion preference stop automatic movement. Reduced
   motion initially uses the poster without downloading the video. The phone
-  advances to a draft after 18 seconds, but never automatically approves it.
+  shows a question, a brief typing indicator and a concise answer, then begins
+  the comments exchange after about eight seconds. It never automatically
+  approves the reply.
   Without JavaScript, the poster, example metrics and selectable install text
   remain available. Mobile places installation before the larger phone demo.
 
@@ -82,3 +84,19 @@ HTTP206 and video/mp4. `/agents` still serves rc8 and `/healthz` returned HTTP20
 The JS syntax check, UI asset consistency check, two UI build tests and diff
 whitespace check passed again after the final CSS change. No runtime restart,
 CLI release, provider configuration or billing change was needed.
+
+## Conversation pacing refinement
+
+The phone now shows each question first, a three-dot typing bubble after 650 ms,
+and the assistant's answer after 1.25–1.5 seconds of typing. The account summary
+has six seconds of reading time before the comments exchange begins. Short
+message entrance transitions replace the static 18-second wait. Pause and tab
+visibility preserve the remaining delay; reduced motion shows complete messages
+without the animated sequence. Manual navigation remains available, and sending
+the fictional reply still requires the demo approval button.
+
+Safari verified the question-only start, summary response, automatic progression
+into the reply draft, deliberate simulated approval and replay control. JS syntax,
+UI asset consistency and both UI build tests passed. Three static files were
+published with backup `landing-chat-20261015T191107Z`; all three public downloads
+matched the local SHA256 hashes. Application version remains rc8.
