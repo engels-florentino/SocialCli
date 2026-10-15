@@ -7,7 +7,9 @@ identity, compact agent bootstrap and 15-minute Instagram media staging.
 The rc3 tag remains immutable. rc4 must be built, reviewed and published separately.
 The runtime remains a pilot with Stripe test billing and provider test restrictions.
 Current server deployment evidence: [rc4 rollout](rollout-rc4-2026-10-14.md).
-Distribution remains a separate protected release gate.
+The protected TestPyPI publication completed successfully; downloaded artifacts
+and a fresh installed-wheel smoke were verified. The public /agents bootstrap
+now targets0.3.0rc4. Stable production PyPI and provider approvals remain separate.
 
 
 Current source version: **0.3.0rc4**, consolidated in the repository root on

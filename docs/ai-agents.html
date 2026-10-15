@@ -1,6 +1,8 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI agent guide · SocialCli</title><meta name="description" content="SocialCli: social media tools for terminal-enabled AI agents, with previews and user approval."><link rel="stylesheet" href="style.css"><link rel="icon" type="image/png" href="assets/socialcli-logo.png"><link rel="apple-touch-icon" href="assets/socialcli-logo.png"><meta property="og:type" content="website"><meta property="og:site_name" content="SocialCli"><meta property="og:title" content="AI agent guide · SocialCli"><meta property="og:description" content="Social media tools for AI agents, with previews and user approval."><meta property="og:url" content="https://engels-florentino.github.io/SocialCli/ai-agents.html"><meta property="og:image" content="https://engels-florentino.github.io/SocialCli/assets/socialcli-logo.png"><meta property="og:image:width" content="1254"><meta property="og:image:height" content="1254"><meta property="og:image:alt" content="SocialCli logo: S and terminal prompt >_"><meta name="twitter:card" content="summary"><meta name="twitter:image" content="https://engels-florentino.github.io/SocialCli/assets/socialcli-logo.png"></head><body><header><a class="logo" href="index.html"><img src="assets/socialcli-logo.png" width="44" height="44" alt=""><span>SocialCli</span></a><nav><a href="ai-agents.html">AI agents</a><a href="installation.html">Install</a><a href="guide.html">Guide</a><a href="platforms.html">Platforms</a><a href="connections.html">Connect</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli">GitHub</a></nav></header><main><h1 id="socialcli-for-ai-agents">SocialCli for AI agents</h1>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI agent guide · SocialCli</title><meta name="description" content="SocialCli: social media tools for terminal-enabled AI agents, with previews and user approval."><link rel="stylesheet" href="style.css"><link rel="icon" type="image/png" href="assets/socialcli-logo.png"><link rel="apple-touch-icon" href="assets/socialcli-logo.png"><meta property="og:type" content="website"><meta property="og:site_name" content="SocialCli"><meta property="og:title" content="AI agent guide · SocialCli"><meta property="og:description" content="Social media tools for AI agents, with previews and user approval."><meta property="og:url" content="https://socialcli.app/ai-agents.html"><meta property="og:image" content="https://socialcli.app/assets/socialcli-logo.png"><meta property="og:image:width" content="1254"><meta property="og:image:height" content="1254"><meta property="og:image:alt" content="SocialCli logo: S and terminal prompt >_"><meta name="twitter:card" content="summary"><meta name="twitter:image" content="https://socialcli.app/assets/socialcli-logo.png"></head><body><header><a class="logo" href="index.html"><img src="assets/socialcli-logo.png" width="44" height="44" alt=""><span>SocialCli</span></a><nav><a href="/account/">Account</a><a href="ai-agents.html">AI agents</a><a href="installation.html">Install</a><a href="guide.html">Guide</a><a href="platforms.html">Platforms</a><a href="connections.html">Connect</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli">GitHub</a></nav></header><main><h1 id="socialcli-for-ai-agents">SocialCli for AI agents</h1>
 <p>SocialCli gives terminal-enabled AI agents a practical way to inspect social accounts, prepare posts and execute user-approved actions. The agent handles the conversation and planning; SocialCli validates files, checks account ownership where supported, displays previews and records results.</p>
 <p>It works with assistants that can run local shell commands and read workspace files. SocialCli does not include a language model, a hosted agent or an MCP server. Install it in the same environment where your agent runs and connect an eligible creator account through the configured SocialCli service, or configure independent provider applications. See <a href="https://github.com/engels-florentino/SocialCli/blob/main/SETUP.md">setup</a>.</p>
+<p>Read the compact <a href="agents.md">bootstrap</a> for installation and <code>socialcli agent-guide setup</code>
+before login. Setup order: brand → credentials → account login → connect.</p>
 <h2 id="connect-your-agent-to-a-workspace">Connect your agent to a workspace</h2>
 <p>Keep your creator data outside the application repository. Give the agent the workspace path and the exact brand name, and make these instructions available in its project context:</p>
 <pre><code class="language-text">Use SocialCli in /path/to/my-social for brand MyBrand.
@@ -33,6 +35,54 @@ uncertain submission without checking the remote account first.
 <pre><code class="language-bash">socialcli connect youtube --brand MyBrand --no-browser
 </code></pre>
 <p>Send the user: “Open this link in your own browser to connect your account: <printed URL>. I will keep SocialCli waiting for your authorization.” Do not cancel the running command after printing the link, and do not launch a second connection while the first one is pending.</p>
+<h2 id="saas-candidate-understand-connection-renewal">SaaS candidate: understand connection renewal</h2>
+<p>For an installed client and service supporting the SaaS protocol, use
+<code>socialcli connections --brand MyBrand --json</code> to read <code>renewal_status</code> without
+renewing credentials. The current rc4 SaaS pilot exposes these states:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ready</code></td>
+<td>Continue within the user's existing authorization.</td>
+</tr>
+<tr>
+<td><code>required</code></td>
+<td>Renewal is due. A read failure does not authorize a write or reconnection.</td>
+</tr>
+<tr>
+<td><code>pending</code></td>
+<td>Another renewal is running; wait before reading status again.</td>
+</tr>
+<tr>
+<td><code>retryable</code></td>
+<td>Keep local credentials; retry the authorized operation after the service backoff.</td>
+</tr>
+<tr>
+<td><code>configuration_error</code></td>
+<td>Keep the connection; the service operator must fix configuration.</td>
+</tr>
+<tr>
+<td><code>uncertain</code></td>
+<td>Do not force or repeat renewal. Review the account status; ask for explicit approval if a replacement connection is needed.</td>
+</tr>
+<tr>
+<td><code>reconnect_required</code></td>
+<td>Provider authorization or permissions need explicit user consent.</td>
+</tr>
+</tbody>
+</table>
+<p><code>connection_inactive</code> means the SocialCli grant expired after inactivity;
+<code>installation_revoked</code> concerns this agent's installation. Neither proves that
+the social provider revoked the account. Missing local storage is also separate:
+recover the workspace or sign in and attach an existing valid connection before
+proposing new provider authorization. Never delete credentials to troubleshoot a
+temporary network failure.</p>
 <h2 id="example-1-ask-the-agent-to-check-your-accounts">Example 1: ask the agent to check your accounts</h2>
 <p><strong>Your prompt:</strong></p>
 <blockquote>
@@ -94,13 +144,12 @@ socialcli changes status CHANGE_ID --brand MyBrand
 <li><strong>Separate brands and local records.</strong> Keep each creator's configuration and evidence in their own workspace.</li>
 <li><strong>Honest result states.</strong> Agents can distinguish confirmed actions, TikTok inbox handoffs and uncertain outcomes that need verification.</li>
 </ul>
-<p>Agents do not expand platform permissions or remove provider review requirements. A shared OAuth service is available for eligible pilot accounts; independent operator-supplied provider applications remain supported. TikTok production approval is pending, and Direct Post UX controls are incomplete. Read <a href="https://github.com/engels-florentino/SocialCli/blob/main/SETUP.md">platform setup</a>, <a href="https://github.com/engels-florentino/SocialCli/blob/main/SECURITY.md">security</a> and <a href="https://github.com/engels-florentino/SocialCli/blob/main/docs/tiktok-review.md">TikTok limitations</a>.</p>
+<p>Agents do not expand platform permissions or remove provider review requirements. A shared OAuth service is available for eligible pilot accounts; independent operator-supplied provider applications remain supported. TikTok production approval is pending, and Direct Post UX controls are incomplete. Read <a href="https://github.com/engels-florentino/SocialCli/blob/main/SETUP.md">platform setup</a>, <a href="https://github.com/engels-florentino/SocialCli/blob/main/SECURITY.md">security</a> and <a href="tiktok-review.md">TikTok limitations</a>.</p>
 <p>For an agent without interactive stdin, obtain the user’s explicit authorization for the exact account ID and brand first, then use <code>socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes</code>. <code>--yes</code> confirms this account connection only; it does not authorize publication. Never guess an ID or use its position in a returned list. Replacing independent credentials additionally requires <code>--replace-independent</code>. Without these explicit arguments, noninteractive execution stops before creating an authorization link.</p>
 <h2 id="bounded-machine-readable-reads">Bounded machine-readable reads</h2>
 <p>Use <code>socialcli stats --brand Example --json --timeout 120</code> for a version 1 report.
-Progress goes to stderr. For aggregate stats, inbox and report in rc2, exit 0 means
-complete success, exit 3 means partial observations and exit 1 means failure
-(rc1 used exit 1 for both). Coverage records completeness, observation time and whether
+Progress goes to stderr. For aggregate stats, inbox and report, exit 0 means complete success, exit 3
+means partial observations and exit 1 means failure (rc1 used exit 1 for both). Coverage records completeness, observation time and whether
 values came from this read or a previous snapshot. A missing metric remains null.
 Interruptions preserve completed platforms. Persistence failures include observations
 and the saved/unsaved file list; inspect them before retrying local persistence.</p>
@@ -170,15 +219,31 @@ invocation. CLI parser errors (for example missing required arguments) use the
 standard stderr usage output. Existing JSON commands retain their successful
 schemas. Use explicit <code>--json</code> to obtain structured runtime errors and nonzero
 partial-read status. Progress is on stderr; parse stdout as one JSON document.</p>
-<p>Use SocialCli's own time limit to preserve a final report: <code>socialcli stats --brand Example --only youtube --json --timeout 80</code>.
-If the runner also uses an external timeout, allow a grace period beyond <code>--timeout</code>.
-Full YouTube stats requests retention and traffic separately for each selected video, plus audience data.
-<code>--since</code> filters publication dates, not the metrics reporting period.</p>
-<p>Inbox scans reuse verified bindings only within a read-only scan; prepare/apply/reconcile retain fresh checks.
-Verified comments survive deadlines and independently invalid Meta rows. Meta coverage includes <code>skipped_comments</code> counts for <code>own</code>, <code>before_since</code> and <code>unverifiable</code>.
-Missing creation times are retained with incomplete interval coverage. Zero returned comments with partial coverage never proves absence.
-Bounded reads honor environment proxy, <code>NO_PROXY</code> and custom CA settings. Fixed transport error labels identify failures without exposing credentials.
-See the <a href="https://github.com/engels-florentino/SocialCli/blob/main/docs/ai-agents.md">detailed agent guide</a>.</p>
+<p>Use SocialCli's own time limit to preserve a final report:</p>
+<pre><code class="language-bash">socialcli stats --brand Example --only youtube --json --timeout 80
+socialcli inbox --brand Example --since 2026-10-09T00:00:00-04:00 --json --timeout 150
+</code></pre>
+<p>An external process timeout can terminate SocialCli before it saves or emits
+results. If the runner needs one, allow a grace period beyond <code>--timeout</code>.
+Full YouTube stats request retention and traffic separately for every selected
+video, plus audience reports. <code>--since</code> filters by publication date; it does not
+change the metrics reporting period. Increasing the timeout does not reduce
+these requests.</p>
+<p>Inbox scans reuse verified ownership/parent bindings only within a read-only
+scan. Prepare/apply/reconcile still verify fresh remote state. Exact integer
+YouTube reply counts of zero avoid empty reply requests. Missing pagination
+metadata remains incomplete; verified observations survive. Meta comments
+without verifiable ID, text, author or parent, or with invalid times, are skipped independently,
+without discarding other valid observations or advancing complete watermarks.
+Meta coverage includes <code>skipped_comments</code> counts for <code>own</code>, <code>before_since</code> and
+<code>unverifiable</code>. Missing creation times are retained with incomplete interval
+coverage. Zero returned comments with partial coverage never proves that
+there are no new comments.</p>
+<p>Bounded reads honor HTTPX's environment proxy, <code>NO_PROXY</code> and custom CA settings,
+as ordinary SocialCli requests do. Deadline errors are distinct from transport
+failures; transport diagnostics identify fixed error classes without exposing
+exception text or credentials. Never paste proxy credentials or tokens into an
+issue report.</p>
 <h2 id="exact-source-links-inside-approved-previews">Exact source links inside approved previews</h2>
 <p>Create <code>Example/source-videos.yml</code> outside the application repository:</p>
 <pre><code class="language-yaml">version: 1
@@ -211,4 +276,12 @@ proposal for the already published media. A new publish would create new media.<
 <p>See the <a href="capabilities.html">capability and permission matrix</a> before proposing an
 unsupported action. For headless servers, select the documented
 <a href="connections.html#headless-encrypted-capability-storage">encrypted capability store</a>
-explicitly; OS keyring remains the default and no silent fallback is provided.</p></main><footer><p>SocialCli · Engels Florentino · Public MIT project</p><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli/issues">Support</a></footer></body></html>
+explicitly; OS keyring remains the default and no silent fallback is provided.</p>
+<h2 id="saas-candidate-installation">SaaS candidate installation</h2>
+<p>For the published 0.3.0rc4 TestPyPI candidate, protected persistent storage and
+browser-owned SocialCli sign-in, use the <a href="agents.md">compact bootstrap guide</a>.
+Create the brand, configure credentials, run account login against
+https://pilot.socialcli.app, then connect. Stable production PyPI publication and
+provider production approval are separate gates.</p>
+<p>See the packaged <code>socialcli agent-guide</code> for scoped inbox reads, management consent, protected key generation and local configuration diagnostics.</p>
+</main><footer><p>SocialCli · Engels Florentino · Public MIT project</p><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli/issues">Support</a></footer></body></html>

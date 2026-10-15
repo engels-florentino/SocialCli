@@ -39,10 +39,12 @@ approval or claim every social-network operation was tested live in this rollout
 
 All listed implementation findings are addressed in the deployed rc4 code.
 [Rollout evidence](rollout-rc4-2026-10-14.md) records backup, DNS, routing and CI.
-The protected TestPyPI job still requires the owner's approval at
+The protected TestPyPI release completed successfully after owner approval:
 https://github.com/engels-florentino/SocialCli/actions/runs/38666089357 .
-Public bootstrap activation must wait until that exact artifact is published,
-downloaded and verified; do not weaken the gate or point users at an absent wheel.
+Published wheel/sdist hashes match the reviewed build. A fresh installation of
+the downloaded wheel passed its smoke check; the compact /agents bootstrap is
+activated for0.3.0rc4. Public setup, security, terms and privacy now describe the
+SaaS sign-in, storage, billing and retention behavior rather than legacy defaults.
 
 Google/Meta production reviews and TikTok Draft are provider-controlled gates.
 The operator's instruction not to submit TikTok review or switch Stripe Live

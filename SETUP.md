@@ -1,6 +1,6 @@
 # Account connection modes
 
-Creators can use `socialcli connect PLATFORM --brand MyBrand` with a configured shared service, without developer credentials. See [browser account connections](docs/connections.md) for availability, account confirmation and OS keyring requirements.
+For the current hosted SaaS, start with [verified installation](docs/installation.md) and [account connections](docs/connections.md). Create your brand, configure protected credentials, run `socialcli account login --brand MyBrand --service https://pilot.socialcli.app --no-browser`, then connect the provider. Creators do not need their own developer credentials. Account selection happens in the user’s browser.
 
 The instructions below describe the separate independent-app mode for operators registering their own provider applications.
 

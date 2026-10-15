@@ -1,5 +1,21 @@
 # TikTok review preparation
 
+## Current SaaS distribution — October 14, 2026
+
+SocialCli 0.3.0rc4 is published on TestPyPI and deployed at
+https://pilot.socialcli.app. The SaaS callback is
+https://pilot.socialcli.app/oauth/tiktok/callback. Account selection and assistant
+approval occur in the user browser. Capabilities use OS keyring or explicit
+encrypted-file storage. TikTok draft files go directly from the customer runner
+to TikTok; temporary florentino.pro staging is for Instagram.
+
+TikTok remains sandbox-only for eligible target accounts; production remains
+Draft and is not submitted. Inspect the actual granted scopes and current
+portal settings before recording any review evidence. Earlier descriptions of
+the legacy callback or exact scope set below are historical, not current setup.
+
+## Historical review preparation — October 6, 2026
+
 SocialCli is a public project that other creators can install to manage their accounts. A new review application must accurately reflect this purpose. The production draft was updated on October 6, 2026 with SocialCli branding and an accurate inbox-only explanation. This does not establish production approval.
 
 ## Architecture of this distribution

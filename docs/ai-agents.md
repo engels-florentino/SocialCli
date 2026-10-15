@@ -4,6 +4,9 @@ SocialCli gives terminal-enabled AI agents a practical way to inspect social acc
 
 It works with assistants that can run local shell commands and read workspace files. SocialCli does not include a language model, a hosted agent or an MCP server. Install it in the same environment where your agent runs and connect an eligible creator account through the configured SocialCli service, or configure independent provider applications. See [setup](../SETUP.md).
 
+Read the compact [bootstrap](agents.md) for installation and `socialcli agent-guide setup`
+before login. Setup order: brand → credentials → account login → connect.
+
 ## Connect your agent to a workspace
 
 Keep your creator data outside the application repository. Give the agent the workspace path and the exact brand name, and make these instructions available in its project context:
@@ -50,8 +53,7 @@ Send the user: “Open this link in your own browser to connect your account: <p
 
 For an installed client and service supporting the SaaS protocol, use
 `socialcli connections --brand MyBrand --json` to read `renewal_status` without
-renewing credentials. These candidate states are not a claim that the public
-0.2.6 service has already been upgraded:
+renewing credentials. The current rc4 SaaS pilot exposes these states:
 
 | State | Action |
 | --- | --- |
@@ -335,8 +337,10 @@ explicitly; OS keyring remains the default and no silent fallback is provided.
 
 ## SaaS candidate installation
 
-For 0.3.0rc1 installation, protected persistent storage and browser-owned SocialCli
-sign-in, use the [candidate bootstrap guide](agents.md). Public PyPI availability
-and the real Muse/Grok pilot remain unconfirmed.
+For the published 0.3.0rc4 TestPyPI candidate, protected persistent storage and
+browser-owned SocialCli sign-in, use the [compact bootstrap guide](agents.md).
+Create the brand, configure credentials, run account login against
+https://pilot.socialcli.app, then connect. Stable production PyPI publication and
+provider production approval are separate gates.
 
-See the packaged `socialcli agent-guide` for rc2 scoped inbox reads, management consent, protected key generation and local configuration diagnostics.
+See the packaged `socialcli agent-guide` for scoped inbox reads, management consent, protected key generation and local configuration diagnostics.

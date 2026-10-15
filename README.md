@@ -37,69 +37,39 @@ sandbox restrictions still apply. Stripe uses test mode. Planned access costs
 USD 10/month after 14 free days from the first successful connection. No real
 subscriptions are collected in this pilot.
 
-The `main` source includes fixes made after the immutable `v0.3.0rc3` release
-candidate tag. Updating GitHub does not replace an installed package or publish
-a new package artifact. See the [release record](deploy/saas/release.md) for the
-separate build, approval and distribution process.
+The published candidate is **0.3.0rc4 on TestPyPI** and the hosted pilot runs that
+version. Its wheel and source archive were downloaded and verified against the
+reviewed build hashes. Stable 0.3.0 production publication remains separate from
+this pilot. See the [release record](deploy/saas/release.md).
 
-See [pilot testing](docs/pilot-testing.md). The operator/legacy examples below are
-not a replacement for the candidate's sign-in and pairing instructions.
+## Install and connect
 
-## Install
+Use the short installation prompt above. Your assistant needs a persistent shell,
+Python 3.11+, macOS or Linux and protected credential storage. The bootstrap
+verifies the exact wheel before installation and resolves dependencies from normal
+PyPI. Video validation also requires ffprobe from FFmpeg.
 
-Use macOS or Linux with Python 3.11 or later, Git, and an available OS credential store. Video checks also require `ffprobe`, included with FFmpeg. If `python3 --version` reports an older version, install a supported Python first or replace `python3` below with your supported interpreter, such as `python3.12`. SocialCli inspects files; it does not generate, crop or reencode content.
-
-```bash
-python3 --version  # Requires Python 3.11 or later
-mkdir my-social
-cd my-social
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install "git+https://github.com/engels-florentino/SocialCli.git"
-socialcli --help
-socialcli brand new MyBrand
-```
-
-Keep this workspace outside the application repository. In a new terminal, run `cd my-social` and `source .venv/bin/activate` before using SocialCli.
-
-For development:
+The setup order is **brand → credentials → account login → connect**. Ask for the
+brand name explicitly, preserve its workspace outside the application repository,
+and read socialcli agent-guide setup. The account step uses
+https://pilot.socialcli.app. Give each printed link directly to the user without
+opening it; the user signs in and approves the assistant and provider account in
+their browser. Never request OTPs or provider tokens in chat.
 
 ```bash
-git clone https://github.com/engels-florentino/SocialCli.git
-cd SocialCli
-uv sync --group dev
-uv run socialcli --help
-uv run pytest
-```
-
-## Your first brand
-
-The installation steps create `MyBrand`. Replace that example name with your own
-brand and complete `MyBrand/brand.md` with its voice and identity. Read
-`socialcli agent-guide` to configure protected credential storage, sign in to
-SocialCli and approve the installation before connecting a provider. Account
-selection and approval take place in the user's browser:
-
-```bash
-socialcli connect tiktok --brand MyBrand
+socialcli account login --brand MyBrand --service https://pilot.socialcli.app --no-browser
+socialcli connect youtube --brand MyBrand --management --analytics --no-browser
 socialcli connections --brand MyBrand --json
 ```
 
-**AI agents:** run `socialcli connect PLATFORM --brand MyBrand --no-browser`. Give the printed login link directly to the user without opening, fetching or previewing it. The user opens the landing page and presses Connect to start the single-use flow. Keep the command running while the user authorizes; generate a fresh link if it expires or was already used. See the [agent connection instructions](docs/ai-agents.md#hand-the-login-link-to-the-user-without-opening-it).
+Run these after creating the brand and configuring protected credentials as shown
+in the [connection guide](docs/connections.md). OS keyring and explicit encrypted
+file storage are supported; there is no silent fallback. Use the same workspace,
+store and key in later conversations. Connecting never authorizes publication.
 
-`connect` saves the selected account identifiers in `MyBrand/accounts.yml` automatically. You do not need your own developer app, client ID, client secret or pasted provider token for shared mode. Your OS credential store must be available and unlocked. Connecting does not upload or publish content.
-
-**Hosted access today:** TikTok is in sandbox and accepts only authorized target accounts. Google is in Testing for authorized test users; Meta is unpublished and restricted to development access. Anyone can install the public CLI, but installation does not grant access to these hosted provider integrations. If your account is not eligible, wait for production availability or use a service whose operator has the required provider access. See the [connection guide](docs/connections.md).
-
-Other configured networks use the same browser workflow:
-
-```bash
-socialcli connect youtube --brand MyBrand
-socialcli connect facebook --brand MyBrand
-socialcli connect instagram --brand MyBrand
-```
-
-Operators who deliberately use their own developer applications can instead follow [independent-app setup](SETUP.md) and use `socialcli auth PLATFORM --brand MyBrand`.
+For source development use uv sync --group dev, uv run pytest and
+uv run socialcli --help in the repository. [SETUP.md](SETUP.md) covers independent
+operator apps; customers of the hosted SaaS do not need developer credentials.
 
 ## Review and publish
 
@@ -144,24 +114,23 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md). For questions or bugs, open an [issue](
 
 [MIT license](LICENSE). SocialCli is not affiliated with the platforms it integrates.
 
-## Browser account connections
+## Account, media and scheduling
 
-The shared connection mode lets creators authorize their accounts without their own provider developer registration. Availability depends on the operator configuring and obtaining approval for each integration; implementation alone does not establish public production access.
+[Account](https://socialcli.app/account/) lets you manage your brand, connected
+platforms, approved assistants and billing. The plan covers one brand and one
+account per supported platform. Subscribe during the 14-day trial without losing
+its remaining days; the first USD 10 payment is due at the original trial end.
+The current pilot uses Stripe test mode and collects no live payments.
 
-```sh
-socialcli connect youtube --brand MyBrand
-socialcli connections --brand MyBrand --json
-socialcli disconnect youtube --brand MyBrand
-```
+Instagram can use automatic 15-minute temporary staging on florentino.pro for
+supplied originals, up to 512 MiB and subject to quotas. Files are excluded from
+backups and removed after the operation or by expiry cleanup. Local schedules
+keep the original on the customer runner and stage it only at dispatch. Verified
+native scheduling uses provider storage where supported. See
+[media handling](MEDIA-INGESTION.md) and [scheduling](NATIVE-SCHEDULING.md).
 
-[Connection guide](docs/connections.md) · [Self-host the connection service](deploy/connection-service/README.md). Independent-app `socialcli auth` remains supported.
-
-
-For an agent without interactive stdin, obtain the user’s explicit authorization for the exact account ID and brand first, then use `socialcli connect PLATFORM --brand MyBrand --no-browser --account-id ACCOUNT_ID --yes`. `--yes` confirms this account connection only; it does not authorize publication. Never guess an ID or use its position in a returned list. Replacing independent credentials additionally requires `--replace-independent`. Without these explicit arguments, noninteractive execution stops before creating an authorization link.
-
-
-Agent reliability: see the [AI agent guide](docs/ai-agents.md) for bounded JSON
-reads, unified inbox, exact source links and supervised community batches, and
-the [capability matrix](docs/capabilities.md) for permissions and network limits.
-For servers, [explicit encrypted capability storage](docs/connections.md#headless-encrypted-capability-storage)
-is available with the `headless-credentials` extra; no automatic fallback is used.
+Read the packaged socialcli agent-guide topic for the operation, the
+[capability matrix](docs/capabilities.md), [security](SECURITY.md),
+[privacy policy](https://socialcli.app/privacy.html) and
+[terms](https://socialcli.app/terms.html). Historical0.2.6 releases and deploy
+records are migration evidence, not a second current product.

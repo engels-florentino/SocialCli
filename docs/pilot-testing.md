@@ -4,7 +4,7 @@ Copy this single line into Muse, Grok Bot, Dots, or another terminal-enabled ass
 
 > Install SocialCli: https://socialcli.app/agents
 
-The assistant reads the guide, downloads the exact reviewed 0.3.0rc1 candidate,
+The assistant reads the guide, downloads the exact reviewed 0.3.0rc4 candidate,
 verifies its SHA256, installs it separately and asks which brand to use. Keep its
 workspace and protected credentials across conversations.
 
@@ -21,10 +21,11 @@ requires your original media, the complete preview and your explicit approval.
 The SaaS is the successor to 0.2.6. Its pilot enables YouTube, Facebook, Instagram
 and TikTok. Meta access depends on app roles and granted permissions. TikTok uses
 the existing sandbox and configured target users, with draft uploads only.
-Provider configuration is verified; real SaaS account authorization still needs
-the owner acceptance test. Stripe uses test
-mode; no real subscriptions are collected. The planned price is USD10/month with
-14free days beginning at the first successful social connection.
+The deployed rc4 service retains the four existing Histopast connections. That
+does not prove every feature for every creator; verify the exact account and
+permissions in each supervised pilot. Stripe uses test
+mode; no real subscriptions are collected. The planned price is USD 10/month with
+14 free days beginning at the first successful social connection.
 
 If a step fails, retain the installed version, command, sanitized error code and
 whether the workspace persists. Do not share keys, tokens, OTPs or pairing URLs.
