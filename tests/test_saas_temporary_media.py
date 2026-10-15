@@ -113,3 +113,47 @@ def test_cleanup_remains_available_after_trial_expiry(tmp_path):
     with service.vault.transaction() as db:db.execute('UPDATE saas_entitlements SET trial_end=?',(now[0]-1,))
     assert client.delete(value['upload_url'],headers=headers).status_code==200
     assert client.get(value['download_url']).status_code==404
+
+
+def test_delete_during_streaming_upload_prevents_resurrection_and_keeps_quota(tmp_path):
+    import asyncio
+    import httpx
+    client,now,connection,service=media_service(tmp_path)
+    value,headers=reserve(client,connection)
+
+    async def scenario():
+        first_written=asyncio.Event()
+        resume=asyncio.Event()
+
+        async def chunks():
+            yield b'fictional '
+            first_written.set()
+            await resume.wait()
+            yield b'image'
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app),
+                                     base_url='https://social.example') as api:
+            task=asyncio.create_task(api.put(value['upload_url'],content=chunks(),headers=headers))
+            try:
+                await asyncio.wait_for(first_written.wait(),5)
+                assert list(service.root.glob('*.part'))
+                assert (await api.delete(value['upload_url'],headers=headers)).status_code==200
+                with service.vault.read_transaction() as db:
+                    row=db.execute('SELECT size,expires FROM saas_media_allocations WHERE id=?',
+                                   (value['media_id'],)).fetchone()
+                    assert row['size']==15 and row['expires']==value['expires_at']
+                resume.set()
+                assert (await asyncio.wait_for(task,5)).status_code==404
+                assert (await api.get(value['download_url'])).status_code==404
+            finally:
+                resume.set()
+                if not task.done():task.cancel()
+                await asyncio.gather(task,return_exceptions=True)
+
+    asyncio.run(scenario())
+    assert not list(service.root.iterdir())
+    now[0]=value['expires_at']+1
+    service.cleanup()
+    client.app.state.saas_lifecycle.prune_expired()
+    with service.vault.read_transaction() as db:
+        assert db.execute('SELECT count(*) FROM saas_media_allocations').fetchone()[0]==0
