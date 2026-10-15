@@ -1,4 +1,4 @@
-"""Exact customer instants alongside unchanged legacy daily reservations."""
+"""Exact customer instants alongside approved 08:00/09:00 legacy reservations."""
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -8,14 +8,14 @@ ZONE_NAME = 'America/New_York'
 ZONE = ZoneInfo(ZONE_NAME)
 
 
-def slot(day: date) -> datetime:
-    return datetime.combine(day, time(9), ZONE).astimezone(timezone.utc)
+def slot(day: date, *, hour: int = 9) -> datetime:
+    return datetime.combine(day, time(hour), ZONE).astimezone(timezone.utc)
 
 
 def reservation_day(publish_at: datetime, timezone_name: str) -> str:
     local = aware(publish_at).astimezone(ZONE)
-    if timezone_name != ZONE_NAME or local.time() != time(9):
-        raise ValueError('Content must be scheduled at 09:00 America/New_York')
+    if timezone_name != ZONE_NAME or local.time() not in {time(8), time(9)}:
+        raise ValueError('Content must be scheduled at approved 08:00 or legacy 09:00 America/New_York')
     return local.date().isoformat()
 
 
@@ -63,9 +63,11 @@ def plan_slots(requested: list[datetime], *, occupied: set[str] | None = None,
     used = set(occupied or ())
     result = []
     for requested_at in requested:
+        requested_local = aware(requested_at).astimezone(ZONE)
+        hour = 8 if requested_local.time() == time(8) else 9
         day = max(aware(requested_at).astimezone(ZONE).date(), now.astimezone(ZONE).date())
-        while day.isoformat() in used or slot(day) <= now or slot(day) < aware(requested_at):
+        while day.isoformat() in used or slot(day, hour=hour) <= now or slot(day, hour=hour) < aware(requested_at):
             day += timedelta(days=1)
         used.add(day.isoformat())
-        result.append(slot(day))
+        result.append(slot(day, hour=hour))
     return result

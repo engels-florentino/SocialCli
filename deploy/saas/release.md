@@ -1,14 +1,19 @@
 # Candidate distribution and publication
 
-Candidate version: **0.3.0rc1**. The public baseline is still 0.2.6. A candidate
-wheel, successful tests or a registered PyPI username do not establish a public
-package, provider approval or deployment of the SaaS service.
+Current source version: **0.3.0rc3**, consolidated in the repository root on
+`main`. SocialCli SaaS supersedes the former 0.2.6 working copy; it is the same
+product. Source includes post-tag fixes, so the immutable `v0.3.0rc3` artifact
+must not be overwritten or represented as containing later commits.
+
+This document retains historical release checkpoints below. A source version,
+successful tests or a registered PyPI username do not establish a published
+package, provider approval or deployment of the current source to the server.
 
 The agent-facing guide is generated as `docs/agents.md` from the packaged
 `socialctl/ui/assets/agents.md` and served at `/agents` by the candidate service.
 Route that exact path through NPM when deploying the candidate. Keep `/agents`
 public, but never cache or fetch single-use `/account/pair/` or `/connect/` links
-on the user's behalf. The guide currently labels all PyPI instructions as pending.
+on the user's behalf.
 After the published wheel has actually been downloaded and verified, change the
 canonical guide to the installed release and confirmed availability, then rebuild
 its generated copy. Keep the same SocialCli UI for human-facing pages.
@@ -41,7 +46,7 @@ check out or execute repository code with its OIDC permission.
    values. Verify no workspace files, credentials or `.superpowers` artifacts are
    packaged. Do not silently publish a candidate while the public service remains
    incompatible.
-2. Create the reviewed `v0.3.0rc1` tag and dispatch `Reviewed Python release` with
+2. Create a new reviewed version tag (never move an existing tag) and dispatch `Reviewed Python release` with
    `index=testpypi`. The workflow rejects branches, mismatched package versions and
    candidate tags sent to production PyPI. Build runs the full suite; separate
    Linux/macOS jobs install that same wheel into clean virtual environments and

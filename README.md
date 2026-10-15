@@ -2,6 +2,11 @@
 
 # SocialCli
 
+**Current source version: 0.3.0rc3.** SocialCli SaaS is the current SocialCli
+product. The repository root on `main` is its single development workspace;
+the CLI, hosted connection service and account/billing components live together
+here. Earlier versions remain in Git history for reference and migration.
+
 **A social media CLI for AI agents and the people who supervise them.** Use a terminal-enabled assistant to inspect your accounts, draft posts and prepare user-approved actions on YouTube, Facebook, Instagram and TikTok. SocialCli provides concrete commands, validation, previews and local records for creators and teams.
 
 [Website and documentation](https://socialcli.app/) · [AI agent guide](docs/ai-agents.md) · [Setup](SETUP.md) · [Security](SECURITY.md) · [TikTok limitations](docs/tiktok-review.md)
@@ -24,13 +29,18 @@ Copy this line into your terminal-enabled AI assistant:
 
 > Install SocialCli: https://socialcli.app/agents
 
-Candidate **0.3.0rc1** is published on [TestPyPI](https://test.pypi.org/project/socialcli/0.3.0rc1/).
-The guide verifies the exact download and uses https://pilot.socialcli.app for
-email sign-in, assistant approval and account connections. Install separately from
-existing0.2.6 workspaces. The hosted pilot currently enables YouTube for configured
-Google test users; Meta and TikTok are not enabled on this SaaS service. Stripe
-uses test mode. Planned access costs USD10/month after14free days from the first
-successful connection. No real subscriptions are collected in this pilot.
+The installation guide verifies the selected release download and uses
+https://pilot.socialcli.app for email sign-in, assistant approval and account
+connections. The pilot supports eligible YouTube, Facebook, Instagram and TikTok
+test accounts. Google remains in Testing; Meta development access and TikTok
+sandbox restrictions still apply. Stripe uses test mode. Planned access costs
+USD 10/month after 14 free days from the first successful connection. No real
+subscriptions are collected in this pilot.
+
+The `main` source includes fixes made after the immutable `v0.3.0rc3` release
+candidate tag. Updating GitHub does not replace an installed package or publish
+a new package artifact. See the [release record](deploy/saas/release.md) for the
+separate build, approval and distribution process.
 
 See [pilot testing](docs/pilot-testing.md). The operator/legacy examples below are
 not a replacement for the candidate's sign-in and pairing instructions.
@@ -64,7 +74,11 @@ uv run pytest
 
 ## Your first brand
 
-The installation steps create `MyBrand`. Replace that example name with your own brand and complete `MyBrand/brand.md` with its voice and identity. To connect through the hosted service, sign in on the provider's page and confirm your own account in the terminal:
+The installation steps create `MyBrand`. Replace that example name with your own
+brand and complete `MyBrand/brand.md` with its voice and identity. Read
+`socialcli agent-guide` to configure protected credential storage, sign in to
+SocialCli and approve the installation before connecting a provider. Account
+selection and approval take place in the user's browser:
 
 ```bash
 socialcli connect tiktok --brand MyBrand

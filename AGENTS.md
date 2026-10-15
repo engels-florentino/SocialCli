@@ -3,6 +3,15 @@
 Public Python CLI for creator-owned social accounts. Run `uv run pytest` and
 `uv run socialcli --help`. Internal Python imports remain `socialctl`.
 
+## One product, one canonical workspace
+
+SocialCli SaaS is the current version of this product, not a separate project.
+Work from this repository root on `main`; the current source version is 0.3.0rc3.
+The former `.worktrees/saas` and `.worktrees/shared-connect` checkouts have been
+consolidated here. Do not maintain a second permanent application checkout.
+Historical versions and tags remain migration/release evidence, not active copies.
+Package publication and server deployment are separate from updating `main`.
+
 - All product-facing UI, CLI messages, errors, emails and product documentation
   must be in English. The operator conversation may be in Spanish.
 
