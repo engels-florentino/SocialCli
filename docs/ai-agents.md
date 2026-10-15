@@ -337,7 +337,7 @@ explicitly; OS keyring remains the default and no silent fallback is provided.
 
 ## SaaS candidate installation
 
-For the 0.3.0rc7 TestPyPI candidate (require published metadata before installing), protected persistent storage and
+For the 0.3.0rc8 TestPyPI candidate (require published metadata before installing), protected persistent storage and
 browser-owned SocialCli sign-in, use the [compact bootstrap guide](agents.md).
 Create the brand, configure credentials, run account login against
 https://pilot.socialcli.app, then connect. Stable production PyPI publication and

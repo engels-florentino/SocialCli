@@ -1,3 +1,13 @@
+# Next candidate: 0.3.0rc8
+
+Includes all rc6/rc7 fixes and network-specific connection UI. rc7 publication was
+blocked by four ANSI-sensitive test assertions in GitHub Actions, corrected to
+compare rendered text while retaining raw-output secret checks. No runtime behavior
+changed in this correction. rc6 and rc7 tags remain immutable and unpublished.
+The public pilot remains rc5 until publication and rollout are confirmed.
+
+## Earlier preparation records
+
 # Next candidate: 0.3.0rc7
 
 Includes all rc6 fixes plus network-specific favicons, browser titles, headers and

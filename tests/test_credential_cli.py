@@ -38,7 +38,11 @@ def test_encrypted_backend_names_missing_parameter_before_touching_storage(tmp_p
         if flag != missing:args.extend([flag,str(path)])
     result=runner.invoke(app,args)
     assert result.exit_code==2
-    assert missing in result.output and 'required' in result.output.lower()
+    # Rich inserts ANSI sequences inside option names on CI terminals.
+    # Assert visible text while retaining raw-output checks for secret leakage.
+    import re
+    visible = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', result.output)
+    assert missing in visible and 'required' in visible.lower()
     assert 'Secure credential operation failed' not in result.output
     assert original_key.decode() not in result.output
     assert store.key_path.read_bytes()==original_key

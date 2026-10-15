@@ -1,8 +1,8 @@
-# SocialCli for AI agents — Candidate 0.3.0rc7 pilot
+# SocialCli for AI agents — Candidate 0.3.0rc8 pilot
 
 Requires a persistent shell, Python 3.11+, macOS/Linux and protected storage.
-Use https://test.pypi.org/pypi/socialcli/0.3.0rc7/json. Require HTTP 200, name
-`socialcli`, version `0.3.0rc7`; select only `socialcli-0.3.0rc7-py3-none-any.whl`.
+Use https://test.pypi.org/pypi/socialcli/0.3.0rc8/json. Require HTTP 200, name
+`socialcli`, version `0.3.0rc8`; select only `socialcli-0.3.0rc8-py3-none-any.whl`.
 Download its HTTPS URL and verify `digests.sha256` before installing that local
 wheel with `[headless-credentials]` in an isolated uv tool/venv. Dependencies come
 from normal PyPI. If unavailable, stop; never substitute a package or migrate an
