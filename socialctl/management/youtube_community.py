@@ -90,7 +90,15 @@ class YouTubeCommunityClient(YouTubeResourcesClient):
                         expected_total = page["totalResults"]
                     if next_token is None and expected_total is not None and expected_total != len(result['items']):
                         raise ResourceError("total does not match received list; partial read")
-                    if {'totalResults', 'resultsPerPage'} - page.keys():
+                    # Live comments.list envelopes may omit totalResults. The
+                    # cursor still drives traversal; retain every supplied-total
+                    # consistency check and require the typed provider envelope.
+                    optional_comment_total = (
+                        resource == 'comments' and 'resultsPerPage' in page
+                        and payload.get('kind') == 'youtube#commentListResponse'
+                        and isinstance(payload.get('etag'), str) and bool(payload['etag']))
+                    required = {'resultsPerPage'} if optional_comment_total else {'totalResults', 'resultsPerPage'}
+                    if required - page.keys():
                         raise ResourceError("pagination metadata missing; verified items retained")
                 if next_token is None:
                     if expected_total is not None and expected_total != len(result["items"]):

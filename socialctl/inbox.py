@@ -219,6 +219,7 @@ def sync_brand_inbox(brand,*,since,budget,only=None):
                                 result=sync_inbox(client,inbox,media_id=ident,since=since.isoformat(),resume=True)
                                 results=[result]; problems=[];items=[]
                                 def collect(observation):
+                                    row['unknown_author'] = row.get('unknown_author', 0) + observation.get('unknown_author', 0)
                                     counts = row.setdefault('skipped_comments', {'own':0, 'before_since':0, 'unverifiable':0})
                                     for label in counts:
                                         counts[label] += observation.get('skipped_' + label, 0)
@@ -269,6 +270,8 @@ def sync_brand_inbox(brand,*,since,budget,only=None):
     data=store.load();items=[]
     for key in observed_keys:
         item=data['items'][key];created=item.get('created_time')
+        if item.get('author_id') == item['account_id']:
+            continue
         try:inside=created is None or datetime.fromisoformat(created.replace('Z','+00:00')).astimezone(timezone.utc)>=since
         except (ValueError,AttributeError):inside=True
         if inside or key in edited:items.append({**item,'edited_this_sync':key in edited})

@@ -44,7 +44,8 @@ class ResourceUncertain(ResourceError):
 SAFE_REASONS = frozenset({"manualSortRequired", "channelSectionNotFound",
     "channelSectionForbidden", "channelNotFound", "idInvalid", "invalidCriteria",
     "forbidden", "insufficientPermissions", "quotaExceeded", "notFound",
-    "playlistNotFound", "playlistItemNotFound", "videoNotFound", "invalidValue"})
+    "playlistNotFound", "playlistItemNotFound", "videoNotFound", "invalidValue",
+    "commentsDisabled"})
 
 
 def provider_reason(response, token):
@@ -156,7 +157,7 @@ class YouTubeResourcesClient(YouTubeManagementClient):
                               else ResourceRejected) if writing else ResourceError)
                     reason = provider_reason(response, token)
                     detail = f"; reason={reason}" if reason else ""
-                    raise error(f"YouTube HTTP {response.status_code}{detail}; check specific permissions, operation unconfirmed",
+                    raise error(f"YouTube HTTP {response.status_code}{detail}; request not completed",
                         http_status=response.status_code, provider_reason=reason)
                 data = bytearray()
                 for chunk in response.iter_bytes():

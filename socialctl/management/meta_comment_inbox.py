@@ -40,7 +40,7 @@ class InboxComment(BaseModel):
     account_id: str
     media_id: str
     comment_id: str
-    author_id: str
+    author_id: str | None
     author_name: str | None = None
     text: str
     created_time: str | None = None
@@ -200,16 +200,20 @@ def _record(data: InboxData, client: MetaCommentsClient, media_id: str, comment_
 
 
 def grouped_inbox(data: InboxData, *, platform: str | None = None, media_id: str | None = None) -> list[dict]:
-    groups: dict[tuple[str, str, str, str, str], list[InboxComment]] = {}
+    groups: dict[tuple, list[InboxComment]] = {}
     for row in data.comments:
+        if row.author_id == row.account_id:
+            continue
         if platform and row.platform != platform:
             continue
         if media_id and row.media_id != media_id:
             continue
-        key = (row.platform, row.media_id, row.author_id, row.language, row.kind)
+        # Unknown authors must not be grouped as though they were one person.
+        key = (row.platform, row.media_id, row.author_id, row.language, row.kind,
+               row.comment_id if row.author_id is None else '')
         groups.setdefault(key, []).append(row)
     result = []
-    for key in sorted(groups):
+    for key in sorted(groups, key=lambda parts: tuple(part or '' for part in parts)):
         rows = sorted(groups[key], key=lambda row: (row.created_time or "", row.comment_id))
         result.append({"platform": key[0], "media_id": key[1], "author_id": key[2],
             "language": key[3], "kind": key[4], "comments": [row.model_dump(mode="json") for row in rows]})
@@ -226,7 +230,7 @@ def verified_inbox_rows(rows, platform, media_id, parent_id=None):
         try:
             _id(ident)
             author = row.get('from')
-            if not isinstance(author, dict) or not isinstance(author.get('id'), str) or not author['id'] or not isinstance(row.get(field), str):
+            if (author is not None and (not isinstance(author, dict) or not isinstance(author.get('id'), str) or not author['id'])) or not isinstance(row.get(field), str):
                 raise CommentError('unverifiable text or author')
             if platform.value == 'facebook':
                 parent = row.get('parent')
@@ -297,7 +301,7 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
             'error': ((listing.get('error') + '; ') if listing.get('error') else '') +
                      'Some Meta comments lack creation time; interval membership unknown; observations retained'}
 
-    added = updated = unchanged = skipped_own = skipped_before_since = 0
+    added = updated = unchanged = skipped_own = skipped_before_since = unknown_author = 0
     with store.lock():
         data = store.load()
         existing = {(row.platform, row.account_id, row.comment_id): row for row in data.comments}
@@ -305,15 +309,25 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
         for ident, raw in remote.items():
             author = raw.get("from") or {}
             author_id = author.get("id") if isinstance(author, dict) else None
+            key = (client.platform.value, client.account_id, ident)
+            previous = existing.get(key)
+            if previous:
+                if (previous.media_id, previous.parent_id) != (media_id, parent_id):
+                    raise CommentError("remote ID already belongs to another inbox item")
+                if previous.author_id != author_id:
+                    previous.journal.append({'at': now, 'event': 'author_identity_observed',
+                                             'before': previous.author_id, 'after': author_id})
+                previous.author_id = author_id
+                name = author.get('name') or author.get('username')
+                previous.author_name = name if isinstance(name, str) else None
+                previous.last_observed_at = now
             if author_id == client.account_id:
                 skipped_own += 1
                 continue
             field = "message" if client.platform.value == "facebook" else "text"
             text = raw.get(field)
-            if not isinstance(text, str) or not isinstance(author_id, str) or not author_id:
+            if not isinstance(text, str):
                 raise CommentError("Meta returned unverifiable text or author")
-            key = (client.platform.value, client.account_id, ident)
-            previous = existing.get(key)
             created = raw.get("created_time") if client.platform.value == "facebook" else raw.get("timestamp")
             if created is not None:
                 created = _canonical_time(created)
@@ -322,13 +336,12 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
                     skipped_before_since += 1
                     continue
                 observed_times.append(created)
+            if author_id is None:
+                unknown_author += 1
             language, kind = classify_comment(text)
             if previous:
-                previous.last_observed_at = now
                 previous.provider_updated_at = raw.get('updated_time')
                 if previous.original_text is None: previous.original_text = previous.text
-                if (previous.media_id, previous.parent_id) != (media_id, parent_id):
-                    raise CommentError("remote ID already belongs to another inbox item")
                 if previous.text != text:
                     previous.text, previous.language, previous.kind = text, language, kind
                     previous.updated_at = now
@@ -374,6 +387,7 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
         "skipped_own": skipped_own, "skipped_before_since": skipped_before_since,
         "skipped_unverifiable": skipped_unverifiable,
         "unknown_creation_time": unknown_creation_time,
+        "unknown_author": unknown_author,
         "groups": grouped_inbox(data, platform=client.platform.value, media_id=media_id)}
 
 
@@ -385,6 +399,8 @@ def prepare_inbox_draft(client: MetaCommentsClient, comment_store: CommentStore,
     with inbox_store.lock():
         data = inbox_store.load()
         record = _record(data, client, media_id, comment_id)
+        if not record.author_id or record.author_id == record.account_id:
+            raise CommentError('target must have a verified external author')
         key = response_key(client.account_id, comment_id, text)
         if record.status in {"aprobado", "respondido", "incierto"}:
             raise CommentError("comment already has an approved or uncertain reply; no additional POST created")

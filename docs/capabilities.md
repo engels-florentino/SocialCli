@@ -1,6 +1,6 @@
 # Capabilities, permissions and limits
 
-SocialCli 0.2.4 · verified implementation scope, October 11, 2026.
+SocialCli SaaS candidate · implementation scope, October 14, 2026.
 
 A supported command is not proof of access. Provider app eligibility/review,
 creator consent, token grants, actor role and object eligibility all matter.
@@ -11,7 +11,7 @@ reconnect with the requested optional access and have the creator consent.
 | Action | SocialCli support | Required access and identity | Object and verification limits |
 |---|---|---|---|
 | Connect accounts | YouTube, Facebook, Instagram, TikTok through configured service | Creator OAuth consent; exact account binding; provider app eligible for this creator | Sandbox/Testing/development restrictions still apply. Agent hands off link, never opens it. |
-| Account/content metrics | Provider-specific `stats`; YouTube Analytics optional | YouTube read/Analytics grants; Facebook `read_insights` and Page read access; Instagram `instagram_manage_insights` plus basic/Page access; TikTok authorized user/video read grants | Metrics vary by account/content and date. Unsupported metrics are null, not zero. Partial coverage exits 1. |
+| Account/content metrics | Provider-specific `stats`; YouTube Analytics optional | YouTube read/Analytics grants; Facebook `read_insights` and Page read access; Instagram `instagram_manage_insights` plus basic/Page access; TikTok authorized user/video read grants | Metrics vary by account/content and date. Unsupported metrics are null, not zero. Aggregate partial coverage exits 3. |
 | Unified comment inbox | Owned YouTube uploads, Facebook Page posts, Instagram media | YouTube authenticated channel/read access; Facebook Page read/user-content grants; Instagram basic/comment grants and linked Page/professional account | Published YouTube threads/replies; Meta top-level/direct replies only. Provider visibility, page limits and budgets apply. TikTok inbox comments unsupported. |
 | Add/reply to comments | YouTube and Meta exact supervised proposals | YouTube `youtube.force-ssl`; Facebook Page identity with `pages_manage_engagement` and applicable read grants; Instagram `instagram_manage_comments`, basic/Page grants | Exact actor and media/parent verification required. Missing pagination metadata never proves absence. Unknown previous writes block repeats. |
 | Facebook like/unlike | Owned Page posts and their top-level comments through Meta management | Connected Page token, `pages_manage_engagement`, applicable Page task and read access | For comment likes, target_id identifies the owned post and comment_id identifies its top-level comment. Exact membership and Page viewer like state are required. Post likes retain the existing owned-content traversal. Arbitrary-profile actions and nested comment likes are not exposed. HTTP 400 alone does not identify a missing permission. |
@@ -32,7 +32,7 @@ Public GitHub availability does not establish production approval.
 ## Results and recovery
 
 `stats --json` and `inbox --json` produce version 1 reports, with progress on stderr.
-Exit 0 is complete; 1 is partial/failed; 2 is an invalid invocation. Parser errors
+For aggregate stats/inbox/report, exit 0 is complete, 3 is partial, 1 is failure, and 2 is an invalid invocation. Other read commands retain their documented exit contracts. Parser errors
 use standard CLI usage on stderr. Existing successful JSON schemas remain intact.
 Snapshots retain provenance when previous data is reused. Complete watermarks
 cover only the exact scope read; missing rows never prove deletion globally.
@@ -88,3 +88,9 @@ IDs and ownership; later request failures retain earlier verified media.
 A partial report with zero observed comments does not establish an empty inbox.
 YouTube `stats` retains fetched account/video metrics when optional enrichment
 or audience reads fail, records warnings, and reports partial JSON coverage.
+
+Unknown Meta authors are represented by `author_id: null`; coverage counts them as
+`unknown_author`. This preserves visible comments without attributing them to a
+person or proving own authorship. Own-comment edit/delete checks remain strict.
+YouTube `comments_disabled` means the video disables comments, not that the
+account needs to reconnect.

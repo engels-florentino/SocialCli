@@ -50,6 +50,7 @@ _CATALOG = {
     'rate_limited': ('retry_later', 'Wait for the provider rate limit before a bounded read retry.'),
     'authorization_unavailable': ('user_action', 'Review the account authorization; this failure alone does not prove token expiry.'),
     'permissions_required': ('user_action', 'Review granted permissions and account eligibility with the owner.'),
+    'comments_disabled': ('inspect', 'Comments are disabled on this video. Reconnecting does not enable them; do not change video settings without owner approval.'),
     'target_unavailable': ('correct_input', 'Verify the requested target and account before another read.'),
     'request_rejected': ('correct_input', 'Review supported arguments and target before another request.'),
     'operation_rejected': ('inspect', 'Inspect the target, stored state and approval before another operation.'),
@@ -122,6 +123,8 @@ def error_document(exc: BaseException, *, read_only: bool) -> dict:
     elif isinstance(exc, (LocalConfigurationError,httpx.InvalidURL,httpx.LocalProtocolError,httpx.UnsupportedProtocol)):
         code = 'local_configuration'
     elif isinstance(exc, (TransportFailure,httpx.TransportError)): code = 'transport_failure'
+    elif isinstance(exc, ResourceError) and exc.http_status == 403 and exc.provider_reason in {'commentsDisabled', 'quotaExceeded'}:
+        code = 'comments_disabled' if exc.provider_reason == 'commentsDisabled' else 'rate_limited'
     elif isinstance(exc, httpx.HTTPStatusError) or isinstance(exc, ResourceError) and exc.http_status:
         status = exc.response.status_code if isinstance(exc,httpx.HTTPStatusError) else exc.http_status
         if isinstance(exc,httpx.HTTPStatusError) and exc.request.method not in {'GET','HEAD','OPTIONS'}:

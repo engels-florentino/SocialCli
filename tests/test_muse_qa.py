@@ -97,7 +97,7 @@ def test_inbox_distinguishes_all_failed_reads_from_verified_empty(tmp_path,monke
     _,brand,graph,_,_=service(tmp_path)
     def provider(request):
         if request.url.path.endswith('/789/comments'):
-            return httpx.Response(200,json={'data':[{'id':'800','message':'Unverifiable author'}]}) if failed else httpx.Response(200,json={'data':[]})
+            return httpx.Response(200,json={'data':[{'id':'800','message':'Malformed author','from':{}}]}) if failed else httpx.Response(200,json={'data':[]})
         return graph(request)
     monkeypatch.setattr(mod,'read_client',lambda *a,**k:httpx.Client(transport=httpx.MockTransport(provider)))
     monkeypatch.setattr(MetaClient,'content_list',lambda *a,**k:{'data':[{'id':'789'}],'complete':True})

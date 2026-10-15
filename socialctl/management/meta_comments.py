@@ -12,6 +12,7 @@ import os
 import re
 import tempfile
 import uuid
+from urllib.parse import urlsplit, parse_qs
 from pathlib import Path
 from contextlib import ExitStack
 from typing import Literal
@@ -153,6 +154,8 @@ class MetaCommentsClient:
             fields = ("id,message,from{id,name},created_time,parent"
                       if self.platform is Platform.FACEBOOK else
                       "id,text,from{id,username},timestamp,parent_id")
+        if self.platform is Platform.FACEBOOK:
+            fields += ',permalink_url'
         params = {"fields": fields, "limit": "100"}
         if after is not None:
             if not isinstance(after, str) or not re.fullmatch(r"[A-Za-z0-9_=-]{1,2048}", after):
@@ -227,7 +230,38 @@ class MetaCommentsClient:
             raise CommentError('direct comment inspection is supported here only for Facebook')
         comment_id = _id(comment_id)
         return self._request('GET', comment_id,
-            params={'fields':'id,message,from{id},parent{id},object{id}'})
+            params={'fields':'id,message,from{id},parent{id},object{id},permalink_url'})
+
+    def _permalink_membership(self, change, row):
+        # A received write ID and its exact direct GET are prerequisites. Never
+        # invent an alias from numeric suffixes or adopt a text-only candidate.
+        url = row.get('permalink_url')
+        if not isinstance(url, str) or len(url) > 2048:
+            raise CommentError('comment permalink unavailable')
+        try:
+            parsed = urlsplit(url)
+            query = parse_qs(parsed.query, strict_parsing=True)
+            comment = query.get('comment_id', [])
+            valid = (parsed.scheme == 'https' and parsed.netloc == 'www.facebook.com'
+                     and not parsed.fragment and len(comment) == 1
+                     and re.fullmatch(r'[0-9]+', comment[0]))
+        except ValueError:
+            valid = False
+        if not valid:
+            raise CommentError('comment permalink is not a specific Facebook comment')
+        listing = self.list_comments(change.media_id, parent_id=change.parent_id)
+        matches = [candidate for candidate in listing['data']
+                   if candidate.get('permalink_url') == url]
+        if len(matches) != 1:
+            raise CommentError('comment permalink membership is not unambiguous')
+        candidate = matches[0]
+        parent = (candidate.get('parent') or {}).get('id')
+        if ((candidate.get('from') or {}).get('id') != self.account_id
+                or candidate.get('message') != change.text
+                or parent not in {None, change.parent_id or change.media_id}):
+            raise CommentError('comment permalink member contradicts approved effect')
+        return {'id': _id(candidate.get('id')), 'text': row['message'], 'author_id': self.account_id,
+                'media_id': change.media_id, 'parent_id': change.parent_id}
 
     def verify_comment(self, change):
         from socialctl.read_budget import ReadBudget
@@ -257,10 +291,15 @@ class MetaCommentsClient:
                 media = (row.get('object') or {}).get('id')
                 target_matches = (parent == change.parent_id and media in {None, change.media_id}) if change.parent_id else (
                     media == change.media_id and parent is None or parent == change.media_id and media in {None, change.media_id})
-                if row.get('id') != change.remote_id or (row.get('from') or {}).get('id') != self.account_id or not target_matches:
+                if row.get('id') != change.remote_id or (row.get('from') or {}).get('id') != self.account_id or row.get('message') != change.text:
                     raise CommentError('direct comment identity, actor or target does not match approved effect')
-                current = {'id':row['id'], 'text':row.get('message'), 'author_id':self.account_id,
-                    'media_id':change.media_id, 'parent_id':change.parent_id}
+                if not target_matches:
+                    if parent is not None or media is not None:
+                        raise CommentError('direct comment target contradicts approved effect')
+                    current = self._permalink_membership(change, row)
+                else:
+                    current = {'id':row['id'], 'text':row.get('message'), 'author_id':self.account_id,
+                        'media_id':change.media_id, 'parent_id':change.parent_id}
         if current is None:
             current = self.find_comment(change.media_id, change.remote_id,
                                         parent_id=change.parent_id, own=True)

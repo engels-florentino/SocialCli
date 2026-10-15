@@ -177,7 +177,7 @@ def test_meta_invalid_comment_does_not_discard_other_verified_comments(tmp_path,
     _, brand, graph, original, _ = service(tmp_path)
     valid = remote_row(graph, '800', 'A valid viewer comment')
     bad = remote_row(graph, '801', 'Unverifiable')
-    bad[bad_field] = {'id':'999'} if bad_field == 'parent' else None
+    bad[bad_field] = {'id':'999'} if bad_field == 'parent' else ({} if bad_field == 'from' else None)
     graph.pages = lambda request: {'data':[bad, valid]}
     client = MetaInboxClient(brand, original.platform, original.client)
     store = CommentInboxStore(brand.raiz)
@@ -216,7 +216,7 @@ def test_unified_inbox_explains_skipped_comments_while_returning_valid_observati
     recent = remote_row(graph,'800','Recent',created='2026-10-10T12:00:00Z')
     own = remote_row(graph,'801','Our comment',author='123',created='2026-10-10T12:00:00Z')
     old = remote_row(graph,'802','Older',created='2026-10-08T12:00:00Z')
-    invalid = remote_row(graph,'803','No author');invalid.pop('from')
+    invalid = remote_row(graph,'803','Malformed author');invalid['from']={}
     graph.pages = lambda request: {'data':[recent,own,old,invalid] if request.url.path.endswith('/789/comments') else []}
     monkeypatch.setattr(mod,'read_client',lambda *a,**k:httpx.Client(transport=httpx.MockTransport(graph)))
     monkeypatch.setattr(MetaClient,'content_list',lambda *a,**k:{'data':[{'id':'789'}],'complete':True})

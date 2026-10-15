@@ -78,3 +78,38 @@ Independent review found no blockers. With the patched development client, the
 same private copy accepted the schedule and was verified as applied. Actual
 publication at its requested time and cleanup are separate acceptance checks.
 The immutable public rc2 wheel does not yet include this client fix.
+
+## API contract acceptance corrections after rc2
+
+Live read-only inspection identified four YouTube `commentsDisabled` responses,
+not missing OAuth grants. The safe reason allowlist and agent error catalog now
+preserve this distinction; quota failures also retain their retry-later meaning.
+No video settings are changed to make a read pass.
+
+`comments.list` returned a typed, ETagged list with `resultsPerPage` and cursor
+information but no `totalResults`. The client now follows its cursor to the end
+without requiring that absent total. Supplied contradictory totals, invalid
+capacity, duplicate IDs, repeated cursors, wrong ownership and page limits still
+prevent a complete result. Other incomplete envelopes retain their safeguards.
+
+Meta can withhold `from` on a visible comment. Inbox reads now retain its exact
+ID, text and parent membership with `author_id: null`, count unknown authors and
+keep them separately grouped. They never invent a person or infer own authorship.
+Malformed supplied author data remains rejected. Edit/delete and write readback
+still require positive own-author verification. Date filters also apply to these
+observations; old comments no longer poison current-period coverage.
+
+Facebook may return different composite IDs for one video comment. When direct
+readback of the exact write receipt omits object/parent, verification can use its
+specific official comment permalink and one matching member of the owned target's
+comment edge. Actor, text and parent constraints still apply. Numeric suffixes,
+text alone, duplicate matches, contradictory parents and missing write receipts
+never prove identity; uncertain operations are never repeated.
+
+References: [YouTube comments.list](https://developers.google.com/youtube/v3/docs/comments/list),
+[YouTube commentThreads.list errors](https://developers.google.com/youtube/v3/docs/commentThreads/list),
+[Meta comments](https://developers.facebook.com/docs/graph-api/reference/object/comments),
+[Meta Comment permalink availability](https://developers.facebook.com/docs/graph-api/changelog/version20.0).
+
+These are source-client corrections after the immutable TestPyPI rc2 artifact.
+They require a new client release before being available to public rc2 installs.

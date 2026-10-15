@@ -47,6 +47,8 @@ def review_inbox(brand):
         if not field or row['account_id']!=(brand.cuentas.get(row['platform']) or {}).get(field):
             excluded+=1;continue
         if key!=UnifiedInboxStore.key(row):raise ChangeError('saved comment identity is inconsistent')
+        if row.get('author_id') == row['account_id']:
+            continue
         proposals=links.get(key,[])
         if any(p['media_id']!=row['media_id'] for p in proposals):raise ChangeError('reply journal target differs from observed media')
         states={p['status'] for p in proposals}
