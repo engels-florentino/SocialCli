@@ -167,6 +167,8 @@ def provenance(source, account):
         "monetization_missing_reason": "watch_time_is_not_YPP_eligible_hours",
         "definitions_url": "https://developers.google.com/youtube/analytics/metrics",
         "definition_observed_at": "2026-09-13", "schema_version": 1,
-        "retention": {"category": "authorized_statistics", "authorization_check_days": 30,
-            "in_client_revocation_removal_days": 7, "external_revocation_check_days": 30,
-            "cleanup_owner": "Task13; no automatic purge", "scope": "API-derived observations only; supplied originals excluded"}}
+        "retention": {"category": "authorized_statistics", "authorization_check_days": None,
+            "in_client_revocation_removal_days": 7, "external_revocation_check_days": None,
+            "requires_running_cleanup": True, "revocation_detection": "provider rejection or status; no independent periodic authorization validation",
+            "cleanup_owner": "local client before brand access and data-cleanup command", "max_cache_days": 6,
+            "historical_retention": "not enabled; no long-term authorization/video validation", "scope": "API-derived observations only; supplied originals excluded"}}

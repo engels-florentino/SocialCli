@@ -70,6 +70,13 @@ class CompleteAuthorization(BaseModel):
 def create_app(settings: Settings, *, store: Store | None = None,
                provider_client: httpx.Client | None = None, identity_client: httpx.Client | None = None, billing_client: httpx.Client | None = None, clock=time.time) -> FastAPI:
     vault = store or Store(settings.database, settings.encryption_keys)
+    # Enforce quarantine even if deployment configuration accidentally omits SaaS.
+    # A raw legacy service must not release credentials from a mounted backup.
+    with vault.read_transaction() as db:
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='saas_restore_guard'").fetchone():
+            guard=db.execute('SELECT state FROM saas_restore_guard WHERE singleton=1').fetchone()
+            if guard is None or guard['state']!='ready':
+                raise ValueError('The restored database is quarantined; complete current-authority and identity cleanup before startup.')
     client = provider_client or httpx.Client(timeout=20, follow_redirects=False)
     providers = Providers(settings, client)
     from socialctl.connection_service.legacy import LegacyPolicy
@@ -247,7 +254,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
 
     @app.post('/connect/{authorization_id}')
     async def browser_start(authorization_id: str, request: Request):
-        if request.headers.get('origin', settings.public_url) != settings.public_url:
+        if request.headers.get('origin') != settings.public_url:
             raise HTTPException(403, 'invalid connection form; reload the login page')
         if request.headers.get('content-type', '').split(';')[0].strip() != 'application/x-www-form-urlencoded':
             raise HTTPException(403, 'invalid connection form; reload the login page')
@@ -258,7 +265,9 @@ def create_app(settings: Settings, *, store: Store | None = None,
                     body.extend(chunk)
                     if len(body) > 8192:
                         raise HTTPException(413, 'connection form is too large')
-            values = parse_qs(body.decode('ascii'), strict_parsing=True, max_num_fields=2)
+            values = parse_qs(body.decode('ascii'), strict_parsing=True, max_num_fields=5)
+            if any(len(v)!=1 for v in values.values()):
+                raise ValueError()
             tokens = values.get('form_token', [])
         except (ValueError, UnicodeError, TimeoutError):
             raise HTTPException(403, 'invalid connection form; reload the login page') from None
@@ -270,6 +279,10 @@ def create_app(settings: Settings, *, store: Store | None = None,
             with vault.transaction() as db:
                 return pending_authorization(db, authorization_id)
         owner_record = await asyncio.to_thread(read_owner_record)
+        from socialctl.saas import consent
+        choice={k:v[0] for k,v in values.items()}
+        consent.privacy_choice(choice)
+        assistant_consent = None if owner_record['payload'].get('saas') else consent.assistant_choice(choice,clock())
         if owner_record['payload'].get('saas'):
             try:
                 user = await asyncio.to_thread(app.state.saas_sessions.require_user, request)
@@ -285,7 +298,9 @@ def create_app(settings: Settings, *, store: Store | None = None,
             with vault.transaction() as db:
                 record = pending_authorization(db, authorization_id)
                 data = record['payload']
-                data.update(state=authorization_id+'.'+secrets.token_urlsafe(32),
+                data.update(privacy_consent={'version':consent.PRIVACY_VERSION,'accepted_at':clock(),'source':'owner_browser'},
+                            assistant_consent=assistant_consent,
+                            state=authorization_id+'.'+secrets.token_urlsafe(32),
                             browser_hash=digest(browser_secret), verifier=secrets.token_urlsafe(64))
                 vault.put(db,'authorization',authorization_id,data,expires=record['expires'],credential_hash=record['credential_hash'])
                 url = providers.authorization_url(data['platform'], data['state'], data['verifier'],
@@ -319,6 +334,9 @@ def create_app(settings: Settings, *, store: Store | None = None,
                 raise HTTPException(400, 'invalid authorization callback')
             if data.get('saas'):
                 app.state.saas_connections.authorization(db,authorization_id)
+            else:
+                from socialctl.saas import consent
+                consent.require_legacy(data)
             # Consume state before contacting the provider. An uncertain exchange
             # is never retried with the same authorization code.
             data.pop('state',None)
@@ -337,13 +355,25 @@ def create_app(settings: Settings, *, store: Store | None = None,
             except Exception:
                 data['status'] = 'failed'
             data.pop('verifier',None)
+            revoked_during_exchange=False
             with vault.transaction() as db:
                 current = vault.get(db,'authorization',authorization_id)
-                if current is not None and current['expires'] > clock():
+                if data.get('saas') and platform=='youtube' and data['status']=='ready':
+                    owner_id=data['saas']['user_id']
+                    revoked_during_exchange=bool(db.execute(
+                        "SELECT 1 FROM saas_deletion_tombstones WHERE (kind='user' AND id=?) OR (kind='grant' AND id=?)",
+                        (owner_id,authorization_id)).fetchone())
+                    if revoked_during_exchange:
+                        from socialctl.saas import revocation
+                        revocation.enqueue(app.state.saas,db,authorization_id,
+                            {'user_id':owner_id,'platform':platform,'grant':data['result']['grant']},clock())
+                if not revoked_during_exchange and current is not None and current['expires'] > clock():
                     legacy.require(db,'authorization',authorization_id,current)
                     if current['payload'].get('saas'):
                         app.state.saas_connections.authorization(db,authorization_id)
                     vault.put(db,'authorization',authorization_id,data,expires=current['expires'],credential_hash=current['credential_hash'])
+            if revoked_during_exchange:
+                raise HTTPException(409,'connection_changed: This authorization was revoked while Google was responding. Cleanup is pending; no connection was restored.')
             response = browser_page('Authorization received. No content was published.' if data['status']=='ready'
                                     else 'Authorization could not be completed. Check permissions and app configuration.', success=data['status']=='ready', platform=platform)
         if data.get('saas') and data['status']=='ready':
@@ -357,6 +387,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
             data = checked(db,'authorization',authorization_id,request)['payload']
             reply = {'version':1,'status':data['status']}
             if data['status']=='ready':
+                from socialctl.saas import consent
+                consent.require_legacy(data)
                 reply['accounts'] = [safe_account(a) for a in data['result']['accounts']]
             return reply
 
@@ -374,6 +406,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
             data = record['payload']
             if data['status'] != 'ready':
                 raise HTTPException(409,'authorization is not ready')
+            from socialctl.saas import consent
+            consent.require_legacy(data)
             result = data['result']
             account = next((a for a in result['accounts'] if a['id']==body.account_id),None)
             if account is None:
@@ -382,7 +416,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
             if account.get('access_token'):
                 grant['access_token'] = account['access_token']
             connection_id, connection_secret = secrets.token_urlsafe(24), secrets.token_urlsafe(32)
-            payload = {'platform':data['platform'],'account':safe_account(account),'grant':grant,'activated':False}
+            payload = {'platform':data['platform'],'account':safe_account(account),'grant':grant,'activated':False,
+                       'privacy_consent':data.get('privacy_consent'),'assistant_consent':data.get('assistant_consent')}
             expires=legacy.provisional(db,authorization_id,connection_id,clock()+SESSION_SECONDS)
             vault.put(db,'connection',connection_id,payload,expires=expires,credential_hash=digest(connection_secret))
             vault.delete(db,'authorization',authorization_id)
@@ -395,6 +430,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
         with vault.transaction() as db:
             record = checked(db,'connection',connection_id,request)
             data = record['payload']
+            from socialctl.saas import consent
+            consent.require_legacy(data)
             grant = data['grant']
         return {'version':1,'platform':data['platform'],'account':data['account'],
                 'granted_scopes':grant['granted_scopes'],'expires_at':grant['expires_at'],
@@ -405,6 +442,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
         with vault.transaction() as db:
             record = checked(db,'connection',connection_id,request)
             data = record['payload']
+            from socialctl.saas import consent
+            consent.require_legacy(data)
             grant = data['grant']
             if data['platform'] not in settings.providers:
                 raise HTTPException(503,'platform temporarily disabled')

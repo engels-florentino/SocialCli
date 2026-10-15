@@ -103,7 +103,9 @@ class Store:
         db.execute('DELETE FROM records WHERE kind=? AND id=?', (kind, record_id))
 
     def purge(self, db, *, now: float):
-        db.execute('DELETE FROM records WHERE expires<=?', (now,))
+        # SaaS grants need a durable revocation intent before their only Google
+        # token is discarded. AccountLifecycle.prune_expired owns that cleanup.
+        db.execute("DELETE FROM records WHERE expires<=? AND kind!='saas-grant'", (now,))
         db.execute('DELETE FROM rates WHERE bucket<?', (int(now // 60) - 60,))
 
     def admit(self, db, identity: str, *, now: float, limit: int = 5) -> bool:

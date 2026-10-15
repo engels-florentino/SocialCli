@@ -114,6 +114,13 @@ class NativeStore:
     def _save(db, job):
         db.execute('UPDATE jobs SET data=? WHERE id=?', (job.model_dump_json(), job.id))
 
+    @staticmethod
+    def _require_provider_writable(job):
+        if (job is not None and job.platform == 'youtube' and job.state == 'blocked'
+                and job.route == 'blocked' and job.approval_digest is None
+                and job.remote_id is None):
+            raise ValueError('YouTube API data was removed; late provider writes are blocked')
+
     def get(self, job_id: str) -> NativeJob | None:
         with self._db() as db:
             return self._get(db, job_id) if db else None
@@ -343,6 +350,7 @@ class NativeStore:
             job = self._get(db, observation.job_id)
             if job is None:
                 raise ValueError('Unknown job')
+            self._require_provider_writable(job)
             pending=db.execute('SELECT data FROM actions WHERE job_id=?',(job.id,)).fetchone()
             if pending and json.loads(pending[0])['status'] != 'confirmed':
                 raise ValueError('Pending action requires action-specific reconciliation')
@@ -406,6 +414,7 @@ class NativeStore:
 
     def notice(self, job_id, message, *, now=None):
         with self._db(write=True) as db:
+            self._require_provider_writable(self._get(db, job_id))
             db.execute('INSERT INTO notices VALUES (?,?,?)',(job_id,_now(now).isoformat(),message))
 
     def get_notices(self, job_id):
@@ -430,9 +439,13 @@ class NativeStore:
             if db is None or not db.execute("SELECT 1 FROM sqlite_master WHERE name='actions'").fetchone():
                 return None
             row=db.execute('SELECT data FROM actions WHERE job_id=?',(job_id,)).fetchone()
-            return json.loads(row[0]) if row else None
+            action=json.loads(row[0]) if row else None
+            if action and action.get('data_lifecycle')=='purged':
+                raise ValueError('Native action API receipt expired; replay is blocked. Reconcile in the provider interface.')
+            return action
 
     def save_action(self, job, action, *, now=None):
+        action['created_at']=_now(now).isoformat()
         with self._db(write=True) as db:
             if self._get(db,job.id) != job:
                 raise ValueError('Job changed; review a new preview')

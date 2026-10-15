@@ -124,7 +124,22 @@ class WebSessions:
             raise HTTPException(401,'Sign in to SocialCli to continue.')
         return record
 
-    def require_user(self,request):
+    def require_user(self,request,*,privacy=True):
+        user=self.authenticated_user(request)
+        if privacy:
+            from socialctl.saas import consent
+            with self.vault.read_transaction() as db:
+                accepted=consent.privacy_accepted(self.metadata,db,user.id)
+            if not accepted:
+                if request.method in {'GET','HEAD'}:
+                    from urllib.parse import urlencode
+                    from socialctl.saas.routes import safe_next
+                    raise HTTPException(303,'Review the Privacy Policy.',headers={
+                        'Location':'/account/privacy?'+urlencode({'next':safe_next(request.url.path)})})
+                raise HTTPException(403,'privacy_acceptance_required: The account owner must review the current Privacy Policy in their browser.')
+        return user
+
+    def authenticated_user(self,request):
         secret=request.cookies.get(self.cookie,'')
         if not 16<=len(secret)<=512:
             raise HTTPException(401,'Sign in to SocialCli to continue.')

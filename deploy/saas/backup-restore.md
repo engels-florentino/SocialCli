@@ -1,3 +1,11 @@
+# Current retention and restore changes — October 15, 2026
+
+The source now implements an absolute six-day snapshot cutoff, post-prune integrity checks, and a checked Drive mirror with permanent removal of expired objects. `backup_host.py --preview-retention` inventories both repositories without deletion; `--retention` uses the same worker lock as backups. Configure both `drive_remote` (the exact `socialcli_backup:SocialCli-Backups/candidate` root) and private `drive_config` before enabling remote completion. Independent six-hour retention has a durable status receipt and freshness/error alerts. Do not keep the older copy-only systemd post-commands: install the current drive-copy.conf.
+
+New snapshots have a startup quarantine marker. Use the [deletion-safe restore procedure](restore-guard.md), including a fresh current-authority manifest and separately verified Auth cleanup, before release. Historical unmarked snapshots also require that procedure. Never launch a raw restored backup. No authority means no release. This section describes source behavior; actual deployment evidence must be recorded separately.
+
+The following is historical evidence; older unbounded-retention and copy-only descriptions are superseded by the current implementation after its verified deployment.
+
 # Backup and isolated recovery
 
 The SaaS metadata and encrypted connection vault share **one SQLite database**.

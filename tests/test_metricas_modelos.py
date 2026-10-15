@@ -1,7 +1,20 @@
 import json
 import os
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def observation_clock(monkeypatch):
+    """The storage fixtures represent observations made on September 11."""
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value=cls(2026,9,11,12,tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+    monkeypatch.setattr("socialctl.youtube_data.datetime",Clock)
 
 from socialctl.brands import crear_brand
 from socialctl.metricas.almacen import (
@@ -159,8 +172,8 @@ def test_un_snapshot_ilegible_se_ignora_con_aviso_en_vez_de_tumbar_la_lectura(tm
     ruta.parent.mkdir(parents=True, exist_ok=True)
     ruta.write_text('{"fecha": "2026-09-11", "marca": "Hist', encoding="utf-8")
 
-    with pytest.warns(UserWarning, match='cannot be read'):
-        assert cargar_snapshot(brand, date(2026, 9, 11)) is None
+    with pytest.raises(ValueError, match='cleanup is incomplete'):
+        cargar_snapshot(brand, date(2026, 9, 11))
 
 
 def test_un_snapshot_corrupto_no_impide_comparar_con_los_demas(tmp_path):
@@ -170,12 +183,10 @@ def test_un_snapshot_corrupto_no_impide_comparar_con_los_demas(tmp_path):
     guardar_snapshot(brand, _snapshot(date(2026, 9, 9), vistas=50))
     ruta_snapshot(brand, date(2026, 9, 10)).write_text("{roto", encoding="utf-8")
 
-    with pytest.warns(UserWarning, match="2026-09-10"):
-        anterior = snapshot_anterior(brand, antes_de=date(2026, 9, 11))
-
-    # El corrupto se ignora, pero no tapa el bueno del día anterior: lo que
-    # no puede pasar es que la marca se quede sin comparación para siempre.
-    assert anterior is None or anterior.fecha == date(2026, 9, 9)
+    with pytest.raises(ValueError, match='cleanup is incomplete'):
+        snapshot_anterior(brand, antes_de=date(2026, 9, 11))
+    # Unknown provider contents are preserved for explicit repair.
+    assert ruta_snapshot(brand,date(2026,9,10)).read_text()=='{roto'
 
 
 def test_el_snapshot_se_escribe_de_forma_atomica(tmp_path, monkeypatch):

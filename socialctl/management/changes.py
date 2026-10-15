@@ -220,6 +220,11 @@ class ChangeStore:
         path = self.path_for(change_id)
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
+            from socialctl.youtube_data import JOURNALS, require_fresh_api_data
+            if self.root.name in JOURNALS:
+                if raw.get('data_lifecycle')=='purged':
+                    raise ChangeError('API data removed; this operation is blocked against replay. Reconcile manually.')
+                require_fresh_api_data(raw.get('created_at'))
             change = self.model_type.model_validate(raw)
         except FileNotFoundError:
             raise ChangeError(f"ChangeSet does not exist: {change_id}") from None

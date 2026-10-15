@@ -1,0 +1,14 @@
+[Unit]
+Description=Expire SocialCli backup data and mirror removals to Drive
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/blades3/projects/socialcli-saas/ops/backup_host.py /home/blades3/projects/socialcli-saas/private/backup-candidate.json --retention
+Environment=RESTIC_CACHE_DIR=/home/blades3/projects/socialcli-saas/backups/candidate/cache
+UMask=0077
+TimeoutStartSec=3600
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/blades3/projects/socialcli-saas/backups /home/blades3/projects/socialcli-saas/private/recovery-repository-candidate /home/blades3/projects/socialcli-saas/private/drive

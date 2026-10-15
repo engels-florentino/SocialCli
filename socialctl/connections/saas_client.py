@@ -18,6 +18,8 @@ class ServiceRejected(ValueError):
 
 
 MESSAGES={
+    'privacy_acceptance_required':'The account owner must review and accept the current Privacy Policy in their own SocialCli browser account. Never accept for the owner or reconnect automatically.',
+    'assistant_consent_required':'The account owner must review assistant data access and provider settings in their own browser, then revoke and link this installation again. Never accept for the owner.',
     'platform_not_allowed':'The owner has not approved this assistant for that SocialCli connection. Review the selected platforms with the owner; do not reconnect automatically.',
     'installation_permissions_invalid':'This installation has invalid permissions. Ask the owner to revoke it and link the assistant again.',
     'renewal_required':'Provider token needs renewal by an explicitly authorized operation.',

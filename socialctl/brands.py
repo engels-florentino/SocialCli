@@ -147,7 +147,7 @@ def crear_brand(raiz_social: Path, nombre: str) -> Brand:
     return cargar_brand(raiz_social, nombre)
 
 
-def cargar_brand(raiz_social: Path, nombre: str) -> Brand:
+def cargar_brand(raiz_social: Path, nombre: str, *, cleanup: bool = True) -> Brand:
     """Load an existing explicitly named brand."""
     raiz = _validar_nombre_de_marca(raiz_social, nombre)
     if not raiz.is_dir():
@@ -183,6 +183,9 @@ def cargar_brand(raiz_social: Path, nombre: str) -> Brand:
                 f"'{fichero_cuentas}' must contain an account mapping (key: value); received {type(contenido_cuentas).__name__}"
             )
 
+    if cleanup:
+        from socialctl.youtube_data import enforce_youtube_data
+        enforce_youtube_data(raiz)
     return Brand(
         nombre=nombre,
         raiz=raiz,

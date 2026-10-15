@@ -55,7 +55,7 @@ def validate_data(rows, *, command, brand, jobs, request_args):
             raise ValueError('Wrong native action kind')
 
     def action(value):
-        shape(value, ('id','kind','digest','status','job','preview'), ('submitted_at',))
+        shape(value, ('id','kind','digest','status','job','preview'), ('submitted_at','created_at'))
         parsed = job(value['job'])
         preview(value['preview'])
         if (value['status'] not in {'approved','submitted','confirmed'} or value['kind'] != value['preview']['kind']

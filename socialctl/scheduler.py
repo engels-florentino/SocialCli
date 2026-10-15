@@ -498,7 +498,11 @@ def approval_hash(post: Post, brand: Brand, platform: Platform) -> str:
         },
         "schema": "socialctl.schedule.approval.v2",
     }
-    # Absent additive fields retain every old v2 approval byte-for-byte.
+    if platform == Platform.YOUTUBE:
+        from socialctl.upload_consent import youtube_certification
+        approved['uploader_certification'] = youtube_certification()
+    # Non-YouTube approvals retain their existing serialization. YouTube uploads
+    # need a new owner preview because earlier approvals lacked certification.
     # An explicit empty list is intent and must produce a different approval.
     for field in ("tags", "visible_hashtags", "content_origin", "source_video_id"):
         value = getattr(platform_post, field)

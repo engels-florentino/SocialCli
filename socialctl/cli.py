@@ -199,6 +199,10 @@ from socialctl.management.community_batch_cli import register as register_commun
 register_community_batches(changes_app, default_root())
 from socialctl.inbox_cli import register as register_inbox
 register_inbox(app, default_root())
+from socialctl.youtube_data import register as register_youtube_data
+register_youtube_data(app)
+from socialctl.youtube_data_service import register as register_youtube_data_service
+register_youtube_data_service(app)
 
 RAIZ_POR_DEFECTO = default_root()
 
@@ -1609,7 +1613,7 @@ def stats(
     json_output: bool = typer.Option(False, "--json", help="Print a versioned report; progress goes to stderr."),
     timeout: float = typer.Option(300, "--timeout", help="Total read time limit in seconds; use --only to give one platform the full budget."),
 ) -> None:
-    """Read platform metrics and save a brand snapshot. Selected-platform reads merge with today's data; old snapshots expire after one year."""
+    """Read platform metrics and save a brand snapshot. Selected-platform reads merge with today's data; YouTube API data expires after six days; other snapshots expire after one year."""
     def invalid(message):
         if json_output:
             from socialctl.read_reports import ReadReport, emit_report, safe_error

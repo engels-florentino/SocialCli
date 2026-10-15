@@ -1,5 +1,6 @@
 """Escaped server-rendered account views using the approved SocialCli shell."""
 from html import escape
+from socialctl.saas import consent
 from socialctl.connection_service.landing import _page, connection_symbols, PROVIDERS
 
 
@@ -26,6 +27,7 @@ def login(csrf,next_path,message='',*,input_error=False):
 <p class="description">Sign in with a code sent to your email. No password needed.</p>{notice(message, field="email" if invalid else None)}
 <form method="post" action="/account/login" class="form-stack">{hidden('csrf',csrf)}{hidden('next',next_path)}
 <div><label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" maxlength="254" required{invalid}></div>
+{privacy_choice_html(required=False)}
 <button class="primary-button" type="submit">Send sign-in code</button></form>
 <p class="expiry-note">14 days free from your first connection. Then USD 10/month.</p>''')
 
@@ -98,3 +100,27 @@ def subscription(decision,entitlement,billing,csrf,*,enabled,processing=False):
     if not enabled:message+=' Subscription checkout is not available yet.'
     status=' role="status"' if checking else ''
     return f'<section aria-label="Subscription"><h2>{escape(heading)}</h2><p class="description">USD 10/month · One brand · Four social platforms</p><p class="status-notice"{status}>{escape(message)}</p>{action}</section>'
+
+
+def privacy_choice_html(*, required=True):
+    needed=' required' if required else ''
+    return f'''{hidden('privacy_version',consent.PRIVACY_VERSION)}
+<label for="privacy-accept"><input id="privacy-accept" type="checkbox" name="privacy_accept" value="1"{needed}> I have read and agree to the <a href="https://socialcli.app/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> (version {escape(consent.PRIVACY_VERSION)}).</label>
+<p class="expiry-note">Only the account owner may accept. Acceptance is required to enable features. You can sign in to delete your account or sign out without accepting.</p>'''
+
+
+def privacy_review(csrf,next_path,account_csrf):
+    return page('Review the Privacy Policy',f'''<p class="eyebrow">PRIVACY REVIEW</p><h1 id="page-title">Review the Privacy Policy</h1>
+<p class="description">Before using SocialCli features, review how we access, use, share and retain your account data. A material policy change requires a new owner acceptance.</p>
+<form method="post" action="/account/privacy" class="form-stack">{hidden('csrf',csrf)}{hidden('next',next_path)}{privacy_choice_html()}<button class="primary-button" type="submit">Accept and continue</button></form>
+<a class="text-link" href="/account/delete">Delete my account</a>
+<form method="post" action="/account/logout">{hidden('csrf',account_csrf)}<button class="secondary-button" type="submit">Sign out</button></form>''')
+
+
+def assistant_choice_html():
+    return f'''<fieldset class="permission-options"><legend>Assistant data access</legend>
+<p>This installation receives SocialCli output and may obtain provider access tokens for the selected accounts. Output can include Google/YouTube account details, videos, comments and analytics. Tokens may allow direct provider access with all granted permissions.</p>
+<p>Customer-controlled software runs under your control. If you use a third-party AI service, data you give it also goes to that provider under its terms and settings. Use Google data only for the features you explicitly request. Do not use Google data for model training or advertising. Human access requires specific consent permitted by the applicable Google policy.</p>
+<p>Before continuing, choose a provider and configuration that restrict use and transfer to your requested features, disables training and advertising, and controls retention and human access. If these settings cannot be verified, do not link this installation. SocialCli does not certify every advertised assistant or provider configuration and cannot enforce third-party settings after data or tokens are delivered.</p>
+{hidden('assistant_version',consent.ASSISTANT_VERSION)}
+<label for="assistant-accept"><input id="assistant-accept" type="checkbox" name="assistant_accept" value="1" required> I am the account owner, understand this transfer, and have selected suitable software or provider settings for my requested features.</label></fieldset>'''

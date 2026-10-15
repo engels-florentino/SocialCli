@@ -103,6 +103,9 @@ def render_preview(
 ) -> str:
     """Render the exact preview the user approves before publication, with exclusions clearly labeled."""
     lineas = [f"Post: {post.slug}   brand: {post.brand}   campaign: {post.campaign.value}", ""]
+    if Platform.YOUTUBE in post.platforms and (destinos is None or Platform.YOUTUBE in destinos):
+        from socialctl.upload_consent import YOUTUBE_CERTIFICATION
+        lineas.extend([YOUTUBE_CERTIFICATION, ""])
 
     if destinos is not None:
         excluidas = [p for p in post.platforms if p not in destinos]

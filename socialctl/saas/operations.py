@@ -42,7 +42,7 @@ def inspect_status(database,keys,*,now=None):
             db.row_factory=sqlite3.Row
             db.set_progress_handler(lambda:int(budget.expired()),1000)
             db.execute('BEGIN')
-            if db.execute('SELECT max(version) FROM saas_schema').fetchone()[0]!=9:
+            if db.execute('SELECT max(version) FROM saas_schema').fetchone()[0]!=10:
                 return {'status':'attention','issues':['schema_incompatible'],'counts':{}}
             queries={
                 'billing_events_due':("SELECT count(*) FROM saas_billing_events WHERE state='pending' AND next_attempt<=?",(now,)),
@@ -50,6 +50,8 @@ def inspect_status(database,keys,*,now=None):
                 'billing_events_review':("SELECT count(*) FROM saas_billing_events WHERE state='review'",()),
                 'billing_review':("SELECT count(*) FROM saas_billing WHERE review!=''",()),
                 'billing_overdue':("SELECT count(*) FROM saas_billing b JOIN saas_users u ON u.id=b.user_id WHERE b.customer_id IS NOT NULL AND b.sync_due<=? AND u.deleting=0",(now-900,)),
+                'google_revocations_pending':("SELECT count(*) FROM saas_google_revocations WHERE state='pending'",()),
+                'google_revocations_overdue':("SELECT count(*) FROM saas_google_revocations WHERE state='pending' AND requested<=?",(now-86400,)),
                 'deletions_pending':("SELECT count(*) FROM saas_deletions WHERE state='pending'",()),
                 'deletions_overdue':("SELECT count(*) FROM saas_deletions WHERE state='pending' AND requested<=?",(now-900,)),
                 'reminders_due':("SELECT count(*) FROM saas_reminders WHERE state='pending' AND next_attempt<=?",(now,)),

@@ -41,8 +41,9 @@ def start(client, secret='poll-secret-one-12345678901234567890'):
 def begin_browser(client, url):
     page = client.get(url, follow_redirects=False)
     assert page.status_code == 200
-    token = re.search(r'name="form_token" value="([^"]+)"', page.text).group(1)
-    return client.post(url, data={'form_token':token}, follow_redirects=False)
+    from tests.test_saas_auth import fields
+    # Fictional owner explicitly selects the unchecked privacy/transfer choices.
+    return client.post(url, data=fields(page), headers={'Origin':'https://social.example'}, follow_redirects=False)
 
 
 def authorize(client, value, *, error=False):

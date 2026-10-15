@@ -11,6 +11,8 @@ from socialctl.saas.billing import BillingService
 from socialctl.saas.billing_reconcile import run_pending
 from socialctl.saas.auth import SupabaseAuth
 from socialctl.saas.lifecycle import AccountLifecycle,run_deletions
+from socialctl.saas.revocation import run_revocations
+from socialctl.connection_service.providers import Providers
 from socialctl.saas.reminders import Reminders
 from socialctl.saas.mail import SMTPMailer
 from socialctl.saas.budget import WorkBudget,hard_deadline
@@ -22,8 +24,9 @@ def run(settings):
     with httpx.Client(timeout=20,follow_redirects=False) as client:
         billing=BillingService(metadata,settings.saas.billing,client,time.time,settings.public_url) if settings.saas.billing else None
         result=run_pending(billing,budget=WorkBudget(45)) if billing else {'processed':0,'retry_pending':0,'due':0}
+        AccountLifecycle(metadata,time.time).prune_expired()
+        result['google_revocations']=run_revocations(metadata,Providers(settings,client),time.time,budget=WorkBudget(45))
         result['deletions']=run_deletions(metadata,SupabaseAuth(settings.saas,client),billing,time.time,budget=WorkBudget(45))
-    AccountLifecycle(metadata,time.time).prune_expired()
     result['reminders']=Reminders(metadata,time.time,settings.public_url).run(
         SMTPMailer(settings.saas.mail) if settings.saas.mail else None,budget=WorkBudget(45))
     return result
@@ -44,6 +47,7 @@ def main():
             write_heartbeat(settings.database,'running',time.time())
             result=run(settings)
             attention=(result['retry_pending'] or result['due']
+                or result.get('google_revocations',{}).get('pending',0)
                 or result['deletions']['pending'] or result['deletions']['due']
                 or any(result['reminders'].get(key,0) for key in ('due','uncertain','rejected','retry_pending')))
             write_heartbeat(settings.database,'attention' if attention else 'complete',time.time())

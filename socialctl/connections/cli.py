@@ -297,9 +297,20 @@ def register(app):
                         continue
                     broker=broker_for(metadata,transport)
                     secret=keychain.get(brand,platform,metadata)
-                    status=broker.request('GET',f"/v1/connections/{opaque(metadata['connection_id'])}",secret=secret)
+                    try:
+                        status=broker.request('GET',f"/v1/connections/{opaque(metadata['connection_id'])}",secret=secret)
+                    except ValueError as exc:
+                        if platform is Platform.YOUTUBE and getattr(exc,'code',None) in {
+                                'provider_authorization_expired','provider_permissions_changed',
+                                'connection_inactive','connection_unavailable','installation_revoked','installation_expired'}:
+                            from socialctl.youtube_data import request_youtube_purge
+                            request_youtube_purge(brand.raiz)
+                        raise
                     if status.get('platform')!=platform.value or status.get('account',{}).get('id')!=metadata['account_id']:
                         raise ValueError('connection account mismatch')
+                    if platform is Platform.YOUTUBE and status.get('data_cleanup_required'):
+                        from socialctl.youtube_data import request_youtube_purge
+                        status['local_data_cleanup']=request_youtube_purge(brand.raiz)
                     rows.append(status)
             result={'version':1,'brand':brand.nombre,'connections':rows}
             if json_output:
@@ -338,10 +349,17 @@ def register(app):
             secret=keychain.get(brand,platform,metadata)
             with http_client() as transport:
                 broker=broker_for(metadata,transport)
-                broker.request('DELETE',f"/v1/connections/{opaque(metadata['connection_id'])}",secret=secret,allow_missing=True)
+                disconnected=broker.request('DELETE',f"/v1/connections/{opaque(metadata['connection_id'])}",secret=secret,allow_missing=True)
             keychain.delete(brand,platform,metadata)
             (brand.dir_secretos/f'{platform.value}.json').unlink(missing_ok=True)
-            typer.echo('Disconnected. To also revoke provider authorization, remove SocialCli in the provider account settings.')
+            if platform is Platform.YOUTUBE:
+                from socialctl.youtube_data import request_youtube_purge
+                cleanup=request_youtube_purge(brand.raiz)
+                typer.echo('Disconnected. Google revocation: '+disconnected.get('provider_revocation_status','unconfirmed')+'.')
+                if not cleanup['complete']:
+                    typer.echo('Local API data cleanup is pending; run data-cleanup for this brand and resolve its listed paths.',err=True)
+            else:
+                typer.echo('Disconnected. To also revoke provider authorization, remove SocialCli in the provider account settings.')
         except ValueError as exc:
             fail(str(exc))
         except Exception:

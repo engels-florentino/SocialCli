@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Host-only encrypted backup orchestration; never modifies live database rows."""
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
@@ -20,7 +21,7 @@ class BackupFailure(Exception):
 
 
 def run(args,**kwargs):
-    result=subprocess.run(args,check=True,timeout=180,stderr=subprocess.PIPE,
+    result=subprocess.run(args,check=True,timeout=kwargs.pop('timeout',180),stderr=subprocess.PIPE,
         stdout=kwargs.pop('stdout',subprocess.PIPE),**kwargs)
     return result.stdout or b''
 
@@ -33,12 +34,13 @@ def private(path,*,directory=False):
     return path
 
 
-def receipt(root,value):
+def receipt(root,value,*,name="status.json"):
+    filename=name
     fd,name=tempfile.mkstemp(prefix='.status-',dir=root)
     try:
         with os.fdopen(fd,'w') as out:
             json.dump(value,out);out.flush();os.fsync(out.fileno())
-        os.replace(name,root/'status.json')
+        os.replace(name,root/filename)
         descriptor=os.open(root,os.O_RDONLY)
         try:os.fsync(descriptor)
         finally:os.close(descriptor)
@@ -55,6 +57,104 @@ def snapshot_id(output):
     ids=[row.get('snapshot_id','') for row in summaries if row.get('message_type')=='summary']
     if len(ids)!=1 or not re.fullmatch(r'[0-9a-f]{64}',ids[0]):raise BackupFailure('Backup receipt unavailable.')
     return ids[0]
+
+
+def _retention(config,*,runner,now,preview=False):
+    """Absolute six-day cutoff, including repositories whose backups have stopped."""
+    current=now()
+    if not isinstance(current,(int,float)) or not math.isfinite(current) or current<=0:
+        raise BackupFailure('Invalid retention clock.')
+    cutoff=current-6*86400
+    plans=[]
+    try:
+        remote=config.get('drive_remote')
+        if remote is not None:
+            if not isinstance(remote,str) or not re.fullmatch(r'[A-Za-z0-9_-]+:SocialCli-Backups/[A-Za-z0-9_-]+',remote):
+                raise ValueError
+            private(config['drive_config'])
+        for recovery in (False,True):
+            base=restic(config,recovery)
+            runner(base+['check'])
+            rows=json.loads(runner(base+['snapshots','--json']))
+            if not isinstance(rows,list):raise ValueError
+            expired=[]
+            for row in rows:
+                identifier=row['id']
+                at=datetime.fromisoformat(row['time'].replace('Z','+00:00'))
+                if (not re.fullmatch(r'[0-9a-f]{64}',identifier) or at.tzinfo is None
+                        or at.timestamp()>current+300):raise ValueError
+                if at.timestamp()<=cutoff:expired.append(identifier)
+            plans.append((base,expired))
+        # Inspect both repositories before making the first destructive change.
+        if not preview:
+            for base,expired in plans:
+                for start in range(0,len(expired),100):
+                    runner(base+['forget',*expired[start:start+100]],timeout=900)
+                # A previous interrupted prune may leave packs even with no old snapshots.
+                runner(base+['prune','--max-unused','0'],timeout=900)
+                runner(base+['check'])
+            if remote:
+                for key,suffix in (('repository','data'),('recovery_repository','recovery')):
+                    destination=remote+'/'+suffix
+                    runner(['rclone','sync',config[key],destination,'--config',config['drive_config'],
+                            '--checksum','--check-first','--delete-after','--drive-use-trash=false',
+                            '--transfers','4','--checkers','4'],timeout=900)
+                    runner(['rclone','check',config[key],destination,'--config',config['drive_config']],timeout=900)
+        count=sum(len(expired) for _,expired in plans)
+        return {'status':'preview' if preview else 'complete','retention_days':6,
+                'eligible':count,'removed':0 if preview else count,'at':current,
+                'remote_verified':bool(remote and not preview)}
+    except (ValueError,KeyError,TypeError,OSError,subprocess.SubprocessError):
+        raise BackupFailure('Backup retention failed; inspect private repositories.') from None
+
+
+def _run_retention(config,*,runner,now,preview=False):
+    if preview:return _retention(config,runner=runner,now=now,preview=True)
+    root=private(config['root'],directory=True)
+    previous={}
+    try:previous=json.loads(private(root/'retention-status.json').read_text())
+    except (OSError,ValueError,BackupFailure):pass
+    last=previous.get('last_success') if isinstance(previous,dict) else None
+    receipt(root,{'status':'running','at':now(),'last_success':last},name='retention-status.json')
+    try:
+        result=_retention(config,runner=runner,now=now)
+    except Exception:
+        receipt(root,{'status':'failed','at':now(),'last_success':last},name='retention-status.json')
+        raise
+    receipt(root,{**result,'at':now(),'last_success':now()},name='retention-status.json')
+    return result
+
+
+def retention_issues(config,*,now):
+    try:
+        root=private(config['root'],directory=True)
+        with private(root/'retention-status.json').open('rb') as stream:raw=stream.read(65537)
+        if len(raw)>65536:raise ValueError
+        record=json.loads(raw)
+        at,last,state=record['at'],record.get('last_success'),record['status']
+        if state not in {'running','failed','complete'}:raise ValueError
+        for value in (at,last):
+            if value is not None and (type(value) not in (int,float) or not math.isfinite(value) or not 0<=value<=now):raise ValueError
+        if at is None or (last is not None and last>at+1):raise ValueError
+        problems=[]
+        if state=='failed':problems.append('retention_failed')
+        if state=='running' and now-at>3600:problems.append('retention_stalled')
+        if last is None:problems.append('retention_unknown')
+        elif now-last>7*3600:problems.append('retention_stale')
+        if state=='complete' and config.get('drive_remote') and record.get('remote_verified') is not True:
+            problems.append('retention_remote_unverified')
+        return problems
+    except Exception:return ['retention_unknown']
+
+
+def prune_repositories(config,*,runner=run,now=time.time,preview=False):
+    root=private(config['root'],directory=True)
+    for key in ('password_file','recovery_password_file'):private(config[key])
+    fd=os.open(root/'worker.lock',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'w') as lock:
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:raise BackupFailure('Backup already running.') from None
+        return _run_retention(config,runner=runner,now=now,preview=preview)
 
 
 def inspect_status(config,*,now=time.time):
@@ -86,6 +186,7 @@ def inspect_status(config,*,now=time.time):
         if status=='running' and current-at>600:issues.append('backup_stalled')
         if last is None:issues.append('backup_unverified')
         elif current-last>7200:issues.append('backup_stale')
+        issues.extend(retention_issues(config,now=current))
         return {'status':'attention' if issues else 'ok','issues':issues}
     except Exception:
         return {'status':'attention','issues':['backup_unknown']}
@@ -148,6 +249,9 @@ def perform(config,*,runner=run,now=time.time):
             recovery_id=snapshot_id(runner(restic(config,True)+['backup','--json','--host',service,'--tag','recovery','.'],cwd=recovery))
             runner(restic(config)+['check'])
             runner(restic(config,True)+['check'])
+            retention=_run_retention(config,runner=runner,now=now)
+            report['retention_at']=retention['at']
+            report['remote_verified']=retention['remote_verified']
             report.update(status='complete',at=now(),last_success=now(),state_snapshot=state_id,recovery_snapshot=recovery_id)
             receipt(root,report)
             return report
@@ -165,11 +269,16 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('config',type=Path)
     parser.add_argument('--status',action='store_true',help='Inspect local backup freshness without starting a backup')
+    parser.add_argument('--retention',action='store_true',help='Prune expired snapshots without making a new backup')
+    parser.add_argument('--preview-retention',action='store_true',help='Inspect six-day retention without deleting anything')
     args=parser.parse_args()
+    if sum((args.status,args.retention,args.preview_retention))>1:parser.error('Choose one operation')
     os.umask(0o077)
     try:
         config=json.loads(private(args.config).read_text())
-        result=inspect_status(config) if args.status else perform(config)
+        result=(inspect_status(config) if args.status else
+                prune_repositories(config,preview=args.preview_retention) if args.retention or args.preview_retention
+                else perform(config))
     except Exception:
         print(json.dumps({'status':'attention','issues':['backup_unknown']} if args.status
                          else {'status':'failed','error':'backup_failed'}))

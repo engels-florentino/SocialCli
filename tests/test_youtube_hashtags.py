@@ -76,18 +76,20 @@ def test_youtube_lengths_validate_exact_description_and_internal_tags():
     assert any(error.campo == "tags" for error in validar_texto(post(tags=["x" * 501])))
 
 
-def test_golden_legacy_approval_hashes_and_migrated_shape_stay_unchanged():
+def test_old_youtube_approvals_require_review_with_upload_certification():
     brand = Brand(nombre="MarcaA", raiz=Path("/synthetic/MarcaA"), cuentas={"youtube": {"channel_id": "channel-a"}})
     data = whole(post(hashtags=["legacy"]))
     expected = "v2:669a9b8515b874235bf6f08cd5f5d111e3009b50dd99b2f4976f862081cf68b0"
-    assert approval_hash(data, brand, Platform.YOUTUBE) == expected
+    current = approval_hash(data, brand, Platform.YOUTUBE)
+    assert current != expected
+    assert approval_review_reason(current, data, brand, Platform.YOUTUBE) is None
     assert legacy_approval_hash(data, Platform.YOUTUBE) == "cf84960e40e71cb46faf0c0aa01c9348d55c33bd4a6f0c65d3f82fd991e6527c"
-    assert approval_review_reason(expected, data, brand, Platform.YOUTUBE) is None
+    assert approval_review_reason(expected, data, brand, Platform.YOUTUBE) is not None
     migrated = ScheduleEntry.model_validate({"id": "demo/youtube", "brand": "MarcaA", "slug": "demo",
         "platform": "youtube", "scheduled_at": "2099-01-01T00:00:00Z", "status": "approved", "attempts": 0,
         "content_hash": expected, "approval_migration": "synthetic-approved-migration",
         "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"})
-    assert approval_review_reason(migrated.content_hash, data, brand, Platform.YOUTUBE) is None
+    assert approval_review_reason(migrated.content_hash, data, brand, Platform.YOUTUBE) is not None
 
 
 @pytest.mark.parametrize("field", ["tags", "visible_hashtags"])

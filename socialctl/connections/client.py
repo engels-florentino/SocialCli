@@ -90,7 +90,15 @@ def broker_access_token(brand,platform,client,*,refresh=True):
     secret=keychain.get(brand,platform,metadata)
     if not isinstance(secret,str) or not 16<=len(secret)<=512:
         raise ValueError('connection credential unavailable in the selected secure credential store')
-    result=broker.request('POST',f'/v1/connections/{connection_id}/token'+('' if refresh else '?refresh=false'),secret=secret)
+    try:
+        result=broker.request('POST',f'/v1/connections/{connection_id}/token'+('' if refresh else '?refresh=false'),secret=secret)
+    except ValueError as exc:
+        if platform.value=='youtube' and getattr(exc,'code',None) in {
+                'provider_authorization_expired','provider_permissions_changed',
+                'connection_inactive','connection_unavailable','installation_revoked','installation_expired'}:
+            from socialctl.youtube_data import request_youtube_purge
+            request_youtube_purge(brand.raiz)
+        raise
     if result.get('platform')!=platform.value or result.get('account',{}).get('id')!=expected:
         raise ValueError('connection account mismatch; reconnect explicitly')
     expiry=result.get('expires_at')

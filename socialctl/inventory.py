@@ -41,6 +41,9 @@ class InventoryStore:
             for key, row in data["items"].items():
                 if row["remote_id"] != remote_id(key) or any(row.get(k) != self.binding[k] for k in ("brand", "platform", "account_id")):
                     raise ValueError()
+            if self.binding['platform']=='youtube':
+                from socialctl.youtube_data import require_fresh_api_data
+                for row in data['items'].values():require_fresh_api_data(row.get('first_observed_at'))
             return data
         except (ValueError, KeyError, TypeError, OSError):
             raise ReadError("inventory_invalid") from None

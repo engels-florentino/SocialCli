@@ -44,8 +44,11 @@ class UnifiedInboxStore:
         try:
             data=json.loads(self.path.read_text())
             if data.get('version')!=1 or not isinstance(data.get('items'),dict) or not isinstance(data.get('watermarks'),dict):raise ValueError()
-            return data
         except (OSError,ValueError):raise ValueError('unified inbox state is invalid; preserve it before recovery') from None
+        from socialctl.youtube_data import require_fresh_api_data
+        for row in data['items'].values():
+            if row.get('platform')=='youtube':require_fresh_api_data(row.get('first_observed_at'))
+        return data
     @staticmethod
     def key(row):return json.dumps([row['platform'],row['account_id'],row['comment_id']],separators=(',',':'))
     def observe(self,rows,*,observed_at,scope=None,complete=False):

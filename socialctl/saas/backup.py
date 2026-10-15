@@ -76,6 +76,13 @@ def snapshot(source: Path, destination: Path, keys: list[bytes], *, timeout=60) 
                 raise BackupError('Snapshot timed out; no completed artifact was published.')
         with closing(_read(source,min(timeout,1))) as live, closing(sqlite3.connect(temporary)) as target:
             live.backup(target,pages=128,progress=progress,sleep=min(timeout,.05))
+            # A backup must never become a live SaaS database just by mounting it.
+            # Only restore_guard may apply current deletion authority and release
+            # a separately staged copy after isolated identity cleanup.
+            if target.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='saas_schema'").fetchone():
+                target.execute('CREATE TABLE IF NOT EXISTS saas_restore_guard (singleton INTEGER PRIMARY KEY CHECK(singleton=1),state TEXT NOT NULL,prepared REAL NOT NULL,snapshot_created REAL NOT NULL)')
+                target.execute("INSERT OR REPLACE INTO saas_restore_guard VALUES(1,'unprepared',0,?)",(time.time(),))
+                target.commit()
             # Produce a self-contained single file even when the source uses WAL.
             target.execute('PRAGMA journal_mode=DELETE')
         report=verify_snapshot(temporary,keys)

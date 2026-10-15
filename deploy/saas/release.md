@@ -1,3 +1,9 @@
+# Next candidate: 0.3.0rc9 — Google readiness
+
+Source includes versioned owner/assistant consent, Google revocation with durable retry, managed local YouTube data expiry and daily cleanup supervisor, bounded Drive backup retention and guarded restore, and uploader certification bound to approvals. Updated policy version: 2026-10-15. Schema10 is additive; old clients/installations require the owner review flow. Domain ownership is verified; Google remains External / Testing.
+
+The previously published release is rc8. Do not activate rc9 installation instructions until its exact artifact is published and downloaded/verified. Public policy must be deployed with the corresponding behavior. Final test, review, artifact and operational evidence will be recorded separately; this preparation is not a deployment or provider-approval claim.
+
 # Current public candidate: 0.3.0rc8
 
 Includes all rc6/rc7 fixes and network-specific connection UI. rc7 publication was

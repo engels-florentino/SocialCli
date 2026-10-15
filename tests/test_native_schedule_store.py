@@ -154,3 +154,23 @@ def test_newer_conflict_watermark_survives_reopen_and_replay(tmp_path):
     assert not store.record_observation(conflict, now=fresh_time)
     assert store.get('job-1').state == 'native_scheduled'
     assert len(store.get_observations('job-1')) == 6
+
+
+@pytest.mark.parametrize('late_write', ['observation', 'notice'])
+def test_purge_rejects_late_provider_writes_without_affecting_other_platforms(tmp_path, late_write):
+    from socialctl.youtube_data import cleanup_youtube_data
+
+    store = NativeStore(tmp_path, brand='Fictional')
+    store.prepare(make_job(brand='Fictional', state='prepared'), payload={}, now=NOW)
+    store.prepare(make_job(id='meta-job', brand='Fictional', platform='facebook',
+        state='prepared'), payload={}, now=NOW)
+    assert cleanup_youtube_data(tmp_path, now=NOW, purge=True)['complete']
+    with pytest.raises(ValueError, match='API data was removed'):
+        if late_write == 'observation':
+            store.record_observation(make_observation(tmp_path), now=NOW)
+        else:
+            store.notice('job-1', 'Late provider response includes remote ID', now=NOW)
+    assert store.get_observations('job-1') == []
+    assert store.get_notices('job-1') == []
+    store.notice('meta-job', 'Other platform is still available', now=NOW)
+    assert len(store.get_notices('meta-job')) == 1

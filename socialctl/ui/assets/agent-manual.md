@@ -1,6 +1,6 @@
-# SocialCli for AI agents — Candidate 0.3.0rc8
+# SocialCli for AI agents — Candidate 0.3.0rc9
 
-Candidate 0.3.0rc8 instructions. Require published metadata before installing;
+Candidate 0.3.0rc9 instructions. Require published metadata before installing;
 do not replace an existing 0.2.6 installation or migrate its credentials silently.
 Stripe remains in test mode. Google is in testing and permits configured test users.
 Real-agent acceptance is performed by the owner; do not claim it from installation.
@@ -13,16 +13,16 @@ availability depends on account eligibility; Google production is still pending.
 ## Install the reviewed candidate
 
 Use the official TestPyPI release metadata:
-https://test.pypi.org/pypi/socialcli/0.3.0rc8/json
+https://test.pypi.org/pypi/socialcli/0.3.0rc9/json
 
-1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc8`. If this
+1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc9`. If this
    release is unavailable, stop and report it; do not install a similarly named package.
-2. Select exactly `socialcli-0.3.0rc8-py3-none-any.whl` from `urls`. Download its
+2. Select exactly `socialcli-0.3.0rc9-py3-none-any.whl` from `urls`. Download its
    HTTPS `url` and verify the file against that entry's `digests.sha256`.
 3. Install that verified local wheel into an isolated environment. Resolve
    dependencies from normal PyPI, not TestPyPI. For example:
 
-       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc8-py3-none-any.whl[headless-credentials]'
+       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc9-py3-none-any.whl[headless-credentials]'
        socialcli --version
        socialcli agent-guide
 
@@ -31,7 +31,7 @@ https://test.pypi.org/pypi/socialcli/0.3.0rc8/json
    If an existing SocialCli tool is installed, use a separate virtual environment
    for this pilot and its absolute executable; do not upgrade it automatically.
 
-Verify the installed version is exactly 0.3.0rc8 before continuing. The stable
+Verify the installed version is exactly 0.3.0rc9 before continuing. The stable
 `uv tool install socialcli` command is not the installation path for this pilot.
 
 For headless agents, configure encrypted-file storage with an external0600 key in
@@ -48,6 +48,8 @@ start a new shell. Video validation needs ffprobe (from FFmpeg); missing ffprobe
 must be resolved before a video submission. Never generate or reencode media.
 
 ## Authorize the installation, then the social account
+
+The owner must accept the current privacy policy in the browser and separately acknowledge assistant data access. Check the actual assistant plan/settings: Google data must not be used for advertising or general-purpose model training or unrelated human access/transfer. If these controls cannot be established, do not connect that configuration. An agent compatibility label is not provider-wide approval. Existing installations without the new receipt must be revoked and linked again by the owner; never erase local credentials as a shortcut.
 
 Use `https://pilot.socialcli.app` for this pilot. The main site is the human landing.
 Ask for the brand name; never infer it. Replace MyBrand below with that exact name.
@@ -90,6 +92,21 @@ test mode; it is not collecting live subscriptions.
 
 ## Persist and recover
 
+Managed YouTube API observations expire after six days. User-supplied originals and independent Studio imports are preserved. Re-read the platform when needed; do not report absent old snapshots as zero or invent weekly growth. Unknown ages and failed cleanup block affected data. Disconnect, terminal authorization failure and account deletion trigger a managed-data purge when observed by this runner. Exported reports, chats and independent backups require separate deletion.
+
+Preview the daily cleanup service for this exact brand and root, show it to the owner, then install only with their authorization:
+
+```sh
+socialcli data-cleanup-install --brand NAME --root /absolute/workspace --dry-run
+socialcli data-cleanup-install --brand NAME --root /absolute/workspace --yes
+socialcli data-cleanup-status --brand NAME --root /absolute/workspace
+socialcli data-cleanup --brand NAME --root /absolute/workspace
+# Only for an authorized deletion request:
+socialcli data-cleanup --brand NAME --root /absolute/workspace --purge-youtube
+```
+
+The daily macOS LaunchAgent needs the user session; the Linux user timer needs its user manager (check Linger in status). No cleanup can execute on a stopped runner. Status must confirm the supervisor; a preview is not installation. Do not install on another brand or infer the workspace. Keep the original interpreter/venv available.
+
 Keep the brand folder, its .secrets metadata and the configured credential backend
 between conversations. Never upload credentials or keys to Git. A changed path
 can change OS-keyring lookup; use the same absolute SOCIALCLI_ROOT or --root.
@@ -111,6 +128,8 @@ own --timeout and a longer runner limit. For stats, inbox and report, exit 3 mea
 never treat an incomplete empty inbox as proof there are no comments.
 
 ## Publication gate
+
+For every YouTube upload, show the Community Guidelines certification in the complete preview. The owner’s approval must include that statement; account connection is not upload consent. Old upload approvals without the certification require a fresh preview and approval. Never accept privacy or assistant terms on the owner’s behalf.
 
 Use only media supplied by the user. Show the complete --dry-run preview and wait
 for explicit approval of that exact account and content before any publication.
@@ -164,6 +183,8 @@ HTTPS media host. Video/image preparation
 and validation never authorize generating, cropping or transcoding the originals.
 
 ## Scheduling and temporary media
+
+YouTube remote scheduling receipts need a verified platform reconciliation at least every six days. Without it, receipt expiry blocks local management while preserving the occupied slot; a video already scheduled on YouTube can still publish there. Use YouTube Studio to inspect or cancel it if the local receipt expired. Do not dispatch a replacement or assume the remote schedule was canceled. Supplied future plans without provider receipts are preserved.
 
 The SaaS stores account and connection metadata. Instagram may temporarily stage
 original media for at most 15 minutes after reservation; it is excluded from backups.

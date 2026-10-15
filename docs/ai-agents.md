@@ -7,6 +7,10 @@ It works with assistants that can run local shell commands and read workspace fi
 Read the compact [bootstrap](agents.md) for installation and `socialcli agent-guide setup`
 before login. Setup order: brand → credentials → account login → connect.
 
+The owner reviews the current privacy policy and assistant data acknowledgment in the browser. Agents cannot accept these for the owner. Compatibility with an assistant does not certify its training, retention or human-access settings; verify the actual configuration before sharing Google data. Managed YouTube caches expire after six days. Use `socialcli data-cleanup-install --help` to review and install the daily cleanup supervisor for each runner. Offline runners cannot delete data until they run again; exported files and chat copies need separate removal. Missing historical comparisons are unavailable, not zero.
+
+Every YouTube upload preview includes the Community Guidelines certification, which must be included in the owner’s explicit approval. Reconcile active YouTube native schedules at least every six days to keep their provider receipts current. Expired receipts block local management but do not cancel a remote schedule; inspect it in YouTube Studio before any replacement.
+
 ## Connect your agent to a workspace
 
 Keep your creator data outside the application repository. Give the agent the workspace path and the exact brand name, and make these instructions available in its project context:

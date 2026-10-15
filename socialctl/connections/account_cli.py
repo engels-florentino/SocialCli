@@ -184,6 +184,10 @@ def logout(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(def
             except ServiceRejected as exc:
                 if exc.status!=401:raise
         keychain.delete(brand,Slot.ACCOUNT,saved);(brand.dir_secretos/'socialcli-account.json').unlink(missing_ok=True)
+        from socialctl.youtube_data import request_youtube_purge
+        cleanup=request_youtube_purge(brand.raiz)
+        if not cleanup['complete']:
+            typer.echo('Local YouTube data cleanup is pending; run data-cleanup for this brand.',err=True)
         typer.echo('Signed out. This installation can no longer obtain social tokens.')
     except Exception as exc:
         typer.echo(str(exc) if isinstance(exc,ValueError) else 'Could not confirm sign-out. Keep your credentials and retry.',err=True);raise typer.Exit(1)

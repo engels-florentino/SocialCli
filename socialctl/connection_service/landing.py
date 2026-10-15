@@ -64,6 +64,10 @@ def connection_symbols(platform):
 
 
 def landing_page(authorization_id: str, form_token: str, *, platform='youtube', browser_selection=False) -> str:
+    from socialctl.saas import consent
+    from socialctl.saas.pages import assistant_choice_html
+    privacy = f'<input type="hidden" name="privacy_version" value="{escape(consent.PRIVACY_VERSION,quote=True)}"><label for="privacy-accept"><input id="privacy-accept" type="checkbox" name="privacy_accept" value="1" required> I am the account owner and have read and agree to the <a href="https://socialcli.app/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> (version {escape(consent.PRIVACY_VERSION)}).</label>'
+    assistant = '' if browser_selection else assistant_choice_html()
     action = escape('/connect/' + authorization_id, quote=True)
     token = escape(form_token, quote=True)
     name, login, description = PROVIDERS[platform]
@@ -77,6 +81,7 @@ def landing_page(authorization_id: str, form_token: str, *, platform='youtube', 
 <ol class="steps" aria-label="Connection steps"><li class="current"><span>1</span>Sign in</li><li><span>2</span>Review access</li><li><span>3</span>Confirm</li></ol>
 <form method="post" action="{action}">
 <input type="hidden" name="form_token" value="{token}">
+{privacy}{assistant}
 <button class="primary-button" type="submit"><span>Continue with {login}</span>{_icon('arrow')}</button></form>
 <p class="button-note">You'll continue to {login} to sign in.</p>
 <div class="connection-details"><div class="detail">{_icon('lock')}<div><h2>You're in control</h2><p>Review the requested access before you approve.</p></div></div>

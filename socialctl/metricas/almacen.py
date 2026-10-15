@@ -52,6 +52,8 @@ def guardar_snapshot(brand: Brand, snapshot: Snapshot) -> Path:
 
 def cargar_snapshot(brand: Brand, fecha: date) -> Snapshot | None:
     """Load dated snapshot, or None if absent/unreadable; warn on corrupt files rather than abort all metrics."""
+    from socialctl.youtube_data import enforce_youtube_data
+    enforce_youtube_data(brand.raiz)
     ruta = ruta_snapshot(brand, fecha)
     if not ruta.is_file():
         return None

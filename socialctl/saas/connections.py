@@ -51,9 +51,14 @@ class Connections:
         return user_id
 
     def require_platform(self,db,installation_id,platform):
-        self.owner(db,installation_id)
+        user_id=self.owner(db,installation_id)
         installation=self.vault.get(db,'saas-installation',installation_id)
+        from socialctl.saas import consent
+        consent.require_privacy(self.metadata,db,user_id)
+        consent.require_assistant(installation['payload'])
         permissions.require(installation['payload'],platform)
+        if platform=='youtube' and db.execute("SELECT 1 FROM saas_google_revocations WHERE user_id=? AND state='pending' LIMIT 1",(installation['payload']['user_id'],)).fetchone():
+            raise HTTPException(409,'google_revocation_pending: Google disconnect is still finishing. Try connecting again after cleanup completes.')
 
     def allowed(self,db,user_id,*,new=False):
         decision=self.access.decision(db,user_id,self.clock())
@@ -101,6 +106,11 @@ class Connections:
         data=record['payload']
         if self.owner(db,data['installation_id'])!=data['user_id']:
             raise HTTPException(403,'Connection ownership mismatch.')
+        if request.method!='DELETE':
+            from socialctl.saas import consent
+            consent.require_privacy(self.metadata,db,data['user_id'])
+            installation=self.vault.get(db,'saas-installation',data['installation_id'])
+            consent.require_assistant(installation['payload'])
         if require_access:self.require_platform(db,data['installation_id'],data['platform'])
         slot=db.execute('SELECT * FROM saas_slots WHERE user_id=? AND platform=?',(data['user_id'],data['platform'])).fetchone()
         if require_slot and (slot is None or slot['grant_id']!=data['grant_id']):
@@ -284,16 +294,21 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
                 'expires_at':grant['payload']['grant']['expires_at'],'granted_scopes':grant['payload']['grant']['granted_scopes'],
                 'connection_expires_at':cap['expires'],'needs_reconnect':renewal_state=='reconnect_required',
                 'renewal_status':renewal_state,
+                'data_cleanup_required':renewal_state=='reconnect_required',
                 'access':{'allowed':decision.allowed,'reason':decision.reason,'access_until':decision.access_until}}
 
     @app.delete('/api/saas/v1/connections/{connection_id}')
     def disconnect(connection_id:str,request:Request):
         with vault.transaction() as db:
-            record=connections.capability(db,connection_id,request,require_slot=False);data=record['payload']
-            db.execute('DELETE FROM saas_slots WHERE user_id=? AND platform=? AND grant_id=?',(data['user_id'],data['platform'],data['grant_id']))
-            vault.delete(db,'saas-grant',data['grant_id']);vault.delete(db,'saas-capability',connection_id)
-            app.state.saas_lifecycle.release_empty_brand(db,data['user_id'])
-        return {'version':1,'status':'disconnected','provider_authorization_revoked':False}
+            record=connections.capability(db,connection_id,request,require_slot=False,require_access=False);data=record['payload']
+            job=app.state.saas_lifecycle.disconnect_grant(db,data['user_id'],data['platform'],data['grant_id'])
+        from socialctl.saas import revocation
+        if job:
+            from socialctl.saas.budget import WorkBudget
+            revocation.run_revocations(metadata,providers,clock,user_id=data['user_id'],budget=WorkBudget(20))
+        state=revocation.status(metadata,job)
+        return {'version':1,'status':'disconnected','provider_authorization_revoked':state=='complete',
+                'provider_revocation_status':state}
 
     @app.post('/api/saas/v1/connections/{connection_id}/token')
     def token(connection_id:str,request:Request,refresh:bool=True):
@@ -327,11 +342,23 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
                 renewal.reject(code)
             with vault.transaction() as db:
                 current=vault.get(db,'saas-grant',data['grant_id'])
-                if current is None or current['payload'].get('refresh_lease')!=lease:
-                    raise HTTPException(409,'connection_changed: Review the current connection.')
-                renewal.clear(current['payload']);current['payload']['grant']=renewed
-                vault.put(db,'saas-grant',data['grant_id'],current['payload'],expires=current['expires'])
-                grant=renewed
+                changed=current is None or current['payload'].get('refresh_lease')!=lease
+                if changed:
+                    # The old queued token may already be revoked or invalidated
+                    # by rotation. Preserve a late token under a separate job.
+                    revoked=data['platform']=='youtube' and db.execute(
+                        "SELECT 1 FROM saas_deletion_tombstones WHERE (kind='user' AND id=?) OR (kind='grant' AND id=?)",
+                        (data['user_id'],data['grant_id'])).fetchone()
+                    if revoked:
+                        from socialctl.saas import revocation
+                        revocation.enqueue(metadata,db,data['grant_id']+':refresh:'+lease,
+                            {'user_id':data['user_id'],'platform':'youtube','grant':renewed},clock())
+                else:
+                    renewal.clear(current['payload']);current['payload']['grant']=renewed
+                    vault.put(db,'saas-grant',data['grant_id'],current['payload'],expires=current['expires'])
+                    grant=renewed
+            if changed:
+                raise HTTPException(409,'connection_changed: Review the current connection.')
         with vault.transaction() as db:
             connections.capability(db,connection_id,request);connections.allowed(db,data['user_id'])
             current=vault.get(db,'saas-grant',data['grant_id'])

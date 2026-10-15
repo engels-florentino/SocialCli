@@ -338,7 +338,7 @@ def test_retry_fichero_corrupto(social):
         "retry", "2026-09-07-prueba", "--brand", "Histopast", "--root", str(social),
     ])
     assert resultado.exit_code == 1
-    assert 'could not parse' in resultado.stdout.lower()
+    assert 'cleanup is incomplete' in resultado.stdout.lower()
 
 
 def test_retry_sin_redes_fallidas(social):

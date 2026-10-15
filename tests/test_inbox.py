@@ -16,8 +16,8 @@ def test_unified_observations_keep_original_and_provider_times(tmp_path):
     from socialctl.inbox import UnifiedInboxStore
     store=UnifiedInboxStore(tmp_path)
     row={'platform':'youtube','account_id':'actor','comment_id':'comment','media_id':'video','parent_id':None,'author_id':'viewer','text':'Original','created_time':'2026-10-01T12:00:00+00:00','provider_updated_at':'2026-10-01T12:00:00+00:00'}
-    store.observe([row],observed_at='2026-10-02T12:00:00+00:00')
-    store.observe([{**row,'text':'Edited','provider_updated_at':'2026-10-03T12:00:00+00:00'}],observed_at='2026-10-03T13:00:00+00:00')
+    store.observe([row],observed_at=datetime.now(timezone.utc).isoformat())
+    store.observe([{**row,'text':'Edited','provider_updated_at':'2026-10-03T12:00:00+00:00'}],observed_at=datetime.now(timezone.utc).isoformat())
     rows=store.load()['items']
     assert len(rows)==1
     result=next(iter(rows.values()))

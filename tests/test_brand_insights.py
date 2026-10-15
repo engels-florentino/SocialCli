@@ -26,7 +26,11 @@ def piece(identifier, views):
 
 
 @pytest.fixture
-def brand(tmp_path):return crear_brand(tmp_path,'Example')
+def brand(tmp_path, monkeypatch):
+    # Calculation tests isolate report arithmetic from the production six-day
+    # cache policy; the CLI lifecycle integration below uses the actual limit.
+    monkeypatch.setattr('socialctl.youtube_data.MAX_AGE_DAYS',30)
+    return crear_brand(tmp_path,'Example')
 
 
 def result(brand):return build_report(brand,as_of=date(2026,10,13))
@@ -137,22 +141,25 @@ def test_human_renderer_does_not_emit_terminal_controls(brand):
     assert '\nBAD' not in rendered
 
 
-def test_cli_json_and_human_report_are_offline_and_do_not_mutate_snapshots(brand,tmp_path,monkeypatch):
+def test_cli_report_is_offline_and_expires_old_youtube_comparison(brand,tmp_path,monkeypatch):
     import httpx
     from socialctl.cli import app
     def forbidden(*a,**kw):raise AssertionError('offline report attempted network access')
     monkeypatch.setattr(httpx.Client,'request',forbidden)
-    save(brand,'2026-10-06',followers=20)
+    monkeypatch.setattr('socialctl.youtube_data.MAX_AGE_DAYS',6)
+    baseline=save(brand,'2026-10-06',followers=20)
     latest=save(brand,'2026-10-13',followers=25)
     before=latest.read_bytes()
     argv=['report','--brand','Example','--root',str(tmp_path),'--as-of','2026-10-13']
     response=CliRunner().invoke(app,argv+['--json'])
-    assert response.exit_code==0,response.output
+    assert response.exit_code==3,response.output
     payload=json.loads(response.stdout)
-    assert payload['data']['platforms']['youtube']['account']['followers']['change']==5
+    assert payload['data']['platforms']['youtube']['account']['followers']['change'] is None
+    assert 'youtube' not in json.loads(baseline.read_text())['redes']
+    assert payload['data']['youtube_cache_max_days']==6
     human=CliRunner().invoke(app,argv)
-    assert human.exit_code==0,human.output
-    assert 'observed change: +5' in human.stdout
+    assert human.exit_code==3,human.output
+    assert 'older comparisons may be unavailable' in human.stdout
     assert latest.read_bytes()==before
 
 

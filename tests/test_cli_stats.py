@@ -206,12 +206,12 @@ def test_el_slug_llega_a_piezas_yml(raiz, monkeypatch):
         "slug": "2026-09-06-santo-domingo",
         "marca": "Histopast",
         "campana": "lanzamiento-video-largo",
-        "actualizado": "2026-09-06T19:05:11",
+        "actualizado": date.today().isoformat(),
         "resultados": [{
             "platform": "youtube", "status": "publicado",
             "url": "https://www.youtube.com/watch?v=vid1",
             "platform_id": "vid1", "error": None,
-            "riesgo_duplicado": False, "fecha": "2026-09-06T19:05:11",
+            "riesgo_duplicado": False, "fecha": date.today().isoformat(),
         }],
     }), encoding="utf-8")
 
@@ -429,38 +429,28 @@ def test_un_piezas_yml_ilegible_lo_dice_en_espanol_y_no_lo_pisa(raiz, monkeypatc
 
     assert resultado.exit_code == 1
     assert "piezas.yml" in resultado.output
-    assert 'Saved' in resultado.output and 'Not saved' in resultado.output
-    assert "resumen.md" in resultado.output
+    assert 'cleanup is incomplete' in resultado.output
     assert "Traceback" not in resultado.output
     # Lo editorial sigue intacto: es lo único que no se puede regenerar.
     assert ruta.read_text(encoding="utf-8") == roto
-    # Y el snapshot del día, que sí se había escrito antes del fallo, está.
-    assert list((marca.raiz / "metricas").glob("*.json"))
+    # Cleanup fails closed before reading providers or writing a new snapshot.
+    assert not list((marca.raiz / "metricas").glob("*.json"))
 
 
-def test_un_snapshot_corrupto_no_bloquea_la_marca_para_siempre(raiz, monkeypatch):
-    """Un snapshot se regenera: se ignora con aviso, no tumba la ejecución."""
+def test_un_snapshot_corrupto_requires_cleanup_before_provider_access(raiz, monkeypatch):
+    """Unknown provider contents must be reviewed before any cached data is read."""
     from socialctl.brands import cargar_brand
-
-    _falsear(monkeypatch, {
-        Platform.YOUTUBE: _lectura_ok(),
-        Platform.FACEBOOK: _lectura_ok(),
-        Platform.INSTAGRAM: _lectura_ok(),
-        Platform.TIKTOK: _lectura_ok(),
-    })
     marca = cargar_brand(raiz, "Histopast")
     carpeta = marca.raiz / "metricas"
     carpeta.mkdir(parents=True, exist_ok=True)
-    (carpeta / "2020-01-01.json").write_text('{"fecha": "2020-01', encoding="utf-8")
-
-    with pytest.warns(UserWarning, match='snapshot .* cannot be read') as warnings:
-        resultado = runner.invoke(
-            app, ["stats", "--brand", "Histopast", "--root", str(raiz)]
-        )
-
-    assert resultado.exit_code == 0, resultado.output
-    assert (carpeta / "resumen.md").is_file()
-    assert len(warnings) == 1
+    original='{"fecha": "2020-01'
+    path=carpeta / "2020-01-01.json"
+    path.write_text(original, encoding="utf-8")
+    resultado = runner.invoke(app, ["stats", "--brand", "Histopast", "--root", str(raiz)])
+    assert resultado.exit_code == 1
+    assert 'cleanup is incomplete' in resultado.output
+    assert path.read_text()==original
+    assert not (carpeta / "resumen.md").exists()
 
 
 def test_stats_limpia_snapshots_de_mas_de_un_ano_y_lo_dice(raiz, monkeypatch):

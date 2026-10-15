@@ -1,0 +1,10 @@
+[Unit]
+Description=Check backup retention every six hours, independently of new backups
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:30:00
+Persistent=true
+Unit=socialcli-saas-candidate-retention.service
+
+[Install]
+WantedBy=timers.target

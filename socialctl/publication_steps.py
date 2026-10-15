@@ -12,6 +12,7 @@ import json
 import os
 import uuid
 from pathlib import Path
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -34,6 +35,7 @@ class Publication(BaseModel):
     provenance: str
     source_mapping_digest: str | None = Field(default=None, exclude_if=lambda value: value is None)
     fingerprint: str
+    created_at: str | None = Field(default=None, exclude_if=lambda value: value is None)
     state: str = "uploading"
     media: dict | None = None
     comment_change_id: str | None = None
@@ -304,6 +306,7 @@ def _publish_occurrence(post, brand, platform, adapter, http, *, on_media_result
             return _resume_publication(brand, http, store, existing, on_media_result=on_media_result,
                                        on_media_observed=on_media_observed)
         data = Publication(id=identifier, brand=brand.nombre, brand_root=str(brand.raiz.resolve()),
+            created_at=datetime.now(timezone.utc).isoformat(),
             platform=platform.value, slug=post.slug, account=_account(brand, platform),
             text=post.platforms[platform].first_comment, provenance=provenance,
             source_mapping_digest=post.source_mapping_digest, fingerprint="").model_dump()

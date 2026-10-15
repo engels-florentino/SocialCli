@@ -140,6 +140,35 @@ class Providers:
                 raise RefreshFailure('renewal_uncertain') from None
             raise ValueError('provider request failed; reconnect or check app configuration') from None
 
+    def revoke_google(self, token):
+        """Revoke only the supplied customer token; never load operator credentials.
+
+        Keep the token in the form body, out of URL/access logs. A transport error
+        or unrecognized response is retryable; no response body is propagated.
+        """
+        token = token_string(token)
+        budget = getattr(self, 'budget', None)
+        timeout = budget.timeout(20) if budget else 20
+        try:
+            with self.client.stream('POST', 'https://oauth2.googleapis.com/revoke',
+                    data={'token': token}, timeout=timeout, follow_redirects=False) as response:
+                if response.status_code == 200:
+                    return
+                # Invalid tokens are already unusable. Only this exact provider
+                # error is terminal; a generic 400/401 does not prove revocation.
+                raw = bytearray()
+                for chunk in response.iter_bytes():
+                    raw.extend(chunk)
+                    if len(raw) > 16384:
+                        raise ValueError()
+                import json
+                body = json.loads(raw)
+                if response.status_code == 400 and isinstance(body, dict) and body.get('error') == 'invalid_token':
+                    return
+        except Exception:
+            pass
+        raise ValueError('google_revocation_pending') from None
+
     def normalize(self, platform, body, required, *, previous=None):
         scope = body.get('scope')
         if scope is None and previous is not None:

@@ -116,10 +116,16 @@ def build_report(brand: Brand, days: int=7, as_of: date|None=None,
                  top: int=5, only: Platform|None=None) -> ReadReport:
     if not 1<=days<=365 or not 1<=top<=50:
         raise ValueError('days must be 1..365 and top must be 1..50')
+    from socialctl.youtube_data import enforce_youtube_data, MAX_AGE_DAYS, YouTubeDataCleanupError
     as_of=as_of or date.today()
     data={'brand':brand.nombre,'requested_as_of':as_of.isoformat(),'days':days,
           'source':'saved_snapshots','coverage_scope':'platforms_in_latest_snapshot',
+          'youtube_cache_max_days':MAX_AGE_DAYS,
           'latest_snapshot':None,'platforms':{}}
+    try:
+        enforce_youtube_data(brand.raiz)
+    except YouTubeDataCleanupError:
+        return ReadReport(status='error',data=data,errors=[_error('local_data_cleanup_required','run_data_cleanup')])
     errors=[]
     dates=[day for day in _fechas(brand) if day<=as_of]
     if not dates:
@@ -216,5 +222,6 @@ def render_report(report: ReadReport) -> str:
             lines.append(f"Coverage {covered['platform']}: incomplete; stale={covered['stale']}, source_partial={covered['source_partial']}")
     for error in report.errors:
         lines.append(f"{error['code']}: {error['action']}")
+    lines.append(f"YouTube API cache expires after {data.get('youtube_cache_max_days', 6)} days; older comparisons may be unavailable.")
     lines.append('Rankings cover observed content only. Missing data is not zero; platforms are not combined.')
     return '\n'.join(lines)

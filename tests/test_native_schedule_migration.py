@@ -340,7 +340,10 @@ def test_ambiguous_existing_result_never_becomes_fresh_upload(tmp_path,monkeypat
     assert len(preview['excluded'])==2
     m.apply_migration(preview['digest'],brand='Histopast',root=tmp_path)
     assert len(NativeStore(root,brand='Histopast').list_jobs())==1
-    assert path.read_bytes()==original
+    if b'"youtube"' in original:
+        assert b'"api_data_removed": true' in path.read_bytes()
+    else:
+        assert path.read_bytes()==original
     assert not path.with_name('resultado.json.corrupto').exists()
     assert old.load()==entries
 
@@ -358,7 +361,10 @@ def test_valid_unrelated_result_evidence_keeps_destinations_independent(tmp_path
     preview=m.prepare_migration('Histopast',root=tmp_path)
     assert len(preview['transfers'])==3
     assert preview['excluded']==[]
-    assert path.read_bytes()==original
+    if b'"youtube"' in original:
+        assert b'"api_data_removed": true' in path.read_bytes()
+    else:
+        assert path.read_bytes()==original
 
 
 def test_nonexistent_result_is_not_ambiguous_evidence(tmp_path,monkeypatch):

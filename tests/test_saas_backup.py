@@ -38,7 +38,7 @@ def test_online_snapshot_contains_wal_commit_not_uncommitted_rows_and_private_fi
         writer.execute("INSERT INTO rates VALUES('uncommitted',1,99)")
         destination=tmp_path/'backups'/'state.sqlite3'
         report=snapshot(vault.path,destination,keys)
-        assert report['records']==2 and report['schema_version']==9
+        assert report['records']==2 and report['schema_version']==10
         assert report==verify(destination,keys)
         assert stat.S_IMODE(destination.stat().st_mode)==0o600
         assert stat.S_IMODE(destination.parent.stat().st_mode)==0o700
@@ -101,15 +101,13 @@ def test_restored_service_preserves_trial_cutoff_and_owner_token_boundary(tmp_pa
     copy=tmp_path/'isolated'/'restore.sqlite3'
     report=snapshot(vault.path,copy,settings.encryption_keys)
     assert report['legacy_cutoff'] is True
-    restored=TestClient(create_app(replace(settings,database=copy),clock=lambda:now[0],
-        provider_client=httpx.Client(transport=httpx.MockTransport(provider))),base_url='https://social.example')
-    assert token(restored,connection,refresh=False).status_code==200
-    wrong={**connection,'connection_secret':'another-owner-secret'}
-    assert token(restored,wrong,refresh=False).status_code==404
-    creation={'platform':'youtube','poll_challenge':'a'*64}
-    assert restored.post('/v1/authorizations',json=creation).status_code==410
-    now[0]=1210600
-    assert token(restored,connection,refresh=False).status_code==402
+    # New backups are quarantined even if mounted directly as a service DB.
+    with pytest.raises(ValueError,match='restored database'):
+        create_app(replace(settings,database=copy),clock=lambda:now[0],
+            provider_client=httpx.Client(transport=httpx.MockTransport(provider)))
+    with sqlite3.connect(copy) as db:
+        assert db.execute('SELECT state FROM saas_restore_guard').fetchone()[0]=='unprepared'
+        assert db.execute('SELECT trial_end FROM saas_entitlements').fetchone()[0]==1210600
 
 
 def test_rotated_keys_restore_all_records_but_current_key_alone_cannot(tmp_path):

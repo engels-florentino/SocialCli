@@ -24,7 +24,7 @@ def test_ownership_index_backfills_and_never_decrypts_other_users(tmp_path):
         vault.put(db, 'saas-session', 'other', {'user_id': 'other'}, expires=100)
     metadata = SaaSStore(vault, [b'k' * 32])
     with vault.transaction() as db:
-        assert db.execute('SELECT max(version) FROM saas_schema').fetchone()[0] == 9
+        assert db.execute('SELECT max(version) FROM saas_schema').fetchone()[0] == 10
         # A corrupt unrelated ciphertext must never break this user's panel.
         db.execute("UPDATE records SET payload='invalid' WHERE id='other'")
         found = AccountLifecycle(metadata, lambda: 1).owned_records(db, 'mine')
@@ -60,7 +60,7 @@ def test_schema7_webhook_migration_preserves_audit_and_bounds_every_state(tmp_pa
     for _ in range(2):  # A later startup must not extend retention or lose hashes.
         SaaSStore(vault, [b'k' * 32])
         with vault.read_transaction() as db:
-            assert db.execute('SELECT max(version) FROM saas_schema').fetchone()[0] == 9
+            assert db.execute('SELECT max(version) FROM saas_schema').fetchone()[0] == 10
             for state in states:
                 event_id = 'evt_' + state
                 row = db.execute('SELECT * FROM saas_billing_events WHERE event_id=?',
@@ -90,7 +90,7 @@ def test_schema8_backfills_private_email_and_legacy_pair_links_for_exact_deletio
         vault.put(db,'saas-login','other-login',{'email':'other@example.test'},expires=1000)
         db.execute('DELETE FROM saas_record_links')
         db.execute('DELETE FROM saas_record_emails')
-        db.execute('DELETE FROM saas_schema WHERE version=9')
+        db.execute('DELETE FROM saas_schema WHERE version>=9')
     # Upgrade while rotating keys: old and new keys must both match old attempts.
     vault=Store(vault.path,[Fernet.generate_key(),key]);metadata=SaaSStore(vault,[key])
     with vault.read_transaction() as db:

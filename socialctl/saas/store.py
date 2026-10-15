@@ -13,9 +13,13 @@ class SaaSStore:
         self.vault = vault
         self.eligibility_keys = eligibility_keys
         with vault.transaction() as db:
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='saas_restore_guard'").fetchone():
+                guard=db.execute('SELECT state FROM saas_restore_guard WHERE singleton=1').fetchone()
+                if guard is None or guard['state']!='ready':
+                    raise ValueError('The restored database is quarantined; complete current-authority and identity cleanup before startup.')
             db.execute('CREATE TABLE IF NOT EXISTS saas_schema (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)')
             version = db.execute('SELECT coalesce(max(version),0) FROM saas_schema').fetchone()[0]
-            if version > 9:
+            if version > 10:
                 raise ValueError('SaaS database is newer than this release; keep commercial access closed')
             if version < 1:
                 db.execute('CREATE TABLE saas_users (id TEXT PRIMARY KEY, created REAL NOT NULL, suspended INTEGER NOT NULL DEFAULT 0, deleting INTEGER NOT NULL DEFAULT 0, session_version INTEGER NOT NULL DEFAULT 0)')
@@ -75,6 +79,12 @@ class SaaSStore:
                     record=vault.get(db,row['kind'],row['id'])
                     vault.index_owner(db,row['kind'],row['id'],record['payload'])
                 db.execute('INSERT INTO saas_schema(version) VALUES(9)')
+
+            if version < 10:
+                db.execute("CREATE TABLE IF NOT EXISTS saas_google_revocations (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,requested REAL NOT NULL,state TEXT NOT NULL DEFAULT 'pending',next_attempt REAL NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,lease TEXT,lease_until REAL NOT NULL DEFAULT 0)")
+                db.execute('CREATE INDEX IF NOT EXISTS saas_google_revocations_due ON saas_google_revocations(state,next_attempt,lease_until)')
+                db.execute('CREATE TABLE IF NOT EXISTS saas_deletion_tombstones (kind TEXT NOT NULL,id TEXT NOT NULL,requested REAL NOT NULL,PRIMARY KEY(kind,id))')
+                db.execute('INSERT INTO saas_schema(version) VALUES(10)')
 
 
     def user(self, db, user_id):

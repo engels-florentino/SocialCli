@@ -16,6 +16,11 @@ from backup_host import private, inspect_status
 
 
 LABELS={
+    'retention_failed':'Backup retention failed; expired data may remain.',
+    'retention_stalled':'Backup retention has stopped making progress.',
+    'retention_unknown':'Backup retention has not been verified.',
+    'retention_stale':'Backup retention has not completed in more than seven hours.',
+    'retention_remote_unverified':'Google Drive backup removals have not been verified.',
     'backup_failed':'The local backup failed.',
     'backup_stalled':'The local backup has stopped making progress.',
     'backup_unverified':'No verified local backup is available.',
@@ -48,9 +53,10 @@ def write(root,name,value):
 def remote_complete(config,*,now=time.time):
     root=private(config['root'],directory=True)
     report=read(root/'status.json')
-    if report.get('status')!='complete' or inspect_status(config,now=now)['status']!='ok':
+    if report.get('status')!='complete' or report.get('remote_verified') is not True or inspect_status(config,now=now)['status']!='ok':
         raise ValueError('A current local backup is required.')
-    # Called only after BOTH copy and check pairs succeeded in ExecStartPost.
+    # The backup receipt explicitly records successful Drive sync/check for both
+    # repositories. A local-only success can never certify an off-host copy.
     result={key:report[key] for key in ('last_success','state_snapshot','recovery_snapshot')}
     result['verified_at']=now()
     write(root,'remote-status.json',result)

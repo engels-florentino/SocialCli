@@ -17,9 +17,11 @@ def load():
 
 def setup(tmp_path):
     tmp_path.chmod(0o700)
-    report={'status':'complete','at':1000,'last_success':1000,
+    report={'status':'complete','at':1000,'last_success':1000,'remote_verified':True,
             'state_snapshot':'a'*64,'recovery_snapshot':'b'*64}
     (tmp_path/'status.json').write_text(json.dumps(report));(tmp_path/'status.json').chmod(0o600)
+    (tmp_path/'retention-status.json').write_text(json.dumps({'status':'complete','at':1000,'last_success':1000}))
+    (tmp_path/'retention-status.json').chmod(0o600)
     return {'root':str(tmp_path)}
 
 
@@ -115,3 +117,13 @@ def test_running_retry_does_not_rearm_an_unrecovered_incident(tmp_path):
     alerts.notify(config,[],send,recovered=True)
     alerts.notify(config,['backup_service_failed'],send)
     assert len(sent)==2
+
+
+def test_local_only_backup_receipt_cannot_be_certified_as_remote(tmp_path):
+    import pytest
+    _,alerts=load();config=setup(tmp_path)
+    report=json.loads((tmp_path/'status.json').read_text())
+    report['remote_verified']=False
+    (tmp_path/'status.json').write_text(json.dumps(report))
+    with pytest.raises(ValueError):alerts.remote_complete(config,now=lambda:1100)
+    assert not (tmp_path/'remote-status.json').exists()

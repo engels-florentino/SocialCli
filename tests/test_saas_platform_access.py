@@ -112,7 +112,7 @@ def test_schema_seven_makes_legacy_approval_explicit_without_broadening_new_poli
         data=upgraded.vault.get(db,'saas-installation',cap['installation_id'])['payload']
         assert data['platform_access']['source']=='legacy_approval'
         assert set(data['platform_access']['platforms'])=={'youtube','facebook','instagram','tiktok'}
-        assert db.execute('SELECT max(version) FROM saas_schema').fetchone()[0]==9
+        assert db.execute('SELECT max(version) FROM saas_schema').fetchone()[0]==10
     mutate_policy(client,cap,{'version':1,'platforms':['youtube']})
     SaaSStore(metadata.vault,metadata.eligibility_keys)
     with metadata.vault.transaction() as db:

@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from socialctl.connection_service.landing import LandingTokens
 from socialctl.saas.auth import SupabaseAuth, WebSessions, IdentityError, IdentityUnavailable, digest
 from socialctl.saas.store import SaaSStore
-from socialctl.saas import pages
+from socialctl.saas import pages, consent
 
 PREAUTH='socialcli-browser'
 
@@ -78,6 +78,7 @@ def install_account_routes(app,settings,vault,identity_client,clock):
     async def send_code(request:Request):
         data=await read_form(request,settings.public_url)
         valid_form(request,data,'saas-login',authenticated=False)
+        accepted=consent.privacy_choice(data,required=False)
         email=data.get('email','').strip().casefold()
         if len(email)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email):
             return HTMLResponse(pages.login(csrf(request,'saas-login',authenticated=False),safe_next(data.get('next','')),'Enter a valid email address.',input_error=True),status_code=400)
@@ -90,7 +91,8 @@ def install_account_routes(app,settings,vault,identity_client,clock):
                     return None
                 attempt=secrets.token_urlsafe(24)
                 vault.put(db,'saas-login',attempt,{'email':email,'browser':digest(request.cookies[PREAUTH]),
-                    'next':safe_next(data.get('next','')),'tries':0,'status':'pending'},expires=clock()+600)
+                    'next':safe_next(data.get('next','')),'tries':0,'status':'pending',
+                    'privacy_version':consent.PRIVACY_VERSION if accepted else None},expires=clock()+600)
                 return attempt
         attempt=await asyncio.to_thread(prepare)
         if attempt is None:
@@ -145,6 +147,8 @@ def install_account_routes(app,settings,vault,identity_client,clock):
                 current['payload']['status']='consumed'
                 vault.put(db,'saas-login',attempt,current['payload'],expires=current['expires'])
                 metadata.ensure_user(db,user,clock())
+                if payload.get('privacy_version')==consent.PRIVACY_VERSION:
+                    consent.accept_privacy(metadata,db,user.id,clock())
                 previous=request.cookies.get(sessions.cookie,'')
                 if previous:
                     vault.delete(db,'saas-session',digest(previous))
@@ -155,11 +159,15 @@ def install_account_routes(app,settings,vault,identity_client,clock):
     @app.get('/account/',response_class=HTMLResponse)
     def account_page(request:Request):
         try:
-            user=sessions.require_user(request)
+            user=sessions.require_user(request,privacy=False)
         except HTTPException as exc:
             if exc.status_code!=401:
                 raise
             return RedirectResponse('/account/login',status_code=303)
+        with vault.read_transaction() as db:
+            accepted=consent.privacy_accepted(metadata,db,user.id)
+        if not accepted:
+            return HTMLResponse(pages.privacy_review(csrf(request,'saas-privacy'),'/account/',csrf(request,'saas-account')))
         from socialctl.saas.access import AccessControl
         with vault.read_transaction() as db:
             decision=AccessControl(metadata).decision(db,user.id,clock())
@@ -173,11 +181,32 @@ def install_account_routes(app,settings,vault,identity_client,clock):
         response.headers['Content-Security-Policy']="default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self' https://checkout.stripe.com https://billing.stripe.com; frame-ancestors 'none'; base-uri 'none'"
         return response
 
+    @app.get('/account/privacy',response_class=HTMLResponse)
+    def privacy_page(request:Request):
+        sessions.require_user(request,privacy=False)
+        return HTMLResponse(pages.privacy_review(csrf(request,'saas-privacy'),
+            safe_next(request.query_params.get('next','')),csrf(request,'saas-account')))
+
+    @app.post('/account/privacy')
+    async def accept_privacy(request:Request):
+        data=await read_form(request,settings.public_url)
+        valid_form(request,data,'saas-privacy')
+        user=await asyncio.to_thread(sessions.require_user,request,privacy=False)
+        consent.privacy_choice(data)
+        def commit():
+            with vault.transaction() as db:
+                row=metadata.user(db,user.id)
+                if row is None or row['deleting']:
+                    raise HTTPException(401,'Sign in to SocialCli again.')
+                consent.accept_privacy(metadata,db,user.id,clock())
+        await asyncio.to_thread(commit)
+        return RedirectResponse(safe_next(data.get('next','')),status_code=303)
+
     @app.post('/account/logout')
     async def logout(request:Request):
         data=await read_form(request,settings.public_url)
         valid_form(request,data,'saas-account')
-        await asyncio.to_thread(sessions.require_user,request)
+        await asyncio.to_thread(sessions.require_user,request,privacy=False)
         await asyncio.to_thread(sessions.revoke,request)
         response=RedirectResponse('/account/login',status_code=303)
         response.delete_cookie(sessions.cookie,path='/',secure=not settings.allow_http_local,httponly=True,samesite='lax')

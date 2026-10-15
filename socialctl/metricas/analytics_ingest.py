@@ -122,7 +122,12 @@ class ObservationStore(ResourceStore):
         self.account_id = opaque(account_id)
 
     def _read_json(self, path):
-        return json.loads(read_supplied(path, 128*1024*1024))
+        value=json.loads(read_supplied(path, 128*1024*1024))
+        provenance=value.get('provenance',{})
+        if provenance and provenance.get('source')!='youtubeStudio':
+            from socialctl.youtube_data import require_fresh_api_data
+            require_fresh_api_data(provenance.get('observed_at'))
+        return value
 
     def index(self):
         self._ensure_root()

@@ -89,6 +89,12 @@ def _refrescar(
         ) from None
 
     if respuesta.status_code != 200:
+        if platform is Platform.YOUTUBE:
+            try: rejected=respuesta.json()
+            except (ValueError,TypeError): rejected={}
+            if isinstance(rejected,dict) and rejected.get('error')=='invalid_grant':
+                from socialctl.youtube_data import request_youtube_purge
+                request_youtube_purge(brand.raiz)
         raise with_http_error_code(_pedir_auth(platform, "the token refresh was rejected"),
                                    respuesta, read_only=False)
 

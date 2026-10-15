@@ -92,6 +92,7 @@ def fusionar(existentes: list[dict], snapshot: Snapshot) -> list[dict]:
                 "tipo": pieza.tipo.value,
                 "publicado_el": pieza.publicado_el.isoformat(),
                 "titulo": pieza.titulo,
+                **({"api_observed_at": (lectura.observed_at.isoformat() if lectura.observed_at else snapshot.fecha.isoformat())} if platform.value == "youtube" else {}),
             })
             if pieza.slug is not None:
                 # El cruce con `posts/` lo resolvió: manda el cruce.

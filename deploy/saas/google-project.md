@@ -34,3 +34,11 @@ backup authorization remains a separate operational requirement.
 Update: owner subsequently authorized Drive backups with the separate Desktop
 client and `drive.file`. This does not add Drive to SaaS connection requests.
 See backup-restore.md for verified upload and hourly-copy evidence and limits.
+
+## Ownership verified — October 15, 2026
+
+Added the Google verification TXT at Namecheap without removing existing TXT records. Public DNS returned the record and Search Console confirmed Ownership verified using Domain name provider; the property overview is `sc-domain:socialcli.app` under the project administrator account. Keep this TXT record. The Google audience remains External / Testing. This resolves domain ownership, not production approval.
+
+## Backup isolation gate — October 15, 2026
+
+Verified privately that the active rclone backup client belongs to project `socialcli`, the same project as the customer Web client. Google revocation for the same user can affect all clients in that project. The new project `socialcli-operator-backups` (SocialCli Backups) was created in Google Cloud; its OAuth configuration is prepared through the final Google User Data Policy acceptance screen. Acceptance, client creation, owner authorization, isolated Drive copy verification and migration remain incomplete. Do not deploy the revocation release until the backup migration succeeds. Existing backup credentials and the running rc8 service are unchanged.

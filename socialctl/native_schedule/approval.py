@@ -123,6 +123,12 @@ def approval_document(job: NativeJob, payload: dict) -> dict:
     raw = job.model_dump(mode='json')
     document = {'schema': SCHEMA, 'intent': {key:raw[key] for key in fields},
                 'payload': payload, 'media': media_hashes(payload)}
+    if job.platform == 'youtube':
+        from socialctl.upload_consent import youtube_certification
+        document['uploader_certification'] = youtube_certification()
+        document['data_retention_notice'] = ('Reconcile active YouTube schedules at least every six days. '
+            'Expired local receipts block local management but do not cancel a video already scheduled on YouTube. '
+            'Inspect or cancel it in YouTube Studio before preparing any replacement.')
     # Existing approvals predate this field. Their serialization is immutable.
     if job.schedule_mode != 'legacy_daily':
         document['intent']['schedule_mode'] = job.schedule_mode
