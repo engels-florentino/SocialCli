@@ -1,3 +1,9 @@
+# Current deployment: 0.3.0rc4
+
+See [the rc4 rollout evidence](rollout-rc4-2026-10-14.md) for the current runtime,
+TLS, schema, backup and routing state. The checkpoints below are historical and
+do not describe the current deployed version.
+
 # Isolated HTTPS pilot — public activation verified
 
 DNS required in Namecheap: **CNAME `pilot` → `socialcli.app`**, automatic TTL.

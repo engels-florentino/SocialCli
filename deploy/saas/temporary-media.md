@@ -17,7 +17,7 @@ plus 256 MiB disk headroom. Admission is serialized in SQLite; upload bytes stre
 outside database transactions and have a five-minute transport limit.
 
 In the Nginx proxy for the pilot add a dedicated upload location with
-`client_max_body_size 512m; proxy_request_buffering off; proxy_buffering off;`
+`client_max_body_size 512m; proxy_http_version 1.1; proxy_request_buffering off; proxy_buffering off;`
 and `proxy_read_timeout 310s; proxy_send_timeout 310s; client_body_timeout 60s;`.
 Route `/media/` to the same service, disable caching, response buffering and
 access logging for opaque URLs. Preserve `Host` and overwrite `X-Real-IP` with
@@ -32,3 +32,11 @@ Do not generate production media to test this feature. An original file remains
 on the customer runner for local scheduling; the temporary URL is created only
 when that approved job dispatches. Native Instagram video helpers continue to
 use Meta direct uploads; their image URL contracts remain explicit.
+
+The rc4 deployment limits this upload location to
+`^/api/saas/v1/connections/[A-Za-z0-9_-]+/media/[A-Za-z0-9_-]{32}$`.
+Quote the regex in Nginx because it contains braces. Use
+`proxy_next_upstream off` to avoid retrying writes; keep the normal small-body
+limit for other routes. NPM's proxy include overwrites X-Real-IP. Save advanced
+configuration in NPM's canonical settings as well as any generated configuration
+used for an operational cutover; validate with nginx -t before reloading.

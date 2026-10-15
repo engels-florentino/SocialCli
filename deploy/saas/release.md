@@ -6,7 +6,8 @@ WAL reads, brand rename/release, 12-hour renewable sessions, trusted proxy rate
 identity, compact agent bootstrap and 15-minute Instagram media staging.
 The rc3 tag remains immutable. rc4 must be built, reviewed and published separately.
 The runtime remains a pilot with Stripe test billing and provider test restrictions.
-Publication/deployment evidence is recorded below after each gate completes.
+Current server deployment evidence: [rc4 rollout](rollout-rc4-2026-10-14.md).
+Distribution remains a separate protected release gate.
 
 
 Current source version: **0.3.0rc4**, consolidated in the repository root on
