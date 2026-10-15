@@ -7,6 +7,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from socialctl.approval_cli import read_approval
+
 from socialctl.read_budget import active_read_budget, bounded_read, read_client
 
 from socialctl.management.cli import DEFAULT_ROOT, _brand, _fail
@@ -191,7 +193,7 @@ def draft(media_id: str, comment_id: str, platform: Platform = typer.Option(...,
             change, record = prepare_inbox_draft(MetaCommentsClient(selected, platform, http),
                 CommentStore(selected.raiz), CommentInboxStore(selected.raiz),
                 media_id=media_id, comment_id=comment_id, text=text)
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo("Remote DRY-RUN: local draft and ChangeSet; no Meta writes.")
     typer.echo(render_draft_preview(record, change))
@@ -204,7 +206,9 @@ def apply_draft(media_id: str, comment_id: str,
                 max_replies: int = typer.Option(10, "--max-replies", min=1,
                     help="Maximum reply intentions within window and account."),
                 window_seconds: int = typer.Option(3600, "--window-seconds", min=1),
-                json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr.")):
+                json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr."),
+          approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from the approved complete preview."),
+          approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin.")):
     """Display preview and apply only after entering exact fingerprint."""
     with OperationOutput(json_output) as output:
         selected = output.brand(root, brand)
@@ -212,7 +216,7 @@ def apply_draft(media_id: str, comment_id: str,
         if not record.change_id:
             raise ChangeError("comment has no draft")
         change = CommentStore(selected.raiz).load(record.change_id)
-        digest = output.approve(change, render_draft_preview(record, change))
+        digest = output.approve(change, render_draft_preview(record, change), approval_fingerprint, approval_stdin=approval_stdin)
         with make_http_client() as http:
             client = MetaCommentsClient(selected, platform, http)
             output.begin_write()
@@ -259,7 +263,7 @@ def prepare(media_id: str, platform: Platform = typer.Option(..., "--platform"),
         with make_http_client() as http:
             change = prepare_comment(MetaCommentsClient(selected, platform, http), CommentStore(selected.raiz),
                 media_id=media_id, text=text, action=action, parent_id=parent_id, comment_id=comment_id)
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo("Remote DRY-RUN: local proposal; no Meta writes.")
     typer.echo(render_comment_preview(change))
@@ -278,7 +282,9 @@ def status(change_id: str, brand: str = typer.Option(..., "--brand"),
 @comments_app.command("apply")
 def apply(change_id: str, brand: str = typer.Option(..., "--brand"),
           root: Path = typer.Option(DEFAULT_ROOT, "--root"),
-          json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr.")):
+          json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr."),
+          approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from the approved complete preview."),
+          approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin.")):
     """Display full preview and require exact fingerprint entry; uncertain POST is never repeated."""
     with OperationOutput(json_output) as output:
         selected = output.brand(root, brand)
@@ -287,7 +293,7 @@ def apply(change_id: str, brand: str = typer.Option(..., "--brand"),
         output.change_id = change.id
         if _inbox_record_for_change(selected, change):
             raise ChangeError("this ChangeSet belongs to inbox; use comments apply-draft to preserve state and frequency")
-        digest = output.approve(change, render_comment_preview(change))
+        digest = output.approve(change, render_comment_preview(change), approval_fingerprint, approval_stdin=approval_stdin)
         with make_http_client() as http:
             client = MetaCommentsClient(selected, Platform(change.platform), http)
             output.begin_write()
@@ -339,7 +345,7 @@ def retry_first(publication_id: str, brand: str = typer.Option(..., "--brand"),
             return
         with make_http_client() as http:
             result = retry_first_comment(selected, http, publication_id)
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(_json(result.model_dump(mode="json")))
     if result.first_comment_status not in {None, "verified"}:

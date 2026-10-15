@@ -19,6 +19,7 @@ from pathlib import Path
 
 import httpx
 import typer
+from socialctl.approval_cli import read_approval
 import yaml
 
 from socialctl.authflow import (
@@ -323,6 +324,8 @@ def _fallar(mensaje: str) -> None:
 
 def _confirmar(mensaje: str) -> bool:
     """Request explicit confirmation; empty input or EOF declines. English and legacy Spanish affirmative inputs are accepted."""
+    if not sys.stdin.isatty():
+        _fallar("Noninteractive approval required: show the complete preview, then use --approval-fingerprint DIGEST or --approval-stdin; --yes remains available for commands that document it. No input was read.")
     typer.echo(f"{mensaje} [y/N]: ", nl=False)
     while True:
         try:
@@ -388,6 +391,8 @@ def _publicar_impl(
     only: list[Platform] | None,
     motivo_exclusion: str = "not requested with --only",
     retry_guard: bool = False,
+    approval_fingerprint: str | None = None,
+    approval_stdin: bool = False,
     report=None,
 ) -> None:
     """Validate, preview and publish an already loaded post; shared by publish and retry."""
@@ -415,13 +420,32 @@ def _publicar_impl(
         typer.echo("\nNothing will be published: fix the problems above.")
         raise typer.Exit(1)
 
+    def publication_digest(current_post, current_brand):
+        document = {"schema": "socialcli.publish.preview.v1", "slug": current_post.slug,
+                    "platforms": {p.value: approval_hash(current_post, current_brand, p) for p in destinos}}
+        return hashlib.sha256(json.dumps(document, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    try:
+        displayed_digest = publication_digest(post, brand)
+    except ScheduleError as exc:
+        _fallar(str(exc))
+    typer.echo(f"Approval digest: {displayed_digest}")
+    if report is not None:
+        report.preview = preview + f"\nApproval digest: {displayed_digest}"
     if dry_run:
         if report is not None:
             report.status = "preview"
         typer.echo("\n--dry-run: nothing was published.")
         raise typer.Exit(0)
 
-    if not yes:
+    exact_approval = approval_fingerprint is not None or approval_stdin
+    if exact_approval:
+        try:
+            supplied = read_approval(approval_fingerprint, approval_stdin=approval_stdin)
+        except ValueError as exc:
+            _fallar(str(exc))
+        if not hmac.compare_digest(supplied, displayed_digest):
+            _fallar("approval does not match the complete preview; run --dry-run and approve the current content")
+    if not yes and not exact_approval:
         try:
             confirmado = _confirmar(f"\nPublish on the {len(destinos)} platforms?")
         except KeyboardInterrupt:
@@ -443,6 +467,11 @@ def _publicar_impl(
 
     from socialctl.source_links import verify_source_mapping
     try:
+        current_brand = _cargar_marca(brand.raiz.parent, brand.nombre)
+        current_post = _cargar_post_con_avisos(current_brand, post.slug)
+        if (publication_digest(current_post, current_brand) != displayed_digest
+                or publication_digest(post, brand) != displayed_digest):
+            _fallar("content changed after the preview; run --dry-run again")
         verify_source_mapping(brand, post)
     except ValueError as exc:
         _fallar(str(exc))
@@ -689,6 +718,8 @@ def publish(
     yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt."),
     only: list[str] = typer.Option(None, "--only", help="Publish only on these platforms."),
     source_link: bool = typer.Option(False, "--source-link", help="Require this exact post in source-videos.yml before previewing."),
+    approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact digest of the approved complete preview."),
+    approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approved digest line from stdin."),
     json_output: bool = typer.Option(False, "--json", help="One JSON result; complete preview and approval UI on stderr."),
 ) -> None:
     """Validate every platform, display the complete preview, then publish approved content."""
@@ -704,7 +735,7 @@ def publish(
                 validas = ", ".join(p.value for p in Platform)
                 _fallar(f"--only contains an unknown platform. Valid platforms: {validas}")
 
-        _publicar_impl(post, brand, dry_run=dry_run, yes=yes, only=destinos, report=report)
+        _publicar_impl(post, brand, dry_run=dry_run, yes=yes, only=destinos, report=report, approval_fingerprint=approval_fingerprint, approval_stdin=approval_stdin)
 
 
 @app.command("schedule")
@@ -716,11 +747,12 @@ def schedule(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show the preview without saving the queue."),
     yes: bool = typer.Option(False, "--yes", help="Approve the queue without another prompt."),
     only: list[str] = typer.Option(None, "--only", help="Schedule only these platforms."),
-    approval_digest: str | None = typer.Option(None, "--approval-digest", help="Digest of the previously approved preview."),
+    approval_digest: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Digest of the previously approved preview."),
+    approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approved digest line from stdin."),
     preview_json: bool = typer.Option(False, "--preview-json", hidden=True),
 ) -> None:
     """Validate and add a Facebook/Instagram post to the local queue."""
-    if preview_json and (not dry_run or yes or approval_digest):
+    if preview_json and (not dry_run or yes or approval_digest or approval_stdin):
         _fallar("--preview-json requires --dry-run and does not support approval")
     brand = _cargar_marca(root, brand_nombre)
     if is_remote(brand.raiz):
@@ -735,7 +767,7 @@ def schedule(
         try:
             destinos = [Platform(item) for item in only]
         except ValueError:
-            _fallar("--only solo allows youtube, facebook, instagram o tiktok")
+            _fallar("--only allows youtube, facebook, instagram or tiktok")
     else:
         destinos = list(post.platforms)
     destinos = [p for p in destinos if p in (Platform.FACEBOOK, Platform.INSTAGRAM)]
@@ -769,9 +801,14 @@ def schedule(
     if dry_run:
         typer.echo(f"\n--dry-run: would schedule for {scheduled_at.isoformat()}.")
         raise typer.Exit(0)
-    if approval_digest and not hmac.compare_digest(approval_digest, displayed_digest):
+    if approval_digest is not None or approval_stdin:
+        try:
+            approval_digest = read_approval(approval_digest, approval_stdin=approval_stdin)
+        except ValueError as exc:
+            _fallar(str(exc))
+    if approval_digest is not None and not hmac.compare_digest(approval_digest, displayed_digest):
         _fallar("digest does not match the approved preview; run --dry-run and approve the current content")
-    if not yes and not _confirmar(f"\nSave {len(destinos)} schedule(s) to the local queue?"):
+    if not yes and approval_digest is None and not _confirmar(f"\nSave {len(destinos)} schedule(s) to the local queue?"):
         typer.echo("Canceled. No schedule was saved.")
         raise typer.Exit(0)
     # Re-read disk/account changes as well as media bytes after confirmation.
@@ -1583,7 +1620,7 @@ def stats(
     except Exception as exc:
         from socialctl.read_reports import fail_read
         fail_read(exc,json_output=json_output)
-    with transport as client:
+    with progress, transport as client:
         for index, platform in enumerate(destinos):
             if interrupted:
                 redes[platform] = LecturaRed(estado=EstadoLectura.ERROR, error='Read interrupted; platform not started', failure_code='not_attempted')
@@ -1591,7 +1628,8 @@ def stats(
             try:
                 with budget.share(len(destinos) - index):
                     budget.check()
-                    typer.echo(f"Reading {platform.value}...", err=True)
+                    if sys.stderr.isatty():
+                        typer.echo(f"Reading {platform.value}...", err=True)
                     redes[platform] = leer_red(platform, marca, client, fecha_desde)
                     redes[platform].observed_at = datetime.now(timezone.utc)
             except KeyboardInterrupt:
@@ -1637,7 +1675,6 @@ def stats(
 
     if json_output:
         from contextlib import redirect_stdout
-        import sys
         from socialctl.read_reports import ReadReport, emit_report, safe_error
         with redirect_stdout(sys.stderr):
             _limpiar_snapshots_y_avisar(marca)

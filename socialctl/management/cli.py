@@ -9,6 +9,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from socialctl.approval_cli import read_approval
+
 from socialctl.brands import (
     AccountsInvalido,
     Brand,
@@ -169,13 +171,15 @@ def changes_apply(
     yes: bool = typer.Option(
         False, "--yes", help="Does not replace exact fingerprint approval."
     ),
+    approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from the approved complete preview."),
+    approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin."),
 ) -> None:
     """Apply snippet after entering exact displayed fingerprint."""
     selected = _brand(root, brand)
     store = ChangeStore(selected.raiz)
     try:
         if BatchStore(selected.raiz).path_for(change_id).exists():
-            apply_selected(selected, change_id, yes)
+            apply_selected(selected, change_id, yes, approval_fingerprint, approval_stdin=approval_stdin)
             return
         change = store.load(change_id)
     except (ChangeError, YouTubeManagementError, OSError) as exc:
@@ -184,7 +188,9 @@ def changes_apply(
     if yes:
         typer.echo("NOTICE: --yes does not replace exact approval of this ChangeSet.")
     try:
-        approval = typer.prompt("Enter the exact fingerprint to approve")
+        approval = read_approval(approval_fingerprint, approval_stdin=approval_stdin)
+    except ValueError as exc:
+        _fail(str(exc))
     except (EOFError, KeyboardInterrupt):
         _fail("Application cancelled: exact approval was not received.")
     if approval != change.fingerprint:

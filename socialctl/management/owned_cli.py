@@ -5,6 +5,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from socialctl.approval_cli import read_approval
+
 from socialctl.management.changes import ChangeError
 from socialctl.management.owned_schema import load_owned_edit
 from socialctl.management.owned_changes import OwnedStore, prepare_owned, apply_owned, reconcile_owned
@@ -38,7 +40,7 @@ def register(content_app, default_root):
         try:
             with make_http_client() as http:
                 result = callback(YouTubeOwnedClient(selected, http))
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(_json(result))
 
@@ -81,7 +83,7 @@ def register(content_app, default_root):
             edit = load_owned_edit(file)
             with make_http_client() as http:
                 change = prepare_owned(YouTubeOwnedClient(selected, http), OwnedStore(selected.raiz), edit)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(render_owned_preview(change))
 
@@ -95,18 +97,20 @@ def register(content_app, default_root):
         typer.echo(_json(change.model_dump(mode="json")))
 
     @owned.command("apply")
-    def apply(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root")):
+    def apply(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root"),
+              approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from the approved complete preview."),
+              approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin.")):
         selected = _brand(root, brand)
         store = OwnedStore(selected.raiz)
         try:
             change = store.load(change_id)
             typer.echo(render_owned_preview(change))
-            approval = typer.prompt("Enter the exact fingerprint to approve")
+            approval = read_approval(approval_fingerprint, approval_stdin=approval_stdin)
             if approval != change.fingerprint:
                 _fail("approval does not match exact fingerprint")
             with make_http_client() as http:
                 result = apply_owned(YouTubeOwnedClient(selected, http), store, change_id, approval)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(_json(result.model_dump(mode="json")))
         if result.status != "verified":
@@ -119,6 +123,6 @@ def register(content_app, default_root):
         try:
             with make_http_client() as http:
                 result = reconcile_owned(YouTubeOwnedClient(selected, http), OwnedStore(selected.raiz), change_id)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(_json(result.model_dump(mode="json")))

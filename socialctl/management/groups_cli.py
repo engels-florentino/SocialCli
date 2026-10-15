@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 
 import typer
+from socialctl.approval_cli import read_approval
 
 from socialctl.management.changes import ChangeError
 from socialctl.management.cli import DEFAULT_ROOT, _brand, _fail
@@ -183,7 +184,7 @@ def status(
     selected = _brand(root, brand)
     try:
         change = load_group(selected, GroupStore(selected.raiz), change_id)
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(_json(change))
 
@@ -205,7 +206,7 @@ def export(
             _write_new(output, content)
         else:
             typer.echo(content)
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     if output is not None:
         typer.echo(f"Export local escrito: {output}")
@@ -214,7 +215,8 @@ def export(
 @group_app.command("handoff")
 def handoff(
     change_id: str,
-    approval_digest: str | None = typer.Option(None, "--approval-digest", help="Exact fingerprint from prepare."),
+    approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin."),
+    approval_digest: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from prepare."),
     open_browser: bool = typer.Option(False, "--open-browser", help="Open a tab; do not publish or fill forms."),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
@@ -225,7 +227,7 @@ def handoff(
     try:
         prepared = load_group(selected, store, change_id)
         typer.echo(render_group_preview(prepared))
-        digest = approval_digest or typer.prompt("Enter the exact fingerprint to approve")
+        digest = read_approval(approval_digest, approval_stdin=approval_stdin)
         change = approve_handoff(selected, store, change_id, digest)
         typer.echo(render_handoff(change))
         if open_browser and change.status == "handoff_ready":
@@ -241,7 +243,7 @@ def handoff(
             typer.echo("Tab opened. socialcli has not published or filled the form.")
         elif open_browser:
             typer.echo("Handoff was already opened or confirmed; no additional tab will open.")
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
 
 
@@ -266,7 +268,7 @@ def confirm(
             post_url=post_url,
             evidence=evidence,
         )
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(_json(change))
     typer.echo("Manual confirmation recorded; authority: user-supplied statement/evidence.")

@@ -7,6 +7,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from socialctl.approval_cli import read_approval
+
 from socialctl.management.changes import ChangeError
 from socialctl.management.resource_changes import (
     ResourceStore, apply_resource, digest, prepare_resource, reconcile_resource, save_download,
@@ -48,7 +50,7 @@ def register(content_app, default_root):
         try:
             with make_http_client() as http:
                 rows = YouTubeResourcesClient(selected, http).list_captions(video_id)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(_json({"items": rows, "absence_proven": False,
             "limitation": "captions.list does not document pagination; current permissions do not prove write permission."}))
@@ -63,7 +65,7 @@ def register(content_app, default_root):
             with make_http_client() as http:
                 data = YouTubeResourcesClient(selected, http).download_caption(video_id, track_id)
             save_download(output, data)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(_json({"path": str(output.absolute()), "sha256": digest(data), "size": len(data),
             "video_id": video_id, "track_id": track_id, "fidelity": "api_original_response_bytes",
@@ -86,7 +88,7 @@ def register(content_app, default_root):
                 change = prepare_resource(YouTubeResourcesClient(selected, http), ResourceStore(selected.raiz),
                     action=action, video_id=video_id, file=file, track_id=track_id,
                     language=language, name=name, draft=draft)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(render_resource_preview(change))
 
@@ -102,18 +104,20 @@ def register(content_app, default_root):
 
     @assets.command("apply")
     def apply(change_id: str, brand: str = typer.Option(..., "--brand"),
-              root: Path = typer.Option(default_root, "--root")):
+              root: Path = typer.Option(default_root, "--root"),
+              approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from the approved complete preview."),
+              approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin.")):
         selected = _brand(root, brand)
         store = ResourceStore(selected.raiz)
         try:
             change = store.load(change_id)
             typer.echo(render_resource_preview(change))
-            approval = typer.prompt("Enter the exact fingerprint to approve")
+            approval = read_approval(approval_fingerprint, approval_stdin=approval_stdin)
             if approval != change.fingerprint:
                 _fail("approval does not match exact fingerprint")
             with make_http_client() as http:
                 result = apply_resource(YouTubeResourcesClient(selected, http), store, change_id, approval)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(_json(result.model_dump(mode="json")))
         if result.status != "verified":
@@ -127,6 +131,6 @@ def register(content_app, default_root):
         try:
             with make_http_client() as http:
                 result = reconcile_resource(YouTubeResourcesClient(selected, http), ResourceStore(selected.raiz), change_id)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(_json(result.model_dump(mode="json")))

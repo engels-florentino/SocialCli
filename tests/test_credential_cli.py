@@ -118,3 +118,26 @@ def test_key_cannot_alias_store_lock_or_recovery_path(tmp_path):
     brand,store,meta=setup_store(tmp_path)
     for suffix in ('.lock','.before-rotation'):
         with pytest.raises(ValueError): external_paths(store.path,store.path.with_name(store.path.name+suffix))
+
+
+@pytest.mark.parametrize('mode', [0o700, 0o2700])
+def test_generate_key_accepts_private_setgid_directory(tmp_path, mode):
+    private = tmp_path / 'private'
+    private.mkdir(mode=mode)
+    private.chmod(mode)
+    key = private / 'new-key'
+    result = runner.invoke(app, ['credentials', 'generate-key', '--key-file', str(key), '--root', str(tmp_path / 'workspace')])
+    assert result.exit_code == 0, result.output
+    assert key.stat().st_mode & 0o777 == 0o600
+    assert private.stat().st_mode & 0o7777 == mode
+
+
+@pytest.mark.parametrize('mode', [0o750, 0o2701, 0o770])
+def test_generate_key_rejects_group_or_other_access(tmp_path, mode):
+    private = tmp_path / 'private'
+    private.mkdir(mode=mode)
+    private.chmod(mode)
+    key = private / 'new-key'
+    result = runner.invoke(app, ['credentials', 'generate-key', '--key-file', str(key), '--root', str(tmp_path / 'workspace')])
+    assert result.exit_code == 1
+    assert not key.exists()

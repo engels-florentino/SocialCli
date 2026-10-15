@@ -123,23 +123,38 @@ def register(app, content_app):
         """Export public inventory fields to stdout; private raw data stays local."""
         guarded(lambda: listing(root, brand, platform, account), json_output)
 
+    @app.command("preflight")
     @app.command("doctor")
     def doctor(brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(DEFAULT_ROOT, "--root"),
                platform: Platform | None = typer.Option(None, "--platform"),
+               media_files: list[Path] = typer.Option(None, "--media", help="Inspect an already-produced file; repeat for multiple files."),
+               post: str | None = typer.Option(None, "--post", help="Validate a supplied post and its platform media rules."),
+               require_scope: list[str] = typer.Option(None, "--require-scope", help="Require an exact granted scope; requires --platform. Does not request permissions."),
                json_output: bool = typer.Option(False, "--json")):
         """Check configuration, local media, identity and configured remote executor health."""
         def operation():
+            from socialctl.preflight import credential_status, supplied_media_status, post_status, scope_requirements
+            if require_scope and platform is None:
+                raise ReadError("platform_required_for_scope_check")
             selected = cargar_brand(root, brand)
             media = safe(selected.raiz / "media")
             media_status = {"directory_exists": media.is_dir(), "readable": os.access(media, os.R_OK),
                             "ffprobe_available": shutil.which("ffprobe") is not None,
                             "file_integrity": "not_checked"}
-            platforms = [platform] if platform else [p for p in SUPPORTED if selected.cuentas.get(p.value)]
+            media_status["files"] = supplied_media_status(media_files or [])
+            if media_files:
+                media_status["file_integrity"] = "checked" if all(r["valid"] for r in media_status["files"]) else "failed"
+            credentials = credential_status(selected)
+            checked_post = post_status(selected, post)
+            platforms = [platform] if platform else [p for p in Platform if selected.cuentas.get(p.value)]
             with make_http_client() as client:
                 statuses = [auth_status(selected, p, client) for p in platforms]
+            requirements = scope_requirements(statuses, require_scope or [])
             queue = remote_health(selected)
             failed = not media_status["directory_exists"] or not media_status["readable"] or any(r["failure_class"] for r in statuses) or queue.get("failure_class") or queue.get("stale") or queue["state"] == "error"
+            failed = failed or not credentials["available"] or any(not r["valid"] for r in media_status["files"]) or any(not r["satisfied"] for r in requirements) or (checked_post is not None and not checked_post["valid"])
             return {"version": 1, "brand": brand, "configuration": "loaded", "media": media_status,
+                    "credential_store": credentials, "post": checked_post, "scope_requirements": requirements,
                     "accounts": statuses, "queue": queue, "failure_class": "doctor_unhealthy" if failed else None}
         guarded(operation, json_output)
 

@@ -8,6 +8,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from socialctl.approval_cli import read_approval
+
 from socialctl.management.cli import DEFAULT_ROOT, _brand, _fail
 from socialctl.management.meta_changes import MetaStore, apply_meta, prepare_meta, reconcile_meta
 from socialctl.management.meta_client import MetaClient
@@ -72,7 +74,7 @@ def status(
     selected = _brand(root, brand)
     try:
         change = MetaStore(selected.raiz).load(change_id)
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(render_result(change))
 
@@ -83,6 +85,8 @@ def apply(
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
     yes: bool = typer.Option(False, "--yes", help="Does not replace exact approval."),
+    approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from the approved complete preview."),
+    approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin."),
 ) -> None:
     """Require exact fingerprint; uncertain writes are never blindly reprocessed."""
     selected = _brand(root, brand)
@@ -92,12 +96,12 @@ def apply(
         typer.echo(render_preview(change))
         if yes:
             typer.echo("NOTICE: --yes does not replace exact approval of this ChangeSet.")
-        digest = typer.prompt("Enter the exact fingerprint to approve")
+        digest = read_approval(approval_fingerprint, approval_stdin=approval_stdin)
         if not digest == change.fingerprint:
             _fail("approval does not match exact fingerprint")
         with make_http_client() as http:
             result = apply_meta(MetaClient(selected, Platform(change.platform), http), store, change_id, digest)
-    except (ChangeError, OSError, MetaError) as exc:
+    except (ChangeError, OSError, MetaError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(render_result(result))
 
@@ -115,7 +119,7 @@ def reconcile(
         change = store.load(change_id)
         with make_http_client() as http:
             result = reconcile_meta(MetaClient(selected, Platform(change.platform), http), store, change_id)
-    except (ChangeError, OSError, MetaError) as exc:
+    except (ChangeError, OSError, MetaError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(render_result(result))
 

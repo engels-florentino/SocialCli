@@ -119,6 +119,7 @@ def test_dry_run_muestra_el_preview_y_no_publica(social, monkeypatch):
 
 
 def test_sin_confirmar_no_publica(social, monkeypatch):
+    monkeypatch.setattr("typer.testing._NamedTextIOWrapper.isatty", lambda self: True)
     llamadas = []
 
     class Espia(AdaptadorOK):
@@ -141,6 +142,7 @@ def test_ctrl_c_en_la_confirmacion_termina_con_130_y_dice_cancelado(social, monk
     traza y sin publicar -correcto, y no se toca-, pero no imprimía nada,
     a diferencia de los demás caminos de cancelación (responder 'n', o no
     confirmar), que sí dicen "Cancelado"."""
+    monkeypatch.setattr("typer.testing._NamedTextIOWrapper.isatty", lambda self: True)
     llamadas = []
 
     class Espia(AdaptadorOK):
@@ -167,6 +169,7 @@ def test_ctrl_c_en_la_confirmacion_termina_con_130_y_dice_cancelado(social, monk
 
 def test_confirmar_con_si_en_espanol_publica(social, monkeypatch):
     """La confirmacion es en espanol ('s' para si), no el 'y' de typer.confirm."""
+    monkeypatch.setattr("typer.testing._NamedTextIOWrapper.isatty", lambda self: True)
     llamadas = []
 
     class Espia(AdaptadorOK):

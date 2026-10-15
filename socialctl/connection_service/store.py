@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import sqlite3
@@ -19,7 +20,9 @@ class Store:
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         os.fchmod(fd, 0o600)
         os.close(fd)
-        self.cipher = MultiFernet([Fernet(key) for key in (keys if isinstance(keys, list) else [keys])])
+        self.keys = tuple(key.encode() if isinstance(key,str) else key
+                          for key in (keys if isinstance(keys,list) else [keys]))
+        self.cipher = MultiFernet([Fernet(key) for key in self.keys])
         with sqlite3.connect(self.path, timeout=35) as db:
             db.execute('PRAGMA journal_mode=WAL')
         with self.transaction() as db:
@@ -27,6 +30,11 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS saas_record_owners (user_id TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY(kind,id))')
             db.execute('CREATE INDEX IF NOT EXISTS saas_record_owners_user ON saas_record_owners(user_id,kind,id)')
             db.execute('CREATE TRIGGER IF NOT EXISTS records_owner_delete AFTER DELETE ON records BEGIN DELETE FROM saas_record_owners WHERE kind=OLD.kind AND id=OLD.id; END')
+            db.execute('CREATE TABLE IF NOT EXISTS saas_record_links (kind TEXT NOT NULL,id TEXT NOT NULL,installation_id TEXT,grant_id TEXT,PRIMARY KEY(kind,id))')
+            db.execute('CREATE INDEX IF NOT EXISTS saas_record_links_installation ON saas_record_links(installation_id,kind,id)')
+            db.execute('CREATE TABLE IF NOT EXISTS saas_record_emails (kind TEXT NOT NULL,id TEXT NOT NULL,email_hash TEXT NOT NULL,PRIMARY KEY(kind,id,email_hash))')
+            db.execute('CREATE INDEX IF NOT EXISTS saas_record_emails_hash ON saas_record_emails(email_hash,kind,id)')
+            db.execute('CREATE TRIGGER IF NOT EXISTS records_links_delete AFTER DELETE ON records BEGIN DELETE FROM saas_record_links WHERE kind=OLD.kind AND id=OLD.id; DELETE FROM saas_record_emails WHERE kind=OLD.kind AND id=OLD.id; END')
             db.execute('CREATE TABLE IF NOT EXISTS rates (identity TEXT PRIMARY KEY, bucket INTEGER NOT NULL, count INTEGER NOT NULL)')
 
     @contextmanager
@@ -59,6 +67,19 @@ class Store:
         owner = payload.get('user_id') or (nested.get('user_id') if isinstance(nested, dict) else None)
         if isinstance(owner, str) and owner:
             db.execute('INSERT INTO saas_record_owners VALUES(?,?,?)', (owner, kind, record_id))
+        db.execute('DELETE FROM saas_record_links WHERE kind=? AND id=?',(kind,record_id))
+        if kind in {'saas-capability','saas-pair'}:
+            db.execute('INSERT INTO saas_record_links VALUES(?,?,?,?)',
+                       (kind,record_id,payload.get('installation_id'),payload.get('grant_id')))
+        db.execute('DELETE FROM saas_record_emails WHERE kind=? AND id=?',(kind,record_id))
+        if kind in {'saas-user','saas-login'} and isinstance(payload.get('email'),str):
+            # Domain-separated keyed digests permit exact matching without exposing
+            # email addresses or enabling offline dictionary attacks on the index.
+            value=('socialcli-record-email:'+payload['email'].casefold()).encode()
+            for key in set(self.keys):
+                marker=hmac.new(key,value,hashlib.sha256).hexdigest()
+                db.execute('INSERT INTO saas_record_emails VALUES(?,?,?)',(kind,record_id,marker))
+
 
     def put(self, db, kind: str, record_id: str, payload: dict, *, expires: float, credential_hash: str = ''):
         envelope = json.dumps({'kind': kind, 'id': record_id, 'payload': payload, 'expires': expires, 'credential_hash': credential_hash}, separators=(',', ':')).encode()

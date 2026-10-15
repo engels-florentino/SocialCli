@@ -66,22 +66,20 @@ class AccountLifecycle:
             user=self.metadata.user(db,user_id)
             if user is None:raise HTTPException(404,'Account unavailable.')
             if user['deleting']:return
-            identity=self.vault.get(db,'saas-user',user_id)
-            email=identity['payload']['email'] if identity else None
             db.execute('UPDATE saas_users SET deleting=1,session_version=session_version+1 WHERE id=?',(user_id,))
             db.execute('INSERT OR IGNORE INTO saas_deletions(user_id,requested) VALUES(?,?)',(user_id,self.clock()))
-            owned=self.owned_records(db,user_id)
-            installations={record_id for kind,record_id,_ in owned if kind=='saas-installation'}
-            for row in db.execute("SELECT id FROM records WHERE kind='saas-pair'").fetchall():
-                pair=self.vault.get(db,'saas-pair',row['id'])
-                if pair['payload'].get('installation_id') in installations:
-                    self.vault.delete(db,'saas-pair',row['id'])
-            for kind,record_id,_ in owned:
-                self.vault.delete(db,kind,record_id)
-            if email:
-                for row in db.execute("SELECT id FROM records WHERE kind='saas-login'").fetchall():
-                    attempt=self.vault.get(db,'saas-login',row['id'])
-                    if attempt['payload'].get('email')==email:self.vault.delete(db,'saas-login',row['id'])
+            # Historical approved pairs may lack user_id. Their installation link
+            # proves ownership; unclaimed pairs have no such link and are preserved.
+            db.execute("""DELETE FROM records WHERE kind='saas-pair' AND id IN (
+                SELECT link.id FROM saas_record_links link JOIN saas_record_owners owner
+                ON owner.kind='saas-installation' AND owner.id=link.installation_id
+                WHERE link.kind='saas-pair' AND owner.user_id=?)""",(user_id,))
+            db.execute("""DELETE FROM records WHERE kind='saas-login' AND id IN (
+                SELECT attempt.id FROM saas_record_emails attempt JOIN saas_record_emails identity
+                ON identity.email_hash=attempt.email_hash
+                WHERE attempt.kind='saas-login' AND identity.kind='saas-user' AND identity.id=?)""",(user_id,))
+            db.execute("""DELETE FROM records WHERE (kind,id) IN (
+                SELECT kind,id FROM saas_record_owners WHERE user_id=?)""",(user_id,))
             self.vault.delete(db,'saas-user',user_id)
             db.execute('DELETE FROM saas_slots WHERE user_id=?',(user_id,))
             db.execute('DELETE FROM saas_brands WHERE user_id=?',(user_id,))
@@ -91,14 +89,14 @@ class AccountLifecycle:
     def prune_expired(self):
         with self.vault.transaction() as db:
             self.vault.purge(db,now=self.clock())
-            for slot in db.execute('SELECT * FROM saas_slots').fetchall():
-                if self.vault.get(db,'saas-grant',slot['grant_id']) is None:
-                    db.execute('DELETE FROM saas_slots WHERE user_id=? AND platform=?',(slot['user_id'],slot['platform']))
-            for row in db.execute("SELECT id FROM records WHERE kind='saas-capability'").fetchall():
-                record=self.vault.get(db,'saas-capability',row['id']);data=record['payload']
-                if (self.vault.get(db,'saas-grant',data['grant_id']) is None
-                        or self.vault.get(db,'saas-installation',data['installation_id']) is None):
-                    self.vault.delete(db,'saas-capability',row['id'])
+            db.execute("""DELETE FROM saas_slots WHERE NOT EXISTS (
+                SELECT 1 FROM records WHERE kind='saas-grant' AND id=saas_slots.grant_id)""")
+            db.execute("""DELETE FROM records WHERE kind='saas-capability' AND id IN (
+                SELECT link.id FROM saas_record_links link
+                JOIN saas_record_owners owner ON owner.kind=link.kind AND owner.id=link.id
+                LEFT JOIN records grant_record ON grant_record.kind='saas-grant' AND grant_record.id=link.grant_id
+                LEFT JOIN records installation ON installation.kind='saas-installation' AND installation.id=link.installation_id
+                WHERE link.kind='saas-capability' AND (grant_record.id IS NULL OR installation.id IS NULL))""")
             db.execute('DELETE FROM saas_brands WHERE NOT EXISTS (SELECT 1 FROM saas_slots WHERE saas_slots.user_id=saas_brands.user_id)')
             db.execute('DELETE FROM saas_rates WHERE expires<=?',(self.clock(),))
             db.execute('DELETE FROM saas_media_allocations WHERE expires<=?',(self.clock(),))

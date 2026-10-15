@@ -5,6 +5,8 @@ from pathlib import Path
 import httpx
 import typer
 
+from socialctl.approval_cli import read_approval
+
 from socialctl.read_budget import active_read_budget, bounded_read, read_client
 
 from socialctl.management.changes import ChangeError
@@ -98,7 +100,7 @@ def register(content_app, default_root):
             edit = load_edit(file)
             with make_http_client() as http:
                 change = prepare_community(YouTubeCommunityClient(selected, http), CommunityStore(selected.raiz), edit)
-        except (ChangeError, OSError) as exc:
+        except (ChangeError, OSError, ValueError) as exc:
             _fail(str(exc))
         typer.echo(render_preview(change))
 
@@ -112,12 +114,14 @@ def register(content_app, default_root):
 
     @community.command("apply")
     def apply(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root"),
-              json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr.")):
+              json_output: bool = typer.Option(False, "--json", help="JSON result; full preview and exact approval prompt on stderr."),
+              approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from the approved complete preview."),
+              approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin.")):
         with OperationOutput(json_output) as output:
             selected = output.brand(root, brand)
             store = CommunityStore(selected.raiz)
             change = store.load(change_id)
-            approval = output.approve(change, render_preview(change))
+            approval = output.approve(change, render_preview(change), approval_fingerprint, approval_stdin=approval_stdin)
             with make_http_client() as http:
                 client = YouTubeCommunityClient(selected, http)
                 output.begin_write()

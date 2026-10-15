@@ -12,6 +12,10 @@ from socialctl.management.community_batch_cli import preview
 from socialctl.read_budget import ReadBudget
 
 
+def progress(event):
+    typer.echo(f"Draft {event['child_index']}/{event['total']} {event['platform']} {event['comment_id']}: {event['status']}", err=True)
+
+
 def register(app,default_root):
     @app.command('inbox-review')
     def review(brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root,'--root'),json_output:bool=typer.Option(False,'--json')):
@@ -34,10 +38,12 @@ def register(app,default_root):
             with file.open('rb') as stream:
                 raw=stream.read(262145)
             if len(raw)>262144:raise ChangeError('reply file exceeds 256 KiB')
-            batch=prepare_replies(selected,yaml.safe_load(raw),budget=ReadBudget(timeout),prepared=prepared)
+            batch=prepare_replies(selected,yaml.safe_load(raw),budget=ReadBudget(timeout),prepared=prepared,progress=progress)
         except (Exception,KeyboardInterrupt) as exc:
             value={'version':1,'status':'partial' if prepared else 'error','brand':brand,
                 'batch':None,'prepared':prepared,'error':error_document(exc,read_only=True)}
+            if getattr(exc, 'draft_failure', None):
+                value['failed'] = exc.draft_failure
             typer.echo(json.dumps(value,ensure_ascii=False,indent=2));raise typer.Exit(1)
         typer.echo(preview(batch),err=json_output)
         if json_output:typer.echo(json.dumps({'version':1,'status':'prepared','brand':brand,

@@ -161,3 +161,126 @@ def test_foreign_brand_current_account_journal_still_blocks_review(tmp_path,monk
     child.brand='Other';child.fingerprint=fingerprint(child);store.save(child)
     result=invoke(tmp_path,'inbox-review')
     assert result.exit_code==1 and json.loads(result.stdout)['status']=='error'
+
+
+def test_unknown_facebook_author_can_prepare_and_reply_on_verified_owned_media(tmp_path, monkeypatch):
+    brand, graph, api, path, replies, requests = fixture(tmp_path, monkeypatch)
+    graph.comments['800'].pop('from')
+    from socialctl.management.meta_comment_inbox import CommentInboxStore
+    inbox = CommentInboxStore(brand.raiz)
+    data = inbox.load(); data.comments[0].author_id = None; inbox.save(data)
+    unified = UnifiedInboxStore(brand.raiz)
+    data = unified.load()
+    next(row for row in data['items'].values() if row['platform'] == 'facebook')['author_id'] = None
+    unified.path.write_text(json.dumps(data))
+    path.write_text(yaml.safe_dump({'version': 1, 'replies': replies[:1]}))
+    result = invoke(tmp_path, 'inbox-draft', '--file', str(path), '--dry-run')
+    assert result.exit_code == 0, result.output
+    batch = json.loads(result.stdout)['batch']
+    assert batch['children'][0]['proposal']['before']['parent']['author_id'] is None
+    result = invoke(tmp_path, 'changes', 'apply-batch', batch['id'], '--approval', batch['fingerprint'])
+    assert result.exit_code == 0, result.output
+    assert len(graph.writes) == 1 and graph.writes[0][1] == '800/comments'
+
+
+def test_failed_draft_identifies_child_platform_and_safe_reason(tmp_path, monkeypatch):
+    _, graph, api, path, _, _ = fixture(tmp_path, monkeypatch)
+    api.threads[0]['snippet']['topLevelComment']['snippet']['textOriginal'] = 'Changed remotely'
+    result = invoke(tmp_path, 'inbox-draft', '--file', str(path), '--dry-run')
+    value = json.loads(result.stdout)
+    assert value['failed']['child_index'] == 2
+    assert value['failed']['platform'] == 'youtube'
+    assert value['failed']['comment_id'] == 'UgxTop'
+    assert value['failed']['reason'] == 'comment_changed'
+    assert len(value['prepared']) == 1 and not api.writes and not graph.writes
+
+
+@pytest.mark.parametrize('platform', ['youtube', 'facebook'])
+def test_nested_context_requires_explicit_verified_thread_parent_mapping(tmp_path, monkeypatch, platform):
+    brand, graph, api, path, replies, requests = fixture(tmp_path, monkeypatch)
+    from tests.test_youtube_community import comment
+    if platform == 'youtube':
+        source = dict(platform=platform, account_id='channel-a', media_id='video-1', thread_id='UgxThread',
+            comment_id='UgxNested', parent_id='UgxTop', author_id='viewer-two', text='Nested question')
+        remote = comment('UgxNested', author='viewer-two', parent='UgxTop')
+        remote['snippet']['textDisplay'] = source['text']; api.replies.append(remote)
+    else:
+        source = dict(platform=platform, account_id='123', media_id='789', comment_id='801',
+            parent_id='800', author_id='998', text='Nested question')
+        graph.comments['801'] = graph.row('801', source['text'], author='998')
+        graph.comments['801']['parent'] = {'id': '800'}
+    UnifiedInboxStore(brand.raiz).observe([source], observed_at='2026-10-14T01:00:00Z')
+    selection = {key: source[key] for key in ('platform', 'account_id', 'comment_id')}
+    selection.update(text='Explicit thread reply', reply_parent_id=source['parent_id'])
+    path.write_text(yaml.safe_dump({'version': 1, 'replies': [selection]}))
+    result = invoke(tmp_path, 'inbox-draft', '--file', str(path), '--dry-run')
+    assert result.exit_code == 0, result.output
+    batch = json.loads(result.stdout)['batch']; proposal = batch['children'][0]['proposal']
+    parent = proposal['edit']['parent_id'] if platform == 'youtube' else proposal['parent_id']
+    assert parent == source['parent_id']
+    assert proposal['before']['reply_context']['comment_id'] == source['comment_id']
+    assert not graph.writes and not api.writes
+    result = invoke(tmp_path, 'changes', 'apply-batch', batch['id'], '--approval', batch['fingerprint'])
+    assert result.exit_code == 0, result.output
+    assert len(api.writes if platform == 'youtube' else graph.writes) == 1
+    review = json.loads(invoke(tmp_path, 'inbox-review').stdout)
+    assert next(row for row in review['items'] if row['comment_id'] == source['comment_id'])['reply_state'] == 'replied'
+
+
+def test_nested_mapping_cannot_silently_choose_an_unrelated_parent(tmp_path, monkeypatch):
+    brand, graph, api, path, replies, requests = fixture(tmp_path, monkeypatch)
+    source = dict(platform='youtube', account_id='channel-a', media_id='video-1', thread_id='UgxThread',
+        comment_id='UgxNested', parent_id='UgxTop', author_id='viewer-two', text='Nested question')
+    UnifiedInboxStore(brand.raiz).observe([source], observed_at='2026-10-14T01:00:00Z')
+    path.write_text(yaml.safe_dump({'version': 1, 'replies': [dict(platform='youtube', account_id='channel-a',
+        comment_id='UgxNested', reply_parent_id='Unrelated', text='Reply')]}))
+    result = invoke(tmp_path, 'inbox-draft', '--file', str(path), '--dry-run')
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)['failed']['reason'] == 'reply_parent_mismatch'
+    assert not requests
+
+
+def test_mapped_reply_context_change_blocks_write_after_preview(tmp_path, monkeypatch):
+    brand, graph, api, path, _, _ = fixture(tmp_path, monkeypatch)
+    source = dict(platform='facebook', account_id='123', media_id='789', comment_id='801',
+        parent_id='800', author_id='998', text='Nested question')
+    graph.comments['801'] = graph.row('801', source['text'], author='998')
+    graph.comments['801']['parent'] = {'id': '800'}
+    UnifiedInboxStore(brand.raiz).observe([source], observed_at='2026-10-14T01:00:00Z')
+    path.write_text(yaml.safe_dump({'version': 1, 'replies': [dict(platform='facebook', account_id='123',
+        comment_id='801', reply_parent_id='800', text='Reply')]}))
+    result = invoke(tmp_path, 'inbox-draft', '--file', str(path), '--dry-run')
+    batch = json.loads(result.stdout)['batch']
+    graph.comments['801']['message'] = 'Changed since preview'
+    result = invoke(tmp_path, 'changes', 'apply-batch', batch['id'], '--approval', batch['fingerprint'])
+    value = json.loads(result.stdout)
+    assert result.exit_code == 1 and value['summary']['blocked_count'] == 1
+    assert not graph.writes
+
+
+def test_instagram_nested_context_maps_explicitly_to_verified_parent_reply_edge(tmp_path, monkeypatch):
+    from tests.test_meta_comments import service
+    from tests.test_meta_comment_inbox import remote_row
+    from socialctl.management.meta_comment_inbox import CommentInboxStore, sync_inbox
+    from socialctl.engagement import prepare_replies
+    from socialctl.management.community_batches import apply_community_batch
+    from socialctl.read_budget import ReadBudget
+    _, brand, graph, client, _ = service(tmp_path, 'instagram')
+    graph.comments['800'] = remote_row(graph, '800', 'Root question')
+    sync_inbox(client, CommentInboxStore(brand.raiz), media_id='789')
+    graph.comments['801'] = remote_row(graph, '801', 'Nested question', author='998')
+    graph.comments['801']['parent_id'] = '800'
+    rows = [dict(platform='instagram', account_id='456', media_id='789', comment_id='800',
+        author_id='999', text='Root question', parent_id=None),
+        dict(platform='instagram', account_id='456', media_id='789', comment_id='801',
+        author_id='998', text='Nested question', parent_id='800')]
+    UnifiedInboxStore(brand.raiz).observe(rows, observed_at='2026-10-14T00:00:00Z')
+    transport = lambda *args: httpx.Client(transport=httpx.MockTransport(graph))
+    monkeypatch.setattr('socialctl.engagement.http_client', transport)
+    monkeypatch.setattr('socialctl.management.community_batches.http_client', transport)
+    batch = prepare_replies(brand, {'version': 1, 'replies': [dict(platform='instagram', account_id='456',
+        comment_id='801', reply_parent_id='800', text='Explicit thread response')]}, budget=ReadBudget(10), prepared=[])
+    assert batch.children[0].proposal['parent_id'] == '800'
+    assert batch.children[0].proposal['before']['reply_context']['comment_id'] == '801'
+    assert apply_community_batch(brand, batch.id, batch.fingerprint).status == 'verified'
+    assert len(graph.writes) == 1 and graph.writes[0][1] == '800/replies'

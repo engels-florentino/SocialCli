@@ -37,9 +37,9 @@ def test_resource_cli_preview_exact_approval_status_and_reconcile(tmp_path, monk
     assert not api.writes
     store = ResourceStore(brand.raiz)
     change = store.load(next(store.root.glob("*.json")).stem)
-    result = runner.invoke(app, ["content", "youtube-assets", "apply", change.id, *args], input="wrong\n")
+    result = runner.invoke(app, ["content", "youtube-assets", "apply", change.id, *args, "--approval-stdin"], input="wrong\n")
     assert result.exit_code != 0 and not api.writes
-    result = runner.invoke(app, ["content", "youtube-assets", "apply", change.id, *args], input=change.fingerprint + "\n")
+    result = runner.invoke(app, ["content", "youtube-assets", "apply", change.id, *args, "--approval-stdin"], input=change.fingerprint + "\n")
     assert result.exit_code == 0, result.output
     assert "verified" in result.output and len(api.writes) == 1
     for cmd in ("status", "reconcile"):
@@ -82,7 +82,7 @@ def test_documented_thumbnail_exit_status_and_readonly_followups(tmp_path, monke
     assert result.exit_code == 0 and not api.writes
     store = ResourceStore(brand.raiz)
     change = store.load(next(store.root.glob("*.json")).stem)
-    result = runner.invoke(app, ["content", "youtube-assets", "apply", change.id, *args],
+    result = runner.invoke(app, ["content", "youtube-assets", "apply", change.id, *args, "--approval-stdin"],
         input=change.fingerprint + "\n")
     assert result.exit_code == 1 and '"status": "accepted_unverifiable"' in result.output
     assert '"verified": false' in result.output and len(api.writes) == 1

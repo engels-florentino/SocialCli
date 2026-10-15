@@ -29,10 +29,10 @@ def test_complete_batch_dryrun_and_apply_share_exact_digest(tmp_path, monkeypatc
     assert "internal" in preview.output and "Visible hashtags" in preview.output
     assert "Before" in preview.output and "After" in preview.output
     assert api.writes == []
-    denied = runner.invoke(app, ["changes", "apply", batch.id, "--brand", "MarcaA", "--yes"], input="yes\n")
+    denied = runner.invoke(app, ["changes", "apply", batch.id, "--brand", "MarcaA", "--yes", "--approval-stdin"], input="yes\n")
     assert denied.exit_code == 1 and api.writes == []
     api.failures["video-2"] = 412
-    result = runner.invoke(app, ["changes", "apply", batch.id, "--brand", "MarcaA"], input=batch.fingerprint + "\n")
+    result = runner.invoke(app, ["changes", "apply", batch.id, "--brand", "MarcaA", "--approval-stdin"], input=batch.fingerprint + "\n")
     assert result.exit_code == 1
     assert "conflict" in result.output and "applied" in result.output
     assert [ident for ident, *_ in api.writes] == ["video-1", "video-2", "video-3"]

@@ -5,6 +5,7 @@ from contextlib import nullcontext, redirect_stdout
 
 import typer
 
+from socialctl.approval_cli import ApprovalRequired, read_approval
 from socialctl.agent_errors import error_document, error_for_code
 from socialctl.brands import cargar_brand, BrandNoEncontrada, NombreDeMarcaInvalido, AccountsInvalido
 from socialctl.management.changes import ApprovalMismatch
@@ -37,6 +38,8 @@ class OperationOutput:
             detail = error_for_code('operation_uncertain', read_only=False)
         elif isinstance(exc, (BrandNoEncontrada, NombreDeMarcaInvalido, AccountsInvalido)):
             detail = error_for_code('invalid_input')
+        elif isinstance(exc, ApprovalRequired):
+            detail = error_for_code('approval_required', read_only=False)
         elif isinstance(exc, ApprovalMismatch):
             detail = error_for_code('approval_mismatch')
         elif isinstance(exc, (typer.Abort, KeyboardInterrupt)):
@@ -52,15 +55,13 @@ class OperationOutput:
     def brand(self, root, name):
         return cargar_brand(root, name)
 
-    def approve(self, change, preview, approval=None):
+    def approve(self, change, preview, approval=None, *, approval_stdin=False):
         self.change_id = change.id
         typer.echo(preview, err=self.json_output)
         # Typer's input helper still prints the last prompt character to stdout
         # even with err=True. Route the entire prompt interaction, never results.
-        digest = approval
-        if digest is None:
-            with redirect_stdout(sys.stderr) if self.json_output else nullcontext():
-                digest = typer.prompt('Enter the exact fingerprint to approve', err=self.json_output)
+        with redirect_stdout(sys.stderr) if self.json_output else nullcontext():
+            digest = read_approval(approval, approval_stdin=approval_stdin)
         if digest != change.fingerprint:
             raise ApprovalMismatch('approval does not match exact fingerprint')
         return digest

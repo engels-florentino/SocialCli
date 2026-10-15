@@ -41,10 +41,10 @@ def test_complete_preview_and_exact_cli_approval(tmp_path, monkeypatch):
     for value in ["Exact supplied text", "789", "123", "Example", change.id, change.fingerprint, "add"]:
         assert value in result.output
     assert not graph.writes
-    cancelled = runner.invoke(app, ["comments", "apply", change.id, *common], input="wrong\n")
+    cancelled = runner.invoke(app, ["comments", "apply", change.id, *common, "--approval-stdin"], input="wrong\n")
     assert cancelled.exit_code != 0
     assert not graph.writes
-    applied = runner.invoke(app, ["comments", "apply", change.id, *common], input=change.fingerprint + "\n")
+    applied = runner.invoke(app, ["comments", "apply", change.id, *common, "--approval-stdin"], input=change.fingerprint + "\n")
     assert applied.exit_code == 0, applied.output
     assert store.load(change.id).status == "verified"
     assert len(graph.writes) == 1

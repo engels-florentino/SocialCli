@@ -56,11 +56,11 @@ def test_meta_cli_complete_preview_and_exact_approval(tmp_path, monkeypatch):
     assert change.id in result.output
     assert change.fingerprint in result.output
 
-    cancelled = runner.invoke(app, ["meta", "apply", change.id, *apply_common], input="wrong\n")
+    cancelled = runner.invoke(app, ["meta", "apply", change.id, *apply_common, "--approval-stdin"], input="wrong\n")
     assert cancelled.exit_code != 0
     assert not graph.writes
 
-    applied = runner.invoke(app, ["meta", "apply", change.id, *apply_common], input=change.fingerprint + "\n")
+    applied = runner.invoke(app, ["meta", "apply", change.id, *apply_common, "--approval-stdin"], input=change.fingerprint + "\n")
     assert applied.exit_code == 0, applied.output
     assert store.load(change.id).status in {"verified", "accepted_unverifiable", "uncertain"}
     assert graph.writes

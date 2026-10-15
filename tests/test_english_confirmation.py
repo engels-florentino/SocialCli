@@ -5,6 +5,11 @@ import pytest
 from socialctl.cli import _confirmar
 
 
+@pytest.fixture(autouse=True)
+def interactive_terminal(monkeypatch):
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+
 @pytest.mark.parametrize("answer", ["y", "yes", "YES", "s", "si", "sí"])
 def test_confirmation_accepts_explicit_affirmative(monkeypatch, capsys, answer):
     replies = iter([answer, "n"])

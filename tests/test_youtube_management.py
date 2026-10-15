@@ -708,7 +708,7 @@ def test_cli_show_edit_status_and_apply_requires_typed_digest_even_with_yes(tmp_
 
     refused = runner.invoke(
         app,
-        ["changes", "apply", change_id, "--brand", brand.nombre, "--root", str(tmp_path), "--yes"],
+        ["changes", "apply", change_id, "--brand", brand.nombre, "--root", str(tmp_path), "--yes", "--approval-stdin"],
         input="wrong\n",
     )
     assert refused.exit_code == 1
@@ -717,7 +717,7 @@ def test_cli_show_edit_status_and_apply_requires_typed_digest_even_with_yes(tmp_
 
     applied = runner.invoke(
         app,
-        ["changes", "apply", change_id, "--brand", brand.nombre, "--root", str(tmp_path), "--yes"],
+        ["changes", "apply", change_id, "--brand", brand.nombre, "--root", str(tmp_path), "--yes", "--approval-stdin"],
         input=f"{change.fingerprint}\n",
     )
     assert applied.exit_code == 0

@@ -164,27 +164,99 @@ def validate_batch(brand,batch):
             raise ChangeError('child proposal changed; batch approval is invalid')
 
 
-def apply_community_batch(brand,batch_id,approval_digest):
+def child_outcome(ref, index, status, **extra):
+    return {'status':status, 'child_index':index, 'provider':ref.provider,
+        'platform':ref.proposal.get('platform', 'youtube'), 'change_id':ref.change_id, **extra}
+
+
+def batch_document(batch, *, brand=None):
+    """Include pending children even when reading a historical sparse journal."""
+    from socialctl.agent_errors import error_for_code
+    value = batch.model_dump(mode='json')
+    outcomes = value['outcomes']
+    for index, ref in enumerate(batch.children, 1):
+        previous = outcomes.get(ref.change_id, {})
+        if brand is not None:
+            current = child_store(brand,ref.provider).load(ref.change_id)
+            if not hmac.compare_digest(current.fingerprint,ref.fingerprint):
+                raise ChangeError('child proposal changed; batch approval is invalid')
+            if current.status != 'proposed':
+                previous = child_outcome(ref,index,current.status) if current.status == 'verified' else {**previous,'status':current.status}
+        outcomes[ref.change_id] = {**child_outcome(ref, index, 'not_attempted'), **previous}
+    groups = {'verified':[], 'pending':[], 'uncertain':[], 'blocked':[]}
+    for ident, outcome in outcomes.items():
+        status = outcome['status']
+        group = ('verified' if status == 'verified' else 'pending' if status in {'not_attempted','proposed'}
+            else 'uncertain' if status in {'applying','uncertain','partial','accepted_unverifiable','applied_unverified'} else 'blocked')
+        groups[group].append(ident)
+    value['summary'] = {'total':len(batch.children), **{f'{key}_{suffix}':len(ids) if suffix == 'count' else ids
+        for key, ids in groups.items() for suffix in ('count','ids')}}
+    if brand is not None:
+        if len(groups['verified']) == len(batch.children):
+            value['status']='verified'
+        elif value['status']=='verified' or any(groups[k] for k in ('verified','uncertain','blocked')):
+            value['status']='partial'
+    if value['status'] != 'verified':
+        if groups['uncertain']:
+            value['error_detail'] = error_for_code('operation_uncertain', read_only=False)
+        elif groups['blocked']:
+            value['error_detail'] = error_for_code('operation_rejected', read_only=False)
+        elif value['status'] == 'proposed':
+            value['error_detail'] = error_for_code('approval_required', read_only=False)
+        elif groups['pending']:
+            value['error_detail'] = {'code':'batch_pending', 'action':'apply_remaining',
+                'retryable':False, 'requires_user_action':False,
+                'message':'Continue the existing approved batch with its exact fingerprint. Verified children will be skipped; do not create a new batch.'}
+    return value
+
+
+def report_progress(callback, ref, index, total, status):
+    if callback is not None:
+        try:
+            callback({**child_outcome(ref, index, status), 'total':total})
+        except Exception:
+            pass  # UI diagnostics never alter durable write safety.
+
+
+def apply_community_batch(brand,batch_id,approval_digest,*,progress=None):
     store=CommunityBatchStore(brand.raiz)
     with store.apply_lock(batch_id):
         batch=store.load(batch_id)
         if not isinstance(approval_digest,str) or not hmac.compare_digest(batch.fingerprint,approval_digest):
             raise ChangeError('approval must match the exact full batch fingerprint')
         validate_batch(brand,batch)
-        for ref in batch.children:
+        for index, ref in enumerate(batch.children, 1):
+            batch.outcomes.setdefault(ref.change_id, child_outcome(ref, index, 'not_attempted'))
+        for index, ref in enumerate(batch.children, 1):
             child=child_store(brand,ref.provider).load(ref.change_id)
             if child.status=='verified':
-                batch.outcomes[ref.change_id]={'status':'verified'}
+                batch.outcomes[ref.change_id]=child_outcome(ref, index, 'verified')
+                report_progress(progress, ref, index, len(batch.children), 'verified')
                 continue
             batch.status='applying'
-            batch.outcomes[ref.change_id]={'status':'applying'}
+            batch.outcomes[ref.change_id]=child_outcome(ref, index, 'applying')
             store.save(batch)
+            report_progress(progress, ref, index, len(batch.children), 'applying')
             try:
                 result=dispatch(brand,ref)
-                batch.outcomes[ref.change_id]={'status':result.status}
+                # A received receipt permits bounded read-only verification,
+                # never another write. Normal provider readback can lag the POST.
+                # Lost receipts and contradictory/unavailable evidence still stop
+                # this sequential batch before its next child.
+                if (result.status in {'uncertain', 'applied_unverified', 'accepted_unverifiable'}
+                        and (getattr(result, 'remote_id', None) or getattr(result, 'result_id', None))):
+                    report_progress(progress, ref, index, len(batch.children), 'verifying_receipt')
+                    result=dispatch(brand,ref,reconcile=True)
+                batch.outcomes[ref.change_id]=child_outcome(ref, index, result.status)
+                report_progress(progress, ref, index, len(batch.children), result.status)
             except ChangeError as exc:
                 from socialctl.read_reports import safe_error
-                batch.outcomes[ref.change_id]={'status':'blocked','error':safe_error(str(exc))}
+                from socialctl.agent_errors import error_document
+                current = child_store(brand,ref.provider).load(ref.change_id)
+                state = current.status if current.status in {'applying','uncertain','partial','accepted_unverifiable','applied_unverified'} else 'blocked'
+                batch.outcomes[ref.change_id]=child_outcome(ref, index, state,
+                    error=safe_error(str(exc)), error_detail=error_document(exc, read_only=True))
+                report_progress(progress, ref, index, len(batch.children), state)
                 batch.status='partial';store.save(batch);return batch
             except BaseException:
                 batch.status='partial';store.save(batch);raise
@@ -194,19 +266,29 @@ def apply_community_batch(brand,batch_id,approval_digest):
         batch.status='verified';store.save(batch);return batch
 
 
-def reconcile_community_batch(brand,batch_id):
+def reconcile_community_batch(brand,batch_id,*,progress=None):
     store=CommunityBatchStore(brand.raiz)
     with store.apply_lock(batch_id):
         batch=store.load(batch_id);validate_batch(brand,batch)
-        for ref in batch.children:
-            if ref.change_id not in batch.outcomes: continue
+        for index, ref in enumerate(batch.children, 1):
             child=child_store(brand,ref.provider).load(ref.change_id)
+            if child.status == 'proposed':
+                batch.outcomes.setdefault(ref.change_id, child_outcome(ref, index, 'not_attempted'))
+                continue
             if child.status in {'applying','uncertain','partial','accepted_unverifiable','applied_unverified'}:
                 try:
                     child=dispatch(brand,ref,reconcile=True)
-                except ChangeError:
+                except ChangeError as exc:
+                    from socialctl.read_reports import safe_error
+                    from socialctl.agent_errors import error_document
+                    current=child_store(brand,ref.provider).load(ref.change_id)
+                    batch.outcomes[ref.change_id]=child_outcome(ref,index,current.status,
+                        error=safe_error(str(exc)),error_detail=error_document(exc,read_only=True))
+                    report_progress(progress,ref,index,len(batch.children),current.status)
+                    store.save(batch)
                     continue
-            batch.outcomes[ref.change_id]={'status':child.status}
+            batch.outcomes[ref.change_id]=child_outcome(ref, index, child.status)
+            report_progress(progress, ref, index, len(batch.children), child.status)
             store.save(batch)
         batch.status='verified' if all(batch.outcomes.get(ref.change_id,{}).get('status')=='verified' for ref in batch.children) else 'partial'
         store.save(batch);return batch

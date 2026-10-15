@@ -19,7 +19,7 @@ systemd journal private. No new HTTP endpoint exposes this report.
 
 ## Scheduling and deadlines
 
-Install the existing `socialcli-saas-billing.service` and `.timer` only with the
+Install the existing `socialcli-saas-candidate-billing.service` and `.timer` only with the
 SaaS deployment. Billing, deletion and reminders each receive a separate 45-second
 cooperative budget. Stripe event processing receives at most half its phase, so
 periodic reconciliation also gets a turn. Network-operation timeouts shrink to

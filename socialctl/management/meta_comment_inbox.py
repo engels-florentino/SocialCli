@@ -393,24 +393,27 @@ def sync_inbox(client: MetaCommentsClient, store: CommentInboxStore, *, media_id
 
 def prepare_inbox_draft(client: MetaCommentsClient, comment_store: CommentStore,
                         inbox_store: CommentInboxStore, *, media_id: str,
-                        comment_id: str, text: str, on_prepared=None):
+                        comment_id: str, text: str, on_prepared=None, reply_context=None):
     if not isinstance(text, str) or not text.strip():
         raise CommentError("draft must contain explicit nonempty text")
     with inbox_store.lock():
         data = inbox_store.load()
         record = _record(data, client, media_id, comment_id)
-        if not record.author_id or record.author_id == record.account_id:
+        if record.author_id == record.account_id or (not record.author_id and client.platform.value != 'facebook'):
             raise CommentError('target must have a verified external author')
         key = response_key(client.account_id, comment_id, text)
         if record.status in {"aprobado", "respondido", "incierto"}:
             raise CommentError("comment already has an approved or uncertain reply; no additional POST created")
         if record.idempotency_key == key and record.change_id:
-            return comment_store.load(record.change_id), record
+            prior = comment_store.load(record.change_id)
+            if prior.before.get('reply_context') != reply_context:
+                raise CommentError('existing draft has different reply context; inspect before preparing another draft')
+            return prior, record
         if any(row is not record and row.idempotency_key == key and
                row.status in {"draft", "aprobado", "respondido", "incierto"} for row in data.comments):
             raise CommentError("duplicate reply for the same account, comment and text")
         change = prepare_comment(client, comment_store, media_id=media_id, action="reply",
-            parent_id=comment_id, text=text, inbox_binding={
+            parent_id=comment_id, text=text, reply_context=reply_context, inbox_binding={
                 "platform": client.platform.value, "account_id": client.account_id,
                 "media_id": media_id, "comment_id": comment_id,
                 "idempotency_key": key})

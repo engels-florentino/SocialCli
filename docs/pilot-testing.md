@@ -4,7 +4,7 @@ Copy this single line into Muse, Grok Bot, Dots, or another terminal-enabled ass
 
 > Install SocialCli: https://socialcli.app/agents
 
-The assistant reads the guide, downloads the exact reviewed 0.3.0rc4 candidate,
+The assistant reads the guide, downloads the exact reviewed 0.3.0rc5 candidate,
 verifies its SHA256, installs it separately and asks which brand to use. Keep its
 workspace and protected credentials across conversations.
 

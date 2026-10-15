@@ -22,10 +22,10 @@ def test_cli_full_preview_brand_exact_approval_no_yes(tmp_path, monkeypatch):
     assert preview.exit_code == 0, preview.output
     change = store.load(next(store.root.glob("*.json")).stem)
     assert json.dumps(change.model_dump(mode="json"), ensure_ascii=False, indent=2, sort_keys=True) in preview.output
-    assert runner.invoke(app, [*base, "apply", change.id, *target], input="yes\n").exit_code != 0
+    assert runner.invoke(app, [*base, "apply", change.id, *target, "--approval-stdin"], input="yes\n").exit_code != 0
     assert runner.invoke(app, [*base, "apply", change.id, "--yes", *target]).exit_code != 0
     assert not api.writes
-    accepted = runner.invoke(app, [*base, "apply", change.id, *target], input=change.fingerprint+"\n")
+    accepted = runner.invoke(app, [*base, "apply", change.id, *target, "--approval-stdin"], input=change.fingerprint+"\n")
     assert accepted.exit_code == 0, accepted.output
     assert accepted.output.index("Exact approved title") < accepted.output.index('Enter the exact fingerprint')
     assert len(api.writes) == 1

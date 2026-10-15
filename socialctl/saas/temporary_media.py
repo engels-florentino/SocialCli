@@ -96,6 +96,28 @@ class TemporaryMedia:
             self.path(media_id,expiry,suffix).unlink(missing_ok=True)
 
 
+async def settled_thread(function, *args):
+    """Cancellation cannot outlive a worker touching an upload FD or transaction."""
+    task=asyncio.create_task(asyncio.to_thread(function,*args))
+    cancelled=None
+    while True:
+        try:
+            result=await asyncio.shield(task)
+            break
+        except asyncio.CancelledError as exc:
+            cancelled=exc
+            if task.done():
+                # Retrieve a worker exception even when cancellation won the race.
+                try:task.result()
+                except BaseException:pass
+                raise cancelled
+        except BaseException:
+            if cancelled is not None:raise cancelled
+            raise
+    if cancelled is not None:raise cancelled
+    return result
+
+
 def install_media_routes(app, service, connections, origin):
     vault=service.vault
     app.state.temporary_media=service
@@ -121,20 +143,23 @@ def install_media_routes(app, service, connections, origin):
 
     @app.put('/api/saas/v1/connections/{connection_id}/media/{media_id}')
     async def upload(connection_id:str,media_id:str,request:Request):
+        record=None
         def claim():
+            nonlocal record
             with vault.transaction() as db:
                 owner(db,connection_id,request)
-                record=service.checked(db,media_id,connection_id)
-                if record['payload']['state']!='reserved':
+                candidate=service.checked(db,media_id,connection_id)
+                if candidate['payload']['state']!='reserved':
                     raise HTTPException(409,'Upload already attempted. Reserve a new temporary file.')
+                record=candidate
                 record['payload']['state']='uploading'
                 vault.put(db,'saas-media',media_id,record['payload'],expires=record['expires'])
                 return record
-        record=await asyncio.to_thread(claim)
-        partial=service.path(media_id,record['expires'],'part')
-        complete=service.path(media_id,record['expires'])
-        payload=record['payload'];size=0;digest=hashlib.sha256()
         try:
+            await settled_thread(claim)
+            partial=service.path(media_id,record['expires'],'part')
+            complete=service.path(media_id,record['expires'])
+            payload=record['payload'];size=0;digest=hashlib.sha256()
             async with asyncio.timeout(min(300,max(0,record['expires']-service.clock()))):
                 fd=os.open(partial,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
                 with os.fdopen(fd,'wb') as output:
@@ -146,7 +171,7 @@ def install_media_routes(app, service, connections, origin):
                         for offset in range(0,len(chunk),65536):
                             if service.clock()>=record['expires']:
                                 raise HTTPException(408,'Temporary upload expired.')
-                            await asyncio.to_thread(output.write,chunk[offset:offset+65536])
+                            await settled_thread(output.write,chunk[offset:offset+65536])
                 if size!=payload['size'] or digest.hexdigest()!=payload['sha256']:
                     raise HTTPException(400,'Temporary upload does not match its declared bytes.')
                 def finish():
@@ -157,9 +182,17 @@ def install_media_routes(app, service, connections, origin):
                         os.replace(partial,complete)
                         current['payload']['state']='ready'
                         vault.put(db,'saas-media',media_id,current['payload'],expires=current['expires'])
-                await asyncio.to_thread(finish)
+                await settled_thread(finish)
         except BaseException:
-            await asyncio.to_thread(service.remove,media_id,record['expires'])
+            if record is not None:
+                def discard():
+                    # All our workers and the writer FD have settled. Serialize
+                    # with DELETE/finish, remove paths first, then release charge.
+                    with vault.transaction() as db:
+                        service.remove(media_id,record['expires'])
+                        vault.delete(db,'saas-media',media_id)
+                        db.execute('DELETE FROM saas_media_allocations WHERE id=?',(media_id,))
+                await settled_thread(discard)
             raise
         return {'version':1,'status':'ready','expires_at':record['expires']}
 

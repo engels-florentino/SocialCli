@@ -2,7 +2,7 @@
 
 # SocialCli
 
-**Current source version: 0.3.0rc4.** SocialCli SaaS is the current SocialCli
+**Current source version: 0.3.0rc5.** SocialCli SaaS is the current SocialCli
 product. The repository root on `main` is its single development workspace;
 the CLI, hosted connection service and account/billing components live together
 here. Earlier versions remain in Git history for reference and migration.
@@ -27,7 +27,7 @@ Install SocialCli where your agent can run shell commands, point it at your crea
 
 Copy this line into your terminal-enabled AI assistant:
 
-> Install SocialCli: https://socialcli.app/agents?v=0.3.0rc4
+> Install SocialCli: https://socialcli.app/agents?v=0.3.0rc5
 
 The installation guide verifies the selected release download and uses
 https://pilot.socialcli.app for email sign-in, assistant approval and account
@@ -37,7 +37,7 @@ sandbox restrictions still apply. Stripe uses test mode. Planned access costs
 USD 10/month after 14 free days from the first successful connection. No real
 subscriptions are collected in this pilot.
 
-The published candidate is **0.3.0rc4 on TestPyPI** and the hosted pilot runs that
+The published candidate is **0.3.0rc5 on TestPyPI** and the hosted pilot runs that
 version. Its wheel and source archive were downloaded and verified against the
 reviewed build hashes. Stable 0.3.0 production publication remains separate from
 this pilot. See the [release record](deploy/saas/release.md).

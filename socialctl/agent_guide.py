@@ -3,11 +3,11 @@ from importlib.resources import files
 import re
 
 TOPICS={
-    'setup':('Install the reviewed candidate','Authorize the installation, then the social account','Persist and recover','Publication gate'),
-    'publish':('Publication gate','Temporary Instagram media','Canonical publishing workflow','Check supplied media locally'),
-    'schedule':('Publication gate','Temporary Instagram media','Scheduling and temporary media','Native scheduling input examples (offline)'),
-    'inbox':('Publication gate','Read metrics and prepare engagement','Read diagnostics','Comment API corrections'),
-    'errors':('Persist and recover','Recovery and error actions','Read diagnostics','Comment API corrections'),
+    'setup':('Install the reviewed candidate','Authorize the installation, then the social account','Persist and recover','Publication gate','Explicit approval and preflight'),
+    'publish':('Publication gate','Temporary Instagram media','Canonical publishing workflow','Check supplied media locally','Explicit approval and preflight'),
+    'schedule':('Publication gate','Temporary Instagram media','Scheduling and temporary media','Native scheduling input examples (offline)','Explicit approval and preflight'),
+    'inbox':('Publication gate','Read metrics and prepare engagement','Read diagnostics','Comment API corrections','Explicit approval and preflight','Resumable batches and reply context'),
+    'errors':('Persist and recover','Recovery and error actions','Read diagnostics','Comment API corrections','Explicit approval and preflight','Resumable batches and reply context'),
     'permissions':('Installation connection access',),
 }
 

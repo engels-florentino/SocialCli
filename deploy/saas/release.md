@@ -1,3 +1,17 @@
+# Candidate under verification: 0.3.0rc5
+
+This release addresses the October 15 audit: deployment consistency, schema9
+indexed cleanup, interrupted media quota recovery, concurrent session reads,
+invalid-email diagnostics, explicit noninteractive approval, combined preflight,
+resumable batch diagnostics and verified nested reply context.
+
+Until publication and rollout evidence are recorded, the public installed release
+remains rc4. Never overwrite an existing candidate tag or artifact. See the
+[implementation plan](../../docs/superpowers/plans/2026-10-15-rc4-audit-corrections.md)
+and [schema9 deployment requirements](schema9-migration.md).
+
+## Previous release record
+
 # Current candidate: 0.3.0rc4
 
 The canonical `main` workspace includes trial enrollment before expiry, billing

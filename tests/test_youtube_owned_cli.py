@@ -48,9 +48,12 @@ def test_owned_cli_full_preview_exact_apply_and_readonly_reconcile(tmp_path, mon
     change = store.load(next(store.root.glob("*.json")).stem)
     assert owned_cli.render_owned_preview(change) in result.output
     assert not api.writes
-    result = runner.invoke(app, ["content", "youtube-owned", "apply", change.id, *args], input="wrong\n")
+    result = runner.invoke(app, ["content", "youtube-owned", "apply", change.id, *args])
+    assert result.exit_code == 1 and "--approval-fingerprint" in result.output
+    assert not api.writes
+    result = runner.invoke(app, ["content", "youtube-owned", "apply", change.id, *args, "--approval-stdin"], input="wrong\n")
     assert result.exit_code != 0 and not api.writes
-    result = runner.invoke(app, ["content", "youtube-owned", "apply", change.id, *args], input=change.fingerprint + "\n")
+    result = runner.invoke(app, ["content", "youtube-owned", "apply", change.id, *args, "--approval-fingerprint", change.fingerprint])
     assert result.exit_code == 0, result.output
     assert owned_cli.render_owned_preview(change) in result.output
     for command in ("status", "reconcile"):

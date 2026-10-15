@@ -115,3 +115,47 @@ provider rejection or repeatedly reconciling an inherently unverifiable result.
 
 References: [Meta comments](https://developers.facebook.com/docs/graph-api/reference/object/comments/),
 [Meta Comment](https://developers.facebook.com/docs/graph-api/reference/comment/).
+
+
+## Agent execution and preflight
+
+Commands with exact proposals accept `--approval-fingerprint` (`--approval` and
+`--approval-digest` aliases) or explicit `--approval-stdin`. Without a terminal
+or explicit approval, they fail before reading stdin. Publish and local schedule
+also accept approved preview digests; their existing `--yes` workflow remains.
+Each fresh preparation can create a new proposal ID and fingerprint. Keep them
+together and never reuse an approval for another proposal.
+
+`doctor` / `preflight` accept `--post`, repeatable `--media`, and exact
+`--require-scope` with `--platform`. They combine credential, media, account and
+stored-scope observations without requesting new permissions. Unknown scopes
+remain unknown; no probe proves permission to write. TikTok identity probing
+remains unavailable in this doctor integration. Use `--post` to validate a
+specific publishing route, including Instagram JPEG requirements.
+
+Noninteractive aggregate reads emit one final request-count/time summary on
+stderr. Interactive terminals retain updates at most every five seconds.
+Stdout JSON remains separate and final coverage determines success.
+## Resumable batches and reply context
+
+Community batches remain sequential, resumable operations, not atomic cross-provider transactions. Each child must verify before the next starts. A received comment receipt now permits one additional bounded, read-only reconciliation during apply, covering delayed provider readback without another POST. A lost receipt, incomplete evidence or contradictory identity still stops the batch. Reconciliation never starts pending children.
+
+Batch JSON preserves existing keys and adds all children to `outcomes`, including `not_attempted`, with child index, provider, platform and change ID. `summary` includes total and verified/pending/uncertain/blocked counts and ID lists. A partial batch with only untouched children reports `batch_pending` and `action: apply_remaining`; an uncertain child reports `operation_uncertain` and `action: reconcile`. Continue the same approved batch with its exact fingerprint, retaining all verified outcomes. Progress is on stderr; stdout contains one JSON document.
+
+`inbox-draft` errors include `failed.child_index` (one-based), platform, account/comment IDs, stage and a safe reason. Completed immutable children remain in `prepared` after a later failure. Diagnostics do not reproduce arbitrary provider or storage exception text.
+
+Facebook reply preparation accepts an unavailable external comment author when exact comment membership and media ownership can be verified. The author remains null in the approved baseline. Changes to text, identity or membership block the write. Own-comment edit/delete and created-reply verification still require the authenticated account's exact author ID.
+
+A nested observation can explicitly map a new thread reply to its observed top-level parent:
+
+```yaml
+version: 1
+replies:
+  - platform: youtube
+    account_id: fictional-channel
+    comment_id: observed-reply-id
+    reply_parent_id: observed-top-level-comment-id
+    text: Exact supplied reply text
+```
+
+The source and mapped parent must both be observed for the same account/media/thread. The parent must be top-level and satisfy the existing eligibility rules. Source membership/text/author are read again during preparation and immediately before the write. The full preview binds `before.reply_context` and the actual write parent. This is supported through the existing YouTube, Facebook and Instagram reply edges; it does not invent a deeper provider nesting relationship or imply a mention. Multiple selections mapping to the same parent are rejected. Existing replied/uncertain parent protections remain in effect. Inbox review links the resulting journal to both the parent and selected source observation.

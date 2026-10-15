@@ -294,3 +294,104 @@ def test_concurrent_refresh_issues_exactly_one_rotation(tmp_path):
         finally:release.set()
         assert first.result().status_code==200
     assert len(refreshes)==1
+
+
+@pytest.mark.parametrize('status',[400,422])
+def test_rejected_email_is_input_error_and_still_consumes_delivery_budget(tmp_path,status):
+    def handler(request):
+        if request.url.path=='/otp':
+            return httpx.Response(status,json={'error':'private provider validation'})
+    client,_,calls=service(tmp_path,handler)
+    form=fields(client.get('/account/login'));form['email']=EMAIL
+    for _ in range(3):
+        reply=client.post('/account/login',data=form,headers={'Origin':'https://social.example'})
+        assert reply.status_code==400
+        assert 'Enter a valid email address.' in reply.text
+        assert 'private provider' not in reply.text
+    assert client.post('/account/login',data=form,headers={'Origin':'https://social.example'}).status_code==429
+    assert sum(r.url.path=='/otp' for r in calls)==3
+    with client.app.state.saas.vault.read_transaction() as db:
+        assert db.execute("SELECT count(*) FROM records WHERE kind='saas-login'").fetchone()[0]==0
+
+
+def test_concurrent_read_uses_valid_access_during_refresh_without_replaying_refresh(tmp_path):
+    from threading import Event
+    from concurrent.futures import ThreadPoolExecutor
+    entered=Event();release=Event();refreshes=[]
+    def handler(request):
+        if request.url.path=='/token':
+            refreshes.append(request);entered.set();assert release.wait(5)
+            return httpx.Response(200,json={'access_token':'identity-access-secret','refresh_token':'AbCdEf123456',
+                'expires_in':3600,'user':{'id':USER,'email':EMAIL,'email_confirmed_at':'verified'}})
+    client,now,_=service(tmp_path,handler);login(client);now[0]+=3541
+    other=TestClient(client.app,base_url='https://social.example')
+    other.cookies.set('socialcli-session',client.cookies.get('socialcli-session'))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first=pool.submit(client.get,'/account/')
+        assert entered.wait(3)
+        try:assert other.get('/account/',follow_redirects=False).status_code==200
+        finally:release.set()
+        assert first.result().status_code==200
+    assert len(refreshes)==1
+
+
+@pytest.mark.parametrize('change',['logout','version','deletion','expiry','lease_expiry'])
+def test_read_during_refresh_rechecks_session_and_access_expiry_after_verification(tmp_path,change):
+    from socialctl.saas.auth import digest
+    holder={}
+    def handler(request):
+        if request.url.path=='/user':
+            client=holder['client'];vault=client.app.state.saas.vault
+            with vault.transaction() as db:
+                if change=='logout':vault.delete(db,'saas-session',holder['key'])
+                elif change=='version':db.execute('UPDATE saas_users SET session_version=session_version+1')
+                elif change=='deletion':db.execute('UPDATE saas_users SET deleting=1')
+                else:holder['now'][0]+=60 if change=='lease_expiry' else 11
+    client,now,_=service(tmp_path,handler);login(client);now[0]+=3541
+    key=digest(client.cookies.get('socialcli-session'));holder.update(client=client,key=key,now=now)
+    vault=client.app.state.saas.vault
+    with vault.transaction() as db:
+        record=vault.get(db,'saas-session',key)
+        record['payload'].update(refresh_lease='fictional-active-refresh',refresh_until=now[0]+30)
+        if change=='expiry':record['payload']['access_expires']=now[0]+10
+        vault.put(db,'saas-session',key,record['payload'],expires=record['expires'])
+    assert client.get('/account/',follow_redirects=False).status_code==(503 if change=='expiry' else 303)
+
+
+def test_parallel_read_accepts_new_verified_token_when_refresh_finishes_first(tmp_path):
+    from threading import Event
+    from concurrent.futures import ThreadPoolExecutor
+    entered=Event();release=Event();completed=Event()
+    def handler(request):
+        if request.url.path=='/token':
+            entered.set();assert release.wait(5)
+            return httpx.Response(200,json={'access_token':'new-identity-access-secret','refresh_token':'AbCdEf123456',
+                'expires_in':3600,'user':{'id':USER,'email':EMAIL,'email_confirmed_at':'verified'}})
+        if request.url.path=='/user':
+            release.set();assert completed.wait(5)
+    client,now,_=service(tmp_path,handler);login(client);now[0]+=3541
+    other=TestClient(client.app,base_url='https://social.example')
+    other.cookies.set('socialcli-session',client.cookies.get('socialcli-session'))
+    def first_request():
+        try:return client.get('/account/')
+        finally:completed.set()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first=pool.submit(first_request)
+        assert entered.wait(3)
+        try:assert other.get('/account/',follow_redirects=False).status_code==200
+        finally:release.set()
+        assert first.result().status_code==200
+
+
+@pytest.mark.parametrize('status',[401,403])
+def test_otp_service_authentication_failure_is_delivery_unavailable_not_invalid_email(tmp_path,status):
+    def handler(request):
+        if request.url.path=='/otp':return httpx.Response(status,json={'error':'private service key'})
+    client,_,_=service(tmp_path,handler)
+    form=fields(client.get('/account/login'));form['email']=EMAIL
+    reply=client.post('/account/login',data=form,headers={'Origin':'https://social.example'})
+    assert reply.status_code==503
+    assert 'Email delivery is temporarily unavailable' in reply.text
+    assert 'Enter a valid email address.' not in reply.text and 'private service key' not in reply.text
+    with client.app.state.saas.vault.read_transaction() as db:
+        assert db.execute("SELECT count(*) FROM records WHERE kind='saas-login'").fetchone()[0]==0

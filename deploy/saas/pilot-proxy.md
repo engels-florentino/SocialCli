@@ -125,7 +125,7 @@ This completes public proxy activation, not OTP/checkout/provider acceptance.
 
 ## Account and webhook acceptance — 14 October 2026
 
-Current candidate image: `socialcli-saas-candidate:054bfd1` (see pilot.compose.yaml).
+Historical checkpoint image: `socialcli-saas-candidate:054bfd1`. The current pilot overlay inherits the reviewed image from `candidate.compose.yaml`; see the latest rollout record.
 Real Safari OTP reached the authenticated English account page after the account
 Referrer-Policy correction in c19e811. A permanent test-only Stripe webhook now
 receives signed HTTPS events and systemd maintenance processes the durable queue.

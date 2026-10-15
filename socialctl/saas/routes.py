@@ -97,11 +97,13 @@ def install_account_routes(app,settings,vault,identity_client,clock):
             raise HTTPException(429,'Too many codes requested. Wait a minute and try again.')
         try:
             await asyncio.to_thread(identity.send_code,email)
-        except (IdentityError,IdentityUnavailable):
+        except (IdentityError,IdentityUnavailable) as exc:
             def cancel():
                 with vault.transaction() as db:
                     vault.delete(db,'saas-login',attempt)
             await asyncio.to_thread(cancel)
+            if isinstance(exc,IdentityError):
+                return HTMLResponse(pages.login(csrf(request,'saas-login',authenticated=False),safe_next(data.get('next','')),'Enter a valid email address.',input_error=True),status_code=400)
             return HTMLResponse(pages.error('Email delivery is temporarily unavailable. Please try again.'),status_code=503)
         return HTMLResponse(pages.verify(csrf(request,attempt,authenticated=False),attempt,email))
 

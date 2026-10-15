@@ -5,6 +5,8 @@ from pathlib import Path
 
 import httpx
 import typer
+
+from socialctl.approval_cli import read_approval
 import yaml
 
 from socialctl.metricas.analytics_changes import AnalyticsStore, prepare as prepare_change, apply as apply_change, reconcile as reconcile_change
@@ -156,13 +158,15 @@ def register(content_app, default_root):
         typer.echo(preview(change))
 
     @analytics.command("apply")
-    def apply(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root")):
+    def apply(change_id: str, brand: str = typer.Option(..., "--brand"), root: Path = typer.Option(default_root, "--root"),
+              approval_fingerprint: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint from the approved complete preview."),
+              approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin.")):
         selected = _brand(root, brand)
         store = AnalyticsStore(selected.raiz)
         try:
             change = store.load(change_id)
             typer.echo(preview(change))
-            approval = typer.prompt("Enter the exact fingerprint to approve")
+            approval = read_approval(approval_fingerprint, approval_stdin=approval_stdin)
             if approval != change.fingerprint:
                 raise ValueError("approval does not match fingerprint")
             with make_http_client() as http:

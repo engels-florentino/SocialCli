@@ -225,3 +225,32 @@ def test_rename_brand_preserves_connections_and_escapes_label(tmp_path):
     form['brand']='  '
     assert post(client,'/account/brand',form).status_code==400
     assert post(client,'/account/brand',{'brand':'Attacker'}).status_code==403
+
+
+def test_delete_ignores_unrelated_corrupt_pairs_logins_and_unclaimed_records(tmp_path):
+    client,now,installation,_=connected(tmp_path);metadata=client.app.state.saas;vault=metadata.vault
+    with vault.transaction() as db:
+        for kind in ('saas-pair','saas-login'):
+            vault.put(db,kind,'other-'+kind,{'user_id':'other','email':'other@example.test'},expires=now[0]+600)
+            db.execute('UPDATE records SET payload=? WHERE kind=? AND id=?',(b'corrupt',kind,'other-'+kind))
+            vault.put(db,kind,'pending-'+kind,{'status':'pending'},expires=now[0]+600)
+        vault.put(db,'saas-login','matching-email',{'email':EMAIL,'status':'pending'},expires=now[0]+600)
+    client.app.state.saas_lifecycle.request_delete(USER)
+    with vault.read_transaction() as db:
+        assert vault.get(db,'saas-login','matching-email') is None
+        assert db.execute("SELECT count(*) FROM records WHERE id LIKE 'other-%'").fetchone()[0]==2
+        assert db.execute("SELECT count(*) FROM records WHERE id LIKE 'pending-%'").fetchone()[0]==2
+
+
+def test_prune_uses_indexed_links_without_decrypting_live_records(tmp_path):
+    client,now,installation,connection=connected(tmp_path);vault=client.app.state.saas.vault
+    with vault.transaction() as db:
+        vault.put(db,'saas-capability','orphan',{'user_id':'other','installation_id':'missing','grant_id':'missing'},expires=now[0]+600)
+        vault.put(db,'saas-capability','unclaimed',{'status':'pending'},expires=now[0]+600)
+        db.execute("UPDATE records SET payload=? WHERE kind IN ('saas-grant','saas-capability')",(b'corrupt',))
+    client.app.state.saas_lifecycle.prune_expired()
+    with vault.read_transaction() as db:
+        assert db.execute("SELECT id FROM records WHERE id='orphan'").fetchone() is None
+        assert db.execute("SELECT id FROM records WHERE id='unclaimed'").fetchone() is not None
+        assert db.execute('SELECT grant_id FROM saas_slots').fetchone() is not None
+        assert db.execute("SELECT id FROM records WHERE kind='saas-capability' AND id=?",(connection['connection_id'],)).fetchone() is not None

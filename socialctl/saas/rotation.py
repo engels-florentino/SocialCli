@@ -93,9 +93,11 @@ def install_rotation_routes(app,metadata,clock):
             vault.delete(db,'saas-installation',data['installation_id'])
             # Old caps and pending OAuth are unusable because their installation
             # no longer exists. Remove owned capability records immediately.
-            for row in db.execute("SELECT id FROM records WHERE kind='saas-capability'").fetchall():
-                cap=vault.get(db,'saas-capability',row['id'])
-                if cap['payload']['installation_id']==data['installation_id']:vault.delete(db,'saas-capability',row['id'])
+            db.execute("""DELETE FROM records WHERE kind='saas-capability' AND id IN (
+                SELECT link.id FROM saas_record_links link JOIN saas_record_owners owner
+                ON owner.kind=link.kind AND owner.id=link.id
+                WHERE link.kind='saas-capability' AND link.installation_id=? AND owner.user_id=?)""",
+                (data['installation_id'],data['user_id']))
             vault.put(db,'saas-rotation',rotation_id,{'status':'committed','user_id':data['user_id'],'installation_id':next_id},
                 expires=expires,credential_hash=record['credential_hash'])
         return {'version':1,'status':'active'}

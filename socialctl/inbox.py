@@ -157,7 +157,7 @@ def sync_brand_inbox(brand,*,since,budget,only=None):
     platforms=list(dict.fromkeys(only)) if only else list(Platform)
     pending_providers=sum(bool((brand.cuentas.get(p.value) or {}).get(fields[p.value])) for p in platforms if p is not Platform.TIKTOK)
     from socialctl.read_budget import ReadProgress
-    with read_client(budget,progress=ReadProgress('inbox')) as http:
+    with ReadProgress('inbox') as progress, read_client(budget,progress=progress) as http:
         for platform in platforms:
             account=(brand.cuentas.get(platform.value) or {}).get(fields[platform.value])
             row={'platform':platform.value,'account_id':account or None,'complete':False,'scopes':[]}

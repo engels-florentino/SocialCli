@@ -25,14 +25,14 @@ class SupabaseAuth:
         self.settings, self.client = settings, client
         self.budget = None
 
-    def request(self, method, path, *, token=None, data=None):
+    def request(self, method, path, *, token=None, data=None, identity_errors=(400,401,403,422)):
         headers = {'apikey':self.settings.auth_key} if self.settings.auth_key else {}
         if token:
             headers['Authorization']='Bearer '+token
         try:
             result = self.client.request(method,self.settings.auth_url+path,json=data,headers=headers,
                                          timeout=self.budget.timeout(15) if self.budget else 15,follow_redirects=False)
-            if result.status_code in {400,401,403,422}:
+            if result.status_code in identity_errors:
                 raise IdentityError()
             result.raise_for_status()
             return result.json() if result.content else {}
@@ -40,7 +40,8 @@ class SupabaseAuth:
             raise IdentityUnavailable() from None
 
     def send_code(self,email):
-        self.request('POST','/otp',data={'email':email,'create_user':True})
+        # OTP has no user bearer token: 401/403 concern service authorization.
+        self.request('POST','/otp',data={'email':email,'create_user':True},identity_errors=(400,422))
 
     def verify(self,email,code):
         data=self.request('POST','/verify',data={'email':email,'token':code,'type':'email'})
@@ -145,10 +146,14 @@ class WebSessions:
                     # An ambiguous rotation must never replay an old refresh token.
                     if data['refresh_until']<=self.clock():
                         raise HTTPException(401,'Your session needs a fresh sign-in.')
-                    raise HTTPException(503,'Your session is refreshing. Please try again shortly.')
-                lease=secrets.token_urlsafe(24)
-                data.update(refresh_lease=lease,refresh_until=self.clock()+30)
-                self.vault.put(db,'saas-session',key,data,expires=record['expires'])
+                    if request.method not in {'GET','HEAD'} or data.get('access_expires',0)<=self.clock():
+                        raise HTTPException(503,'Your session is refreshing. Please try again shortly.')
+                    # Verify the still-live access token without replaying refresh.
+                    # The final checked transaction preserves logout/account fences.
+                else:
+                    lease=secrets.token_urlsafe(24)
+                    data.update(refresh_lease=lease,refresh_until=self.clock()+30)
+                    self.vault.put(db,'saas-session',key,data,expires=record['expires'])
         try:
             if lease:
                 user,access,expiry,refresh_token=self.identity.refresh(data['refresh_token'])
@@ -172,8 +177,13 @@ class WebSessions:
                     raise HTTPException(401,'Sign in to SocialCli to continue.')
                 latest.update(access_token=access,refresh_token=refresh_token,access_expires=self.clock()+expiry)
                 latest.pop('refresh_lease',None);latest.pop('refresh_until',None)
-            elif latest['access_token']!=data['access_token']:
-                raise HTTPException(503,'Your session changed. Please try again.')
+            else:
+                if latest.get('refresh_lease') and latest['refresh_until']<=self.clock():
+                    raise HTTPException(401,'Your session needs a fresh sign-in.')
+                if latest.get('access_expires',current['expires'])<=self.clock():
+                    raise HTTPException(503,'Your session is refreshing. Please try again shortly.')
+                if latest['access_token']!=data['access_token'] and latest.get('verified_until',0)<=self.clock():
+                    raise HTTPException(503,'Your session changed. Please try again.')
             latest['verified_until']=min(self.clock()+self.verification_seconds,latest.get('access_expires',current['expires']))
             self.vault.put(db,'saas-session',key,latest,expires=current['expires'])
         request.state.saas_session=latest

@@ -42,7 +42,7 @@ def prepared(tmp_path, monkeypatch, kind):
 def test_json_apply_keeps_full_preview_and_exact_approval(tmp_path,monkeypatch,kind,approval):
     brand, api, store, change, command = prepared(tmp_path,monkeypatch,kind)
     answer = change.fingerprint+'\n' if approval=='exact' else 'wrong\n' if approval=='wrong' else ''
-    result = runner.invoke(app,[*command,'apply',change.id,'--brand',brand.nombre,'--root',str(tmp_path),'--json'],input=answer)
+    result = runner.invoke(app,[*command,'apply',change.id,'--brand',brand.nombre,'--root',str(tmp_path),'--json', "--approval-stdin"],input=answer)
     payload = json.loads(result.stdout)
     assert 'Exact supplied text' in result.stderr and change.fingerprint in result.stderr
     assert change.id in result.stderr and 'Enter the exact fingerprint' in result.stderr
@@ -64,7 +64,7 @@ def test_lost_post_result_reconciles_without_replay_and_retains_journal(tmp_path
     if kind=='meta':api.failure='lost-id'
     else:api.on_write=lambda request:httpx.Response(200,json={})
     common=['--brand',brand.nombre,'--root',str(tmp_path),'--json']
-    applied=runner.invoke(app,[*command,'apply',change.id,*common],input=change.fingerprint+'\n')
+    applied=runner.invoke(app,[*command,'apply',change.id,*common, "--approval-stdin"],input=change.fingerprint+'\n')
     assert applied.exit_code==1,applied.output
     result=json.loads(applied.stdout)
     assert result['status']=='uncertain' and result['journal']
@@ -74,7 +74,7 @@ def test_lost_post_result_reconciles_without_replay_and_retains_journal(tmp_path
     assert reconciled.exit_code==0,reconciled.output  # preserve legacy reconcile exit
     assert json.loads(reconciled.stdout)['error_detail']['action']=='reconcile'
     assert len(api.writes)==1
-    repeated=runner.invoke(app,[*command,'apply',change.id,*common],input=change.fingerprint+'\n')
+    repeated=runner.invoke(app,[*command,'apply',change.id,*common, "--approval-stdin"],input=change.fingerprint+'\n')
     assert repeated.exit_code==1 and len(api.writes)==1
     assert json.loads(repeated.stdout)['error_detail']['action']=='reconcile'
     status=runner.invoke(app,[*command,'status',change.id,*common])
@@ -90,7 +90,7 @@ def test_after_write_persistence_failure_requires_reconcile(tmp_path,monkeypatch
         if api.writes:raise OSError('private access_token=never-print')
         return original(self,value)
     monkeypatch.setattr(type(store),'save',save)
-    result=runner.invoke(app,[*command,'apply',change.id,'--brand',brand.nombre,'--root',str(tmp_path),'--json'],input=change.fingerprint+'\n')
+    result=runner.invoke(app,[*command,'apply',change.id,'--brand',brand.nombre,'--root',str(tmp_path),'--json', "--approval-stdin"],input=change.fingerprint+'\n')
     assert result.exit_code==1 and len(api.writes)==1,result.output
     payload=json.loads(result.stdout)
     assert payload['error']['action']=='reconcile' and not payload['error']['retryable']
@@ -120,11 +120,11 @@ def test_inbox_draft_json_keeps_binding_and_uncertain_reconciliation(tmp_path,mo
     change,record=prepare_inbox_draft(client,store,inbox,media_id='789',comment_id='800',text='Exact supplied text')
     monkeypatch.setattr('socialctl.management.comments_cli.make_http_client',lambda:httpx.Client(transport=httpx.MockTransport(api)))
     common=['--brand',brand.nombre,'--root',str(tmp_path),'--json']
-    wrong_route=runner.invoke(app,['comments','apply',change.id,*common],input=change.fingerprint+'\n')
+    wrong_route=runner.invoke(app,['comments','apply',change.id,*common, "--approval-stdin"],input=change.fingerprint+'\n')
     assert wrong_route.exit_code==1 and not api.writes
     assert json.loads(wrong_route.stdout)['error']['retryable'] is False
     api.failure=failure
-    result=runner.invoke(app,['comments','apply-draft','789','800','--platform','facebook',*common],input=change.fingerprint+'\n')
+    result=runner.invoke(app,['comments','apply-draft','789','800','--platform','facebook',*common, "--approval-stdin"],input=change.fingerprint+'\n')
     assert result.exit_code==(1 if failure else 0),result.output
     payload=json.loads(result.stdout)
     assert payload['change_id']==change.id and len(api.writes)==1
@@ -145,7 +145,7 @@ def test_interruption_during_remote_write_preserves_uncertain_intent(tmp_path,mo
     def interrupt(*args):raise KeyboardInterrupt()
     if kind=='meta':api.after_write=interrupt
     else:api.on_write=interrupt
-    result=runner.invoke(app,[*command,'apply',change.id,'--brand',brand.nombre,'--root',str(tmp_path),'--json'],input=change.fingerprint+'\n')
+    result=runner.invoke(app,[*command,'apply',change.id,'--brand',brand.nombre,'--root',str(tmp_path),'--json', "--approval-stdin"],input=change.fingerprint+'\n')
     assert result.exit_code==1 and len(api.writes)==1,result.output
     assert json.loads(result.stdout)['error']['action']=='reconcile'
     assert store.load(change.id).status=='applying'

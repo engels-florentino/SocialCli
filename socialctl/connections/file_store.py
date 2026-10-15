@@ -26,8 +26,8 @@ def protected_parent(path):
             os.close(fd)
             fd = child
         info = os.fstat(fd)
-        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
-            raise ValueError('credential parent directory must be owned by this user with mode 0700')
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o777 != 0o700:
+            raise ValueError('credential parent directory must be owned by this user with owner permissions 0700 and no group/other access')
         yield fd, path.name
     finally:
         os.close(fd)

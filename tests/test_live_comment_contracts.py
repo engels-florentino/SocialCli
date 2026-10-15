@@ -119,14 +119,16 @@ def test_unknown_becomes_own_without_stale_inbox_or_reply_target(tmp_path,monkey
     def sync():return mod.sync_brand_inbox(brand,since=datetime(2026,10,1,tzinfo=timezone.utc),budget=ReadBudget(10),only=[Platform.FACEBOOK])
     assert sync().data['items'][0]['author_id'] is None
     store=CommentInboxStore(brand.raiz)
-    with pytest.raises(cm.CommentError,match='verified external author'):
-        prepare_inbox_draft(client,comments,store,media_id='789',comment_id='801',text='Blocked')
+    draft, _ = prepare_inbox_draft(client,comments,store,media_id='789',comment_id='801',text='Explicit reply')
+    assert draft.before['parent']['author_id'] is None
     hidden['from']={'id':client.account_id}
     assert sync().data['items']==[]
     assert store.load().comments[0].author_id==client.account_id
     assert review_inbox(brand)['items']==[]
     from socialctl.management.meta_comment_inbox import grouped_inbox
     assert grouped_inbox(store.load())==[]
+    with pytest.raises(cm.CommentError, match='parent comment changed'):
+        cm.apply_comment(client,comments,draft.id,draft.fingerprint)
     with pytest.raises(cm.CommentError,match='verified external author'):
         prepare_inbox_draft(client,comments,store,media_id='789',comment_id='801',text='Blocked')
     assert not graph.writes

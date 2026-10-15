@@ -177,3 +177,29 @@ def test_bounded_reads_honor_environment_proxy_and_no_proxy(monkeypatch):
                 client.get('https://socialcli-proxy-only.invalid/read')
     assert seen[:2] == ['http://socialcli-proxy-only.invalid/read','/direct']
     assert seen[2:] == ['CONNECT socialcli-proxy-only.invalid:443'] * 3
+
+
+def test_nonterminal_progress_emits_only_final_request_summary(monkeypatch,capsys):
+    from socialctl.read_budget import ReadProgress
+    import sys
+    monkeypatch.setattr(sys.stderr,'isatty',lambda:False)
+    now=[0.0]
+    with ReadProgress('inbox',clock=lambda:now[0]) as progress:
+        for n in range(100):
+            now[0]=float(n)
+            progress()
+        assert capsys.readouterr().err==''
+    captured=capsys.readouterr()
+    assert captured.out==''
+    assert captured.err=='Read inbox: 100 requests in 99.0s; see result for coverage.\n'
+
+
+def test_failed_read_progress_reports_work_without_claiming_success(monkeypatch,capsys):
+    from socialctl.read_budget import ReadProgress
+    import sys
+    monkeypatch.setattr(sys.stderr,'isatty',lambda:False)
+    with pytest.raises(RuntimeError):
+        with ReadProgress('stats',clock=lambda:1) as progress:
+            progress()
+            raise RuntimeError('offline')
+    assert capsys.readouterr().err=='Read stats: 1 requests in 0.0s; see result for coverage.\n'

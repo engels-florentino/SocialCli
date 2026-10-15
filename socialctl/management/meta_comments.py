@@ -438,7 +438,7 @@ def _validate_operation(client, *, action, text, parent_id, comment_id):
 
 
 def prepare_comment(client, store, *, media_id, text=None, action="add", parent_id=None,
-                    comment_id=None, inbox_binding=None):
+                    comment_id=None, inbox_binding=None, reply_context=None):
     _validate_operation(client, action=action, text=text, parent_id=parent_id, comment_id=comment_id)
     media = client.inspect_media(media_id)
     before = {"media": media}
@@ -448,6 +448,10 @@ def prepare_comment(client, store, *, media_id, text=None, action="add", parent_
     if comment_id:
         before["comment"] = client.find_comment(media_id, comment_id, parent_id=parent_id, own=True)
         comment_id = before["comment"]["id"]
+    if reply_context is not None:
+        from socialctl.management.reply_context import verify_reply_context
+        verify_reply_context(client, reply_context, media_id=media_id, parent_id=parent_id)
+        before['reply_context'] = reply_context
     change = CommentChange(id=str(uuid.uuid4()), platform=client.platform.value,
         brand=client.brand.nombre, brand_root=str(client.brand.raiz.resolve()),
         account_id=client.account_id, authenticated_page=media["authenticated_page"],
@@ -555,6 +559,9 @@ def apply_comment(client, store, change_id, approval_digest):
                     raise CommentError('identical verified operation already exists; do not duplicate')
         if change.parent_id and client.find_comment(change.media_id, change.parent_id) != change.before["parent"]:
             raise CommentError("parent comment changed since preview")
+        if change.before.get('reply_context'):
+            from socialctl.management.reply_context import verify_reply_context
+            verify_reply_context(client, change.before['reply_context'], media_id=change.media_id, parent_id=change.parent_id)
         if change.comment_id and client.find_comment(change.media_id, change.comment_id,
                 parent_id=change.parent_id, own=True) != change.before["comment"]:
             raise CommentError("comment changed since preview")

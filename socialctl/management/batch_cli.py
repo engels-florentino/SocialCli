@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 import typer
+from socialctl.approval_cli import read_approval
 
 from socialctl.management.batches import BatchStore, apply_batch, prepare_batch, prepare_restore
 from socialctl.management.changes import ChangeError
@@ -47,7 +48,7 @@ def render_batch_preview(batch):
     return "\n".join(lines)
 
 
-def apply_selected(selected, change_id, yes):
+def apply_selected(selected, change_id, yes, approval_fingerprint=None, *, approval_stdin=False):
     from socialctl.management import cli
     store = BatchStore(selected.raiz)
     batch = store.load(change_id)
@@ -56,7 +57,9 @@ def apply_selected(selected, change_id, yes):
     if yes:
         typer.echo("--yes does not replace exact batch approval.")
     try:
-        approval = typer.prompt("Enter the exact batch fingerprint to approve")
+        approval = read_approval(approval_fingerprint, approval_stdin=approval_stdin, prompt="Enter the exact batch fingerprint to approve")
+    except ValueError as exc:
+        cli._fail(str(exc))
     except (EOFError, KeyboardInterrupt):
         cli._fail("Application cancelled: exact approval missing")
     if approval != batch.fingerprint:

@@ -198,14 +198,26 @@ class LocalConfigurationError(ValueError):
 
 
 class ReadProgress:
-    """At most one stderr update per five seconds, even for fast pagination."""
+    """TTY liveness every five seconds; one final summary for agent pipes."""
     def __init__(self, label, *, clock=time.monotonic):
         self.label, self.clock = label, clock
         self.count, self.last = 0, None
+        self.started = clock()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        import typer
+        elapsed = max(0, self.clock() - self.started)
+        typer.echo(f'Read {self.label}: {self.count} requests in {elapsed:.1f}s; see result for coverage.', err=True)
 
     def __call__(self):
         import typer
         self.count += 1
+        import sys
+        if not sys.stderr.isatty():
+            return
         now = self.clock()
         if self.last is None or now - self.last >= 5:
             typer.echo(f'Reading {self.label}: {self.count} requests...', err=True)

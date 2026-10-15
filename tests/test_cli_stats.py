@@ -550,7 +550,9 @@ def test_stats_total_deadline_preserves_completed_platforms(raiz, monkeypatch):
     assert snapshot['redes']['youtube']['estado'] == 'ok'
     assert snapshot['redes']['facebook']['estado'] == 'error'
     assert 'time limit' in snapshot['redes']['facebook']['error']
-    assert 'Reading youtube' in result.stderr
+    assert 'Read stats:' in result.stderr
+    assert 'see result for coverage' in result.stderr
+    assert 'Reading youtube' not in result.stderr
 
 
 @pytest.mark.parametrize('failed', [False, True])
@@ -564,7 +566,9 @@ def test_stats_json_is_clean_and_reports_coverage(raiz, monkeypatch, failed):
     assert value['version'] == 1 and value['status'] == ('partial' if failed else 'ok')
     assert value['data']['snapshot_path']
     assert value['data']['snapshot']['redes']['youtube']['cuenta']['seguidores'] == 4950
-    assert 'Reading youtube' in result.stderr
+    assert 'Read stats:' in result.stderr
+    assert 'see result for coverage' in result.stderr
+    assert 'Reading youtube' not in result.stderr
     assert {row['platform'] for row in value['coverage']} == {'youtube','facebook'}
 
 

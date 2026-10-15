@@ -93,3 +93,15 @@ def test_expired_pending_rotation_can_be_cancelled_but_committed_rotation_cannot
     assert commit(client,rid).status_code==200
     path='/api/saas/v1/installations/'+cap['installation_id']+'/rotations/'+rid
     assert client.delete(path,headers={'Authorization':'Bearer '+cap['installation_secret']}).status_code==401
+
+
+def test_rotation_never_decrypts_other_owners_capabilities(tmp_path):
+    client,now,cap,one=connected(tmp_path);vault=client.app.state.saas.vault
+    with vault.transaction() as db:
+        vault.put(db,'saas-capability','other-owner',{'user_id':'other','installation_id':'other-installation'},expires=now[0]+600)
+        db.execute("UPDATE records SET payload=? WHERE id='other-owner'",(b'corrupt',))
+    reply,rid,body=prepare(client,cap,one);assert reply.status_code==201
+    assert commit(client,rid).status_code==200
+    with vault.read_transaction() as db:
+        assert db.execute("SELECT id FROM records WHERE id='other-owner'").fetchone() is not None
+        assert vault.get(db,'saas-capability',one['connection_id']) is None

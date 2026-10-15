@@ -37,7 +37,9 @@ def test_generate_key_is_private_usable_and_never_overwritten(tmp_path):
     assert CliRunner().invoke(app,args).exit_code != 0
     assert key.read_bytes() == original
 
-def test_progress_throttles_fast_requests_but_keeps_liveness(capsys):
+def test_progress_throttles_fast_requests_but_keeps_liveness(capsys,monkeypatch):
+    import sys
+    monkeypatch.setattr(sys.stderr,'isatty',lambda:True)
     from socialctl.read_budget import ReadProgress
     now = [0.0]
     progress = ReadProgress('inbox', clock=lambda:now[0])

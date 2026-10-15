@@ -37,13 +37,13 @@ canonical subscriptions and paid invoices, validates owner/customer/price and
 updates local entitlements. It also reconciles known customers every five minutes
 to recover missing webhooks. No Stripe call runs inside a SQLite transaction.
 
-Install the separate `socialcli-saas-billing.service` and `.timer` after deploying
+Install the separate `socialcli-saas-candidate-billing.service` and `.timer` after deploying
 this image/configuration. Check the Docker binary/container name on the host,
 then enable the timer. This does not modify the private socialctl executor or its
 timers. Run manually with:
 
 ```sh
-docker exec socialcli-connections python -m socialctl.saas.maintenance
+docker exec socialcli-saas-candidate python -m socialctl.saas.maintenance
 ```
 
 Output contains only counts. Exit 1 indicates durable retry work remains. Inspect

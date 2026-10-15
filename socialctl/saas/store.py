@@ -15,7 +15,7 @@ class SaaSStore:
         with vault.transaction() as db:
             db.execute('CREATE TABLE IF NOT EXISTS saas_schema (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)')
             version = db.execute('SELECT coalesce(max(version),0) FROM saas_schema').fetchone()[0]
-            if version > 8:
+            if version > 9:
                 raise ValueError('SaaS database is newer than this release; keep commercial access closed')
             if version < 1:
                 db.execute('CREATE TABLE saas_users (id TEXT PRIMARY KEY, created REAL NOT NULL, suspended INTEGER NOT NULL DEFAULT 0, deleting INTEGER NOT NULL DEFAULT 0, session_version INTEGER NOT NULL DEFAULT 0)')
@@ -69,6 +69,13 @@ class SaaSStore:
                             vault.put(db,'saas-stripe-event',':'.join(event),record['payload'],expires=min(record['expires'],state['received']+7*86400))
                 db.execute('ALTER TABLE saas_rates ADD COLUMN expires REAL NOT NULL DEFAULT 0')
                 db.execute('INSERT INTO saas_schema(version) VALUES(8)')
+            if version < 9:
+                # One-time backfill; request paths only use these indexed relations.
+                for row in db.execute("SELECT kind,id FROM records WHERE kind IN ('saas-pair','saas-capability','saas-user','saas-login')").fetchall():
+                    record=vault.get(db,row['kind'],row['id'])
+                    vault.index_owner(db,row['kind'],row['id'],record['payload'])
+                db.execute('INSERT INTO saas_schema(version) VALUES(9)')
+
 
     def user(self, db, user_id):
         return db.execute('SELECT * FROM saas_users WHERE id=?',(user_id,)).fetchone()

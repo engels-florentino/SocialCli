@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import typer
+from socialctl.approval_cli import read_approval
 from pydantic import ValidationError
 
 from socialctl.management.changes import ChangeError
@@ -119,7 +120,8 @@ def status(
 @story_app.command("apply")
 def apply(
     change_id: str,
-    approval_digest: str | None = typer.Option(None, "--approval-digest", help="Exact fingerprint displayed by prepare."),
+    approval_stdin: bool = typer.Option(False, "--approval-stdin", help="Explicitly read one approval line from stdin."),
+    approval_digest: str | None = typer.Option(None, "--approval-fingerprint", "--approval", "--approval-digest", help="Exact fingerprint displayed by prepare."),
     brand: str = typer.Option(..., "--brand", help="Owning brand; never inferred."),
     root: Path = typer.Option(DEFAULT_ROOT, "--root", help="Social project root."),
 ) -> None:
@@ -129,7 +131,7 @@ def apply(
     try:
         prepared = store.load(change_id)
         typer.echo(render_story_preview(prepared))
-        digest = approval_digest or typer.prompt("Enter the exact fingerprint to approve")
+        digest = read_approval(approval_digest, approval_stdin=approval_stdin)
         if digest != prepared.fingerprint:
             raise StoryError("approval does not match exact Story fingerprint")
         if prepared.story.platform is Platform.FACEBOOK:
@@ -138,7 +140,7 @@ def apply(
             with make_http_client() as http:
                 client = MetaStoryClient(selected, Platform.INSTAGRAM, http)
                 result = apply_story(client, store, change_id, digest)
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(_json(result))
     if result.status != "verified":
@@ -163,7 +165,7 @@ def verify(
                 result = verify_story(
                     MetaStoryClient(selected, Platform.INSTAGRAM, http), store, change_id
                 )
-    except (ChangeError, OSError) as exc:
+    except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(_json(result))
     if result.status != "verified":

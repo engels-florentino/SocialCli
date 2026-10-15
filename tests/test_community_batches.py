@@ -106,3 +106,58 @@ def test_verified_youtube_reply_cannot_repeat_in_another_batch(tmp_path,monkeypa
     result=batches.apply_community_batch(brand,batch2.id,batch2.fingerprint)
     assert len(api.writes)==1
     assert result.status=='partial'
+
+
+def test_batch_reconciles_received_receipt_before_stopping_for_delayed_readback(tmp_path, monkeypatch):
+    batches, mod, brand, graph, store, children, refs = prepared(tmp_path, monkeypatch)
+    batch = batches.prepare_community_batch(brand, refs)
+    original = graph.__call__
+    direct_reads = 0
+    def handler(request):
+        nonlocal direct_reads
+        if request.method == 'GET' and request.url.path.endswith('/790'):
+            return httpx.Response(200, json={'id': '790', 'from': {'id': '123'}})
+        result = original(request)
+        if request.method == 'POST' and request.url.path.endswith('/790/comments'):
+            graph.comments['900']['parent'] = {'id': '790'}
+        if request.method == 'GET' and request.url.path.endswith('/900'):
+            direct_reads += 1
+            if direct_reads == 1:
+                row = result.json(); row.pop('from')
+                return httpx.Response(200, json=row)
+        return result
+    monkeypatch.setattr(batches, 'http_client', lambda: httpx.Client(transport=httpx.MockTransport(handler)))
+    result = batches.apply_community_batch(brand, batch.id, batch.fingerprint)
+    assert result.status == 'verified'
+    assert len(graph.writes) == 2
+    assert all(store.load(child.id).status == 'verified' for child in children)
+    batches.apply_community_batch(brand, batch.id, batch.fingerprint)
+    assert len(graph.writes) == 2
+
+
+def test_failed_reconcile_preserves_durable_uncertainty_in_sparse_batch(tmp_path,monkeypatch):
+    batches,mod,brand,graph,store,children,refs=prepared(tmp_path,monkeypatch)
+    batch=batches.prepare_community_batch(brand,refs)
+    children[0].status='uncertain';store.save(children[0])
+    def fail(*args,**kwargs):raise ChangeError('Readback temporarily unavailable')
+    monkeypatch.setattr(batches,'dispatch',fail)
+    result=batches.reconcile_community_batch(brand,batch.id)
+    doc=batches.batch_document(result)
+    assert doc['outcomes'][children[0].id]['status']=='uncertain'
+    assert doc['summary']['uncertain_ids']==[children[0].id]
+    assert doc['summary']['pending_ids']==[children[1].id]
+    assert doc['error_detail']['action']=='reconcile'
+    assert 'error_detail' in doc['outcomes'][children[0].id]
+    assert not graph.writes
+
+
+def test_status_document_reads_child_journal_not_stale_batch_outcome(tmp_path,monkeypatch):
+    batches,mod,brand,graph,store,children,refs=prepared(tmp_path,monkeypatch)
+    batch=batches.prepare_community_batch(brand,refs)
+    children[0].status='uncertain';store.save(children[0])
+    doc=batches.batch_document(batch,brand=brand)
+    assert doc['status']=='partial'
+    assert doc['outcomes'][children[0].id]['status']=='uncertain'
+    assert doc['summary']['uncertain_count']==1
+    assert doc['error_detail']['action']=='reconcile'
+    assert not graph.writes

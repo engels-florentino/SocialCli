@@ -1,11 +1,20 @@
 """One exact digest approves only the displayed immutable community batch."""
 from pathlib import Path
+import json
 import typer
 import yaml
 from socialctl.management.changes import ChangeError
 from socialctl.operation_output import OperationOutput
 from socialctl.management.community_batches import (prepare_community_batch,apply_community_batch,
-    reconcile_community_batch,CommunityBatchStore,validate_batch)
+    reconcile_community_batch,CommunityBatchStore,validate_batch,batch_document)
+
+
+def progress(event):
+    typer.echo(f"Batch child {event['child_index']}/{event['total']} {event['platform']} {event['change_id']}: {event['status']}", err=True)
+
+
+def emit(batch,brand=None):
+    typer.echo(json.dumps(batch_document(batch,brand=brand), ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def preview(batch):
@@ -22,18 +31,18 @@ def register(changes_app,default_root):
                 raise ChangeError('expected version 1 and explicit children')
             batch=prepare_community_batch(selected,raw['children'])
             typer.echo(preview(batch),err=json_output)
-            if json_output:output.emit(batch)
+            if json_output:emit(batch,selected)
 
     @changes_app.command('apply-batch')
-    def apply(batch_id:str,approval:str|None=typer.Option(None,'--approval'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root,'--root'),json_output:bool=typer.Option(False,'--json')):
+    def apply(batch_id:str,approval:str|None=typer.Option(None,'--approval-fingerprint','--approval','--approval-digest'),approval_stdin:bool=typer.Option(False,'--approval-stdin'),brand:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root,'--root'),json_output:bool=typer.Option(False,'--json')):
         with OperationOutput(json_output) as output:
             selected=output.brand(root,brand)
             batch=CommunityBatchStore(selected.raiz).load(batch_id)
             validate_batch(selected,batch)
-            approved=output.approve(batch,preview(batch),approval)
+            approved=output.approve(batch,preview(batch),approval,approval_stdin=approval_stdin)
             output.begin_write()
-            result=apply_community_batch(selected,batch_id,approved)
-            output.emit(result)
+            result=apply_community_batch(selected,batch_id,approved,progress=progress)
+            emit(result,selected)
             if result.status!='verified':raise typer.Exit(1)
 
     @changes_app.command('reconcile-batch')
@@ -41,8 +50,8 @@ def register(changes_app,default_root):
         with OperationOutput(json_output,read_only=True) as output:
             selected=output.brand(root,brand)
             output.change_id=CommunityBatchStore(selected.raiz).load(batch_id).id
-            result=reconcile_community_batch(selected,batch_id)
-            output.emit(result)
+            result=reconcile_community_batch(selected,batch_id,progress=progress)
+            emit(result,selected)
             if result.status!='verified':raise typer.Exit(1)
 
     @changes_app.command('status-batch')
@@ -51,4 +60,4 @@ def register(changes_app,default_root):
             selected=output.brand(root,brand)
             result=CommunityBatchStore(selected.raiz).load(batch_id)
             validate_batch(selected,result)
-            output.emit(result)
+            emit(result,selected)

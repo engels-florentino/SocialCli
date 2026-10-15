@@ -157,3 +157,122 @@ def test_delete_during_streaming_upload_prevents_resurrection_and_keeps_quota(tm
     client.app.state.saas_lifecycle.prune_expired()
     with service.vault.read_transaction() as db:
         assert db.execute('SELECT count(*) FROM saas_media_allocations').fetchone()[0]==0
+
+
+def test_failed_upload_releases_closed_writer_allocation_and_record(tmp_path):
+    client,now,connection,service=media_service(tmp_path)
+    for _ in range(11):
+        value,headers=reserve(client,connection)
+        assert client.put(value['upload_url'],content=b'wrong',headers=headers).status_code==400
+        with service.vault.read_transaction() as db:
+            assert db.execute('SELECT count(*) FROM saas_media_allocations').fetchone()[0]==0
+            assert service.vault.get(db,'saas-media',value['media_id']) is None
+        assert not list(service.root.iterdir())
+
+
+def test_cancelled_upload_waits_for_writer_before_releasing_quota(tmp_path,monkeypatch):
+    import asyncio
+    import os
+    from threading import Event
+    from starlette.requests import Request
+    client,now,connection,service=media_service(tmp_path)
+    value,headers=reserve(client,connection)
+    entered=Event();release=Event();closed=Event()
+    original=os.fdopen
+    class SlowWriter:
+        def __init__(self,*args):self.stream=original(*args)
+        def __enter__(self):return self
+        def __exit__(self,*args):self.stream.close();closed.set()
+        def write(self,chunk):
+            entered.set();assert release.wait(5)
+            return self.stream.write(chunk)
+    monkeypatch.setattr(os,'fdopen',SlowWriter)
+    route=next(r for r in client.app.routes if 'PUT' in getattr(r,'methods',set()) and r.path.endswith('/media/{media_id}'))
+    async def scenario():
+        async def receive():return {'type':'http.request','body':b'fictional image','more_body':False}
+        request=Request({'type':'http','method':'PUT','headers':[(b'authorization',headers['Authorization'].encode())]},receive)
+        task=asyncio.create_task(route.endpoint(connection['connection_id'],value['media_id'],request))
+        try:
+            assert await asyncio.to_thread(entered.wait,3)
+            task.cancel()
+            await asyncio.wait({task},timeout=.05)
+            assert not closed.is_set(), 'Writer closed while its worker still owns the FD'
+            with service.vault.read_transaction() as db:
+                assert db.execute('SELECT count(*) FROM saas_media_allocations').fetchone()[0]==1
+        finally:
+            release.set()
+            await asyncio.gather(task,return_exceptions=True)
+        assert closed.is_set()
+        with service.vault.read_transaction() as db:
+            assert db.execute('SELECT count(*) FROM saas_media_allocations').fetchone()[0]==0
+            assert service.vault.get(db,'saas-media',value['media_id']) is None
+    asyncio.run(scenario())
+    assert not list(service.root.iterdir())
+
+
+def test_cancelled_finish_cannot_leave_ready_record_after_removing_file(tmp_path,monkeypatch):
+    import asyncio
+    import os
+    from threading import Event
+    from starlette.requests import Request
+    client,now,connection,service=media_service(tmp_path)
+    value,headers=reserve(client,connection)
+    entered=Event();release=Event()
+    original=os.replace
+    def slow_replace(source,destination):
+        original(source,destination)
+        entered.set();assert release.wait(5)
+    monkeypatch.setattr(os,'replace',slow_replace)
+    route=next(r for r in client.app.routes if 'PUT' in getattr(r,'methods',set()) and r.path.endswith('/media/{media_id}'))
+    async def scenario():
+        async def receive():return {'type':'http.request','body':b'fictional image','more_body':False}
+        request=Request({'type':'http','method':'PUT','headers':[(b'authorization',headers['Authorization'].encode())]},receive)
+        task=asyncio.create_task(route.endpoint(connection['connection_id'],value['media_id'],request))
+        try:
+            assert await asyncio.to_thread(entered.wait,3)
+            task.cancel()
+            await asyncio.wait({task},timeout=.05)
+            assert list(service.root.glob('*.data')), 'Cleanup raced the still-running finish transaction'
+        finally:
+            release.set()
+            await asyncio.gather(task,return_exceptions=True)
+        with service.vault.read_transaction() as db:
+            assert db.execute('SELECT count(*) FROM saas_media_allocations').fetchone()[0]==0
+            assert service.vault.get(db,'saas-media',value['media_id']) is None
+    asyncio.run(scenario())
+    assert not list(service.root.iterdir())
+
+
+def test_cancelled_claim_settles_before_removing_reservation(tmp_path,monkeypatch):
+    import asyncio
+    from threading import Event
+    from starlette.requests import Request
+    client,now,connection,service=media_service(tmp_path)
+    value,headers=reserve(client,connection)
+    entered=Event();release=Event()
+    original=service.vault.put
+    def slow_claim(db,kind,ident,payload,**kwargs):
+        original(db,kind,ident,payload,**kwargs)
+        if kind=='saas-media' and payload['state']=='uploading':
+            entered.set();assert release.wait(5)
+    monkeypatch.setattr(service.vault,'put',slow_claim)
+    route=next(r for r in client.app.routes if 'PUT' in getattr(r,'methods',set()) and r.path.endswith('/media/{media_id}'))
+    async def scenario():
+        async def receive():return {'type':'http.request','body':b'fictional image','more_body':False}
+        request=Request({'type':'http','method':'PUT','headers':[(b'authorization',headers['Authorization'].encode())]},receive)
+        task=asyncio.create_task(route.endpoint(connection['connection_id'],value['media_id'],request))
+        try:
+            assert await asyncio.to_thread(entered.wait,3)
+            task.cancel()
+            await asyncio.wait({task},timeout=.05)
+            assert not task.done(), 'Claim worker escaped the cancelled upload owner'
+            with service.vault.read_transaction() as db:
+                assert db.execute('SELECT count(*) FROM saas_media_allocations').fetchone()[0]==1
+        finally:
+            release.set()
+            await asyncio.gather(task,return_exceptions=True)
+        with service.vault.read_transaction() as db:
+            assert db.execute('SELECT count(*) FROM saas_media_allocations').fetchone()[0]==0
+            assert service.vault.get(db,'saas-media',value['media_id']) is None
+    asyncio.run(scenario())
+    assert not list(service.root.iterdir())

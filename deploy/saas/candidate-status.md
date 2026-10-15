@@ -1,3 +1,10 @@
+# Current rollout status
+
+rc5 audit fixes are under verification. The public deployment remains rc4 until
+its successor has been published and the rollout verified; follow [release.md](release.md).
+
+## Previous status and historical checkpoints
+
 # Candidate deployment history — superseded by 0.3.0rc4
 
 **Current public pilot: SocialCli 0.3.0rc4**, deployed from immutable commit

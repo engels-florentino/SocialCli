@@ -381,3 +381,14 @@ def test_fallback_listing_cannot_verify_wrong_parent(tmp_path,monkeypatch):
     graph.after_write=lambda:graph.comments['900'].update({'parent':{'id':'999'}})
     assert mod.apply_comment(client,store,change.id,change.fingerprint).status=='uncertain'
     assert len(graph.writes)==1
+
+
+@pytest.mark.parametrize('action', ['edit', 'delete'])
+def test_hidden_facebook_author_never_authorizes_own_comment_mutation(tmp_path, action):
+    mod, _, graph, client, store = service(tmp_path)
+    graph.comments['800'] = graph.row('800', 'Hidden author comment')
+    graph.comments['800'].pop('from')
+    with pytest.raises(mod.CommentError, match='own author'):
+        mod.prepare_comment(client, store, media_id='789', action=action,
+            comment_id='800', text='Edited' if action == 'edit' else None)
+    assert not graph.writes

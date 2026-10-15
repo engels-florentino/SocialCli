@@ -25,11 +25,11 @@ def test_community_cli_requires_brand_full_preview_exact_approval_no_yes(tmp_pat
     assert "FULL PREVIEW" in preview.output and "Exact supplied CLI text" in preview.output
     change = store.load(next(store.root.glob("*.json")).stem)
     assert json.dumps(change.model_dump(mode="json"), ensure_ascii=False, indent=2, sort_keys=True) in preview.output
-    rejected = runner.invoke(app, [*args, "apply", change.id, *root], input="yes\n")
+    rejected = runner.invoke(app, [*args, "apply", change.id, *root, "--approval-stdin"], input="yes\n")
     assert rejected.exit_code != 0 and not api.writes
     no_yes = runner.invoke(app, [*args, "apply", change.id, "--yes", *root])
     assert no_yes.exit_code != 0 and not api.writes
-    result = runner.invoke(app, [*args, "apply", change.id, *root], input=change.fingerprint + "\n")
+    result = runner.invoke(app, [*args, "apply", change.id, *root, "--approval-stdin"], input=change.fingerprint + "\n")
     assert result.exit_code == 0, result.output
     assert result.output.index("Exact supplied CLI text") < result.output.index("Enter the exact fingerprint to approve")
     assert len(api.writes) == 1

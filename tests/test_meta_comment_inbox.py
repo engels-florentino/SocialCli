@@ -388,15 +388,15 @@ def test_cli_draft_preview_and_exact_approval(tmp_path, monkeypatch):
                   record.fingerprint):
         assert value in drafted.output
     bypass = runner.invoke(app, ["comments", "apply", record.change_id,
-        "--brand", "Example", "--root", str(tmp_path)], input=record.fingerprint + "\n")
+        "--brand", "Example", "--root", str(tmp_path), "--approval-stdin"], input=record.fingerprint + "\n")
     assert bypass.exit_code != 0
     assert "apply-draft" in bypass.output
     assert not graph.writes
-    rejected = runner.invoke(app, ["comments", "apply-draft", "789", "800", *common],
+    rejected = runner.invoke(app, ["comments", "apply-draft", "789", "800", *common, "--approval-stdin"],
                              input="wrong\n")
     assert rejected.exit_code != 0
     assert not graph.writes
-    applied = runner.invoke(app, ["comments", "apply-draft", "789", "800", *common],
+    applied = runner.invoke(app, ["comments", "apply-draft", "789", "800", *common, "--approval-stdin"],
                             input=record.fingerprint + "\n")
     assert applied.exit_code == 0, applied.output
     assert '"status": "respondido"' in applied.output
@@ -420,13 +420,13 @@ def test_superseded_inbox_draft_cannot_post_through_legacy_apply(tmp_path, monke
         lambda: factory(transport=httpx.MockTransport(graph)))
     common = ["--brand", "Example", "--root", str(tmp_path)]
 
-    bypass = runner.invoke(app, ["comments", "apply", old.id, *common],
+    bypass = runner.invoke(app, ["comments", "apply", old.id, *common, "--approval-stdin"],
                            input=old.fingerprint + "\n")
 
     assert bypass.exit_code != 0
     assert 'replaced' in bypass.output
     assert not graph.writes
     applied = runner.invoke(app, ["comments", "apply-draft", "789", "800",
-        "--platform", "facebook", *common], input=current.fingerprint + "\n")
+        "--platform", "facebook", *common, "--approval-stdin"], input=current.fingerprint + "\n")
     assert applied.exit_code == 0, applied.output
     assert len(graph.writes) == 1

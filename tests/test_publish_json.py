@@ -55,7 +55,8 @@ def test_json_dry_run_keeps_full_preview_and_never_calls_publish(setup_post,tmp_
 
 
 @pytest.mark.parametrize('answer',['n\n',''])
-def test_json_refusal_never_publishes(setup_post,tmp_path,answer):
+def test_json_refusal_never_publishes(setup_post,tmp_path,answer,monkeypatch):
+    monkeypatch.setattr("typer.testing._NamedTextIOWrapper.isatty", lambda self: True)
     brand,folder,calls=setup_post
     result=invoke(tmp_path,input=answer)
     assert result.exit_code==0,result.output

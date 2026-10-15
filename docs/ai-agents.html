@@ -135,7 +135,7 @@ socialcli changes status CHANGE_ID --brand MyBrand
 <p>Replace <code>CHANGE_ID</code> with the UUID returned by the preparation command. Applying it requires the exact displayed fingerprint, including when <code>--yes</code> is supplied:</p>
 <pre><code class="language-bash">socialcli changes apply CHANGE_ID --brand MyBrand
 </code></pre>
-<p>Have the operator enter the fingerprint, or use an agent runner that supports the approval prompt after the user has approved the exact proposal. Do not claim that <code>--yes</code> bypasses this gate. Remote changes need the appropriate management scopes in addition to publishing access.</p>
+<p>After the user approves the exact proposal, pass <code>--approval-fingerprint APPROVED_FINGERPRINT</code>. Noninteractive execution without explicit approval fails promptly; <code>--approval-stdin</code> explicitly opts into reading one approved line from stdin. Do not claim that <code>--yes</code> bypasses this gate. Remote changes need the appropriate management scopes in addition to publishing access.</p>
 <h2 id="why-use-socialcli-with-agents">Why use SocialCli with agents?</h2>
 <ul>
 <li><strong>Natural-language planning, concrete execution.</strong> Ask for an account review or a draft; inspect the actual commands and their results.</li>
@@ -214,7 +214,7 @@ exact media/filter and never advanced on incomplete traversal. An inbox command
 never publishes, replies, likes or subscribes webhooks.</p>
 <p>New <code>stats --json</code> and <code>inbox --json</code> reports use a version 1 envelope with
 <code>status</code>, <code>observed_at</code>, <code>coverage</code>, <code>data</code>, <code>errors</code> and optional <code>cursor</code>.
-Exit 0 means complete success; 1 means partial/failed operation; 2 means invalid
+Exit 0 means complete success; 3 means partial observations; 1 means failure; 2 means invalid
 invocation. CLI parser errors (for example missing required arguments) use the
 standard stderr usage output. Existing JSON commands retain their successful
 schemas. Use explicit <code>--json</code> to obtain structured runtime errors and nonzero
@@ -233,7 +233,7 @@ these requests.</p>
 scan. Prepare/apply/reconcile still verify fresh remote state. Exact integer
 YouTube reply counts of zero avoid empty reply requests. Missing pagination
 metadata remains incomplete; verified observations survive. Meta comments
-without verifiable ID, text, author or parent, or with invalid times, are skipped independently,
+without verifiable ID, text or parent, or with invalid times, are skipped independently; hidden authors are retained as unknown,
 without discarding other valid observations or advancing complete watermarks.
 Meta coverage includes <code>skipped_comments</code> counts for <code>own</code>, <code>before_since</code> and
 <code>unverifiable</code>. Missing creation times are retained with incomplete interval
@@ -278,10 +278,93 @@ unsupported action. For headless servers, select the documented
 <a href="connections.html#headless-encrypted-capability-storage">encrypted capability store</a>
 explicitly; OS keyring remains the default and no silent fallback is provided.</p>
 <h2 id="saas-candidate-installation">SaaS candidate installation</h2>
-<p>For the published 0.3.0rc4 TestPyPI candidate, protected persistent storage and
+<p>For the published 0.3.0rc5 TestPyPI candidate, protected persistent storage and
 browser-owned SocialCli sign-in, use the <a href="agents.md">compact bootstrap guide</a>.
 Create the brand, configure credentials, run account login against
 https://pilot.socialcli.app, then connect. Stable production PyPI publication and
 provider production approval are separate gates.</p>
 <p>See the packaged <code>socialcli agent-guide</code> for scoped inbox reads, management consent, protected key generation and local configuration diagnostics.</p>
+<h2 id="explicit-approval-and-preflight">Explicit approval and preflight</h2>
+<p>The approval path is: display the complete preview, obtain the creator's explicit
+approval, then pass its exact fingerprint to the execution command. Supplying a
+flag is the transport for that approval; it does not grant an agent permission.</p>
+<pre><code class="language-sh">socialcli publish clip --brand Example --only facebook --dry-run
+# After the creator approves that complete preview:
+socialcli publish clip --brand Example --only facebook --approval-fingerprint APPROVED_DIGEST
+
+socialcli schedule clip --at 2030-01-01T12:00:00Z --brand Example --only facebook --dry-run
+# After the creator approves the content and exact scheduled time:
+socialcli schedule clip --at 2030-01-01T12:00:00Z --brand Example --only facebook --approval-fingerprint APPROVED_DIGEST
+
+socialcli content youtube-owned prepare --file change.yml --brand Example --dry-run
+# Keep the returned ChangeSet ID and its fingerprint together.
+socialcli content youtube-owned status CHANGE_ID --brand Example
+socialcli content youtube-owned apply CHANGE_ID --brand Example --approval-fingerprint APPROVED_FINGERPRINT
+</code></pre>
+<p><code>--approval</code> and <code>--approval-digest</code> are aliases for <code>--approval-fingerprint</code> on
+these commands and on the management apply commands. The same options are
+available on <code>changes apply</code>, <code>meta apply</code>, <code>comments apply</code>, <code>comments apply-draft</code>,
+<code>content youtube-assets apply</code>, <code>content youtube-community apply</code>,
+<code>content youtube-analytics apply</code>, <code>story apply</code> and <code>group handoff</code>.
+Check each installed command's help; native scheduling has its existing explicit
+<code>--approval-digest</code> contract.</p>
+<p>Management proposals are durable and include a proposal identity and observations.
+Preparing again can produce a new ID and fingerprint even for the same input
+file. Preserve the exact returned pair, inspect that stored proposal, and approve
+that fingerprint. Do not substitute a digest from a different preparation.
+Publication digests bind the selected account, content and media bytes; queue
+digests additionally bind the scheduled instant. Changed inputs require a fresh
+complete preview and approval. Execution rechecks before writing.</p>
+<p>Without a terminal or explicit approval, these commands fail promptly without
+reading an open input pipe. To deliberately provide approval through stdin:</p>
+<pre><code class="language-sh">printf '%s\n' &quot;$APPROVED_FINGERPRINT&quot; | socialcli content youtube-owned apply CHANGE_ID --brand Example --approval-stdin
+</code></pre>
+<p><code>--approval-stdin</code> reads one line and can wait for that line by explicit choice.
+It cannot be combined with a fingerprint argument. Do not blindly pipe a newly
+generated digest into an apply command: the creator must review and approve the
+complete preview first. On an interactive terminal, the existing prompts remain.</p>
+<p>For <code>publish</code> and <code>schedule</code>, the previously authorized <code>--yes</code> workflow remains
+supported, including displaying the complete preview and checking for changes.
+For management commands that historically required an exact fingerprint,
+<code>--yes</code> still cannot replace it. A supplied wrong fingerprint is never overridden
+by <code>--yes</code>. Local schedule output is text; <code>publish --json</code> keeps its complete
+preview and approval UI on stderr and returns one JSON document on stdout.</p>
+<h3 id="combined-read-only-preflight">Combined read-only preflight</h3>
+<p><code>preflight</code> is an alias of <code>doctor</code>. Both accept explicit supplied files and/or a
+post slug, and collect local validation alongside account identity checks:</p>
+<pre><code class="language-sh">socialcli doctor --brand Example --platform youtube --post clip --media /path/to/supplied.jpeg --json
+socialcli preflight --brand Example --platform youtube --require-scope https://www.googleapis.com/auth/youtube.force-ssl --json
+</code></pre>
+<p><code>--media</code> is repeatable and inspects existing files without modifying them.
+<code>--post</code> reuses <code>media check</code> and preserves each platform's diagnostics when
+another supplied file is invalid. Account and credential-store diagnostics remain
+in the report alongside media failures. Encrypted-store checks validate the
+protected key and existing store without creating lock files or repairing state.
+A directory with owner permissions 0700 and no group/other access is accepted,
+including mode 2700; credential files still require mode 0600.</p>
+<p>Scope checks compare exact scopes recorded as granted in the token response;
+they never substitute requested OAuth scopes or the capability matrix. Unknown
+scope grants remain unknown and cannot satisfy <code>--require-scope</code>, which requires
+an explicit <code>--platform</code>. Identity verification and recorded scopes do not prove
+write permissions or provider approval. No token refresh, reconnection, remote
+mutation, publication, media generation or reencoding is performed. TikTok
+identity checks remain unsupported by this existing doctor integration and are
+reported as unavailable. Without <code>--media</code> or <code>--post</code>, file integrity is not
+checked. A supplied image passing inspection alone does not prove eligibility
+for a particular publishing route; use <code>--post</code> for route validation.</p>
+<h2 id="resumable-batches-and-reply-context">Resumable batches and reply context</h2>
+<p>Community batches remain sequential, resumable operations, not atomic cross-provider transactions. Each child must verify before the next starts. A received comment receipt now permits one additional bounded, read-only reconciliation during apply, covering delayed provider readback without another POST. A lost receipt, incomplete evidence or contradictory identity still stops the batch. Reconciliation never starts pending children.</p>
+<p>Batch JSON preserves existing keys and adds all children to <code>outcomes</code>, including <code>not_attempted</code>, with child index, provider, platform and change ID. <code>summary</code> includes total and verified/pending/uncertain/blocked counts and ID lists. A partial batch with only untouched children reports <code>batch_pending</code> and <code>action: apply_remaining</code>; an uncertain child reports <code>operation_uncertain</code> and <code>action: reconcile</code>. Continue the same approved batch with its exact fingerprint, retaining all verified outcomes. Progress is on stderr; stdout contains one JSON document.</p>
+<p><code>inbox-draft</code> errors include <code>failed.child_index</code> (one-based), platform, account/comment IDs, stage and a safe reason. Completed immutable children remain in <code>prepared</code> after a later failure. Diagnostics do not reproduce arbitrary provider or storage exception text.</p>
+<p>Facebook reply preparation accepts an unavailable external comment author when exact comment membership and media ownership can be verified. The author remains null in the approved baseline. Changes to text, identity or membership block the write. Own-comment edit/delete and created-reply verification still require the authenticated account's exact author ID.</p>
+<p>A nested observation can explicitly map a new thread reply to its observed top-level parent:</p>
+<pre><code class="language-yaml">version: 1
+replies:
+  - platform: youtube
+    account_id: fictional-channel
+    comment_id: observed-reply-id
+    reply_parent_id: observed-top-level-comment-id
+    text: Exact supplied reply text
+</code></pre>
+<p>The source and mapped parent must both be observed for the same account/media/thread. The parent must be top-level and satisfy the existing eligibility rules. Source membership/text/author are read again during preparation and immediately before the write. The full preview binds <code>before.reply_context</code> and the actual write parent. This is supported through the existing YouTube, Facebook and Instagram reply edges; it does not invent a deeper provider nesting relationship or imply a mention. Multiple selections mapping to the same parent are rejected. Existing replied/uncertain parent protections remain in effect. Inbox review links the resulting journal to both the parent and selected source observation.</p>
 </main><footer><p>SocialCli · Operated by Florentino.pro · MIT-licensed software</p><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of use</a><a href="security.html">Security</a><a href="https://github.com/engels-florentino/SocialCli/issues">Support</a></footer></body></html>

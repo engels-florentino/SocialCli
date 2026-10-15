@@ -167,10 +167,15 @@ def effects_for(edit):
     return notes
 
 
-def prepare_community(client, store, edit):
+def prepare_community(client, store, edit, *, reply_context=None):
     edit = validate_edit(edit)
     account = client.identity()
     before = baseline(client, edit)
+    if reply_context is not None:
+        from socialctl.management.reply_context import verify_reply_context
+        verify_reply_context(client, reply_context, media_id=edit.video_id,
+            parent_id=edit.parent_id, thread_id=edit.thread_id)
+        before['reply_context'] = reply_context
     moment = now_utc()
     change = CommunityChange(id=str(uuid.uuid4()), target_brand=client.brand.nombre, brand_root=str(client.brand.raiz.resolve()),
         target_account=account, edit=edit_raw(edit), before=before, after=body_for(edit, account), effects=effects_for(edit), created_at=moment, updated_at=moment)
@@ -335,7 +340,11 @@ def apply_community(client, store, change_id, approval_digest):
                     and other.edit == change.edit):
                 raise ResourceConflict("identical comment already verified locally; another UUID does not allow repetition")
         try:
-            if baseline(client, edit) != change.before:
+            if change.before.get('reply_context'):
+                from socialctl.management.reply_context import verify_reply_context
+                verify_reply_context(client, change.before['reply_context'], media_id=edit.video_id,
+                    parent_id=edit.parent_id, thread_id=edit.thread_id)
+            if baseline(client, edit) != {k:v for k,v in change.before.items() if k != 'reply_context'}:
                 raise ResourceConflict("conflict: status/author changed since preview")
         except ResourceConflict:
             change.status = "conflict"
