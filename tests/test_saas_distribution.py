@@ -16,7 +16,7 @@ def test_public_agent_instructions_are_packaged_plain_text_without_identity_call
     reply=client.get('/agents')
     assert reply.status_code==200
     assert reply.headers['content-type'].startswith('text/plain')
-    for text in ('0.3.0rc2','Candidate','--no-browser','14 days','USD 10','Do not open','--dry-run'):
+    for text in ('0.3.0rc3','Candidate','--no-browser','14 days','USD 10','Do not open','--dry-run'):
         assert text in reply.text
     assert calls==[]
     assert 'set-cookie' not in reply.headers

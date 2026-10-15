@@ -1,6 +1,6 @@
-# SocialCli for AI agents — Candidate 0.3.0rc2
+# SocialCli for AI agents — Candidate 0.3.0rc3
 
-Status: public SaaS pilot, Candidate 0.3.0rc2. Use the exact candidate below;
+Status: public SaaS pilot, Candidate 0.3.0rc3. Use the exact candidate below;
 do not replace an existing 0.2.6 installation or migrate its credentials silently.
 Stripe remains in test mode. Google is in testing and permits configured test users.
 Real-agent acceptance is performed by the owner; do not claim it from installation.
@@ -13,16 +13,16 @@ availability depends on account eligibility; Google production is still pending.
 ## Install the reviewed candidate
 
 Use the official TestPyPI release metadata:
-https://test.pypi.org/pypi/socialcli/0.3.0rc2/json
+https://test.pypi.org/pypi/socialcli/0.3.0rc3/json
 
-1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc2`. If this
+1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc3`. If this
    release is unavailable, stop and report it; do not install a similarly named package.
-2. Select exactly `socialcli-0.3.0rc2-py3-none-any.whl` from `urls`. Download its
+2. Select exactly `socialcli-0.3.0rc3-py3-none-any.whl` from `urls`. Download its
    HTTPS `url` and verify the file against that entry's `digests.sha256`.
 3. Install that verified local wheel into an isolated environment. Resolve
    dependencies from normal PyPI, not TestPyPI. For example:
 
-       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc2-py3-none-any.whl[headless-credentials]'
+       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc3-py3-none-any.whl[headless-credentials]'
        socialcli --version
        socialcli agent-guide
 
@@ -31,7 +31,7 @@ https://test.pypi.org/pypi/socialcli/0.3.0rc2/json
    If an existing SocialCli tool is installed, use a separate virtual environment
    for this pilot and its absolute executable; do not upgrade it automatically.
 
-Verify the installed version is exactly 0.3.0rc2 before continuing. The stable
+Verify the installed version is exactly 0.3.0rc3 before continuing. The stable
 `uv tool install socialcli` command is not the installation path for this pilot.
 
 For headless agents, configure encrypted-file storage with an external0600 key in
@@ -592,7 +592,7 @@ remain unavailable. Previously delivered provider tokens can remain valid after
 SocialCli revocation until they expire or are separately revoked at the provider.
 
 
-## Read diagnostics in Candidate 0.3.0rc2
+## Read diagnostics in Candidate 0.3.0rc3
 
 - Aggregate `stats`, `inbox` and `report` JSON envelopes: exit 0 = ok,
   exit 3 = partial, exit 1 = error, exit 2 = invalid command arguments.
@@ -623,3 +623,13 @@ SocialCli revocation until they expire or are separately revoked at the provider
   with mode 0700; the file is created with mode 0600. Use a separate protected
   directory per independent brand. The key is URL-safe base64 for 32 random bytes,
   not a password or hexadecimal string.
+
+## Comment API corrections in Candidate 0.3.0rc3
+
+YouTube comments with disabled discussion return `comments_disabled`, not a
+reconnection request. Valid reply-list cursor traversal tolerates an omitted
+total count while retaining supplied-data consistency checks. Meta may withhold
+a comment author; read observations retain `author_id: null`. Do not invent the
+author or draft replies from that unverified identity. Facebook verification can
+resolve a receipt/list ID difference using exact provider comment permalinks and
+owned-target membership; unknown outcomes must still never be resent.
