@@ -50,3 +50,16 @@ Google/Meta production reviews and TikTok Draft are provider-controlled gates.
 The operator's instruction not to submit TikTok review or switch Stripe Live
 remains in effect. Billing code supports Live; activating real charges is not
 necessary to close H-05 and is not done implicitly.
+
+## Operator and contact confirmation
+
+The operator confirmed Florentino.pro and admin@socialcli.app as the public
+contact. README, security reporting, public documentation, terms and privacy
+were updated accordingly, preserving the existing English UI. All ten changed
+public documents were fetched over HTTPS and matched the local source hashes.
+
+Stalwart now has an enabled admin@socialcli.app alias on the existing
+access@socialcli.app mailbox. Account readback confirmed the alias, and SMTP
+RCPT TO returned 250 2.1.5 OK. No email body was submitted; this verifies
+recipient acceptance, not a human inbox delivery test. Existing application
+sender credentials and operational alert recipients were preserved.

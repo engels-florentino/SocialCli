@@ -24,4 +24,4 @@ Encrypted operational backups are copied to an operator-controlled Google Drive 
 
 ## Report a vulnerability
 
-Use Security → Report a vulnerability in the repository. If unavailable, email blades3@gmail.com. Do not open public issues with secrets or exploitable account data. If a credential is exposed, revoke and rotate it with its provider; deleting a file or commit does not invalidate it.
+Use Security → Report a vulnerability in the repository. If unavailable, email admin@socialcli.app. Do not open public issues with secrets or exploitable account data. If a credential is exposed, revoke and rotate it with its provider; deleting a file or commit does not invalidate it.

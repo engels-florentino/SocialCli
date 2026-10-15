@@ -132,5 +132,8 @@ native scheduling uses provider storage where supported. See
 Read the packaged socialcli agent-guide topic for the operation, the
 [capability matrix](docs/capabilities.md), [security](SECURITY.md),
 [privacy policy](https://socialcli.app/privacy.html) and
-[terms](https://socialcli.app/terms.html). Historical0.2.6 releases and deploy
+[terms](https://socialcli.app/terms.html). Historical 0.2.6 releases and deploy
 records are migration evidence, not a second current product.
+
+SocialCli is operated by **Florentino.pro**. For private account, billing or privacy
+questions, contact [admin@socialcli.app](mailto:admin@socialcli.app).
