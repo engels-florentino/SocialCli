@@ -130,3 +130,12 @@ modes that lack terminal access.
 The emphasis update was deployed with backup
 `landing-emphasis-20261015T191729Z`; public HTML, CSS and demo JavaScript matched
 local SHA256 hashes after deployment. The application runtime was unchanged.
+
+## Free trial emphasis
+
+The offer now presents “14 days free.” in larger bold text with “No card
+required.” below it, in a pale-blue badge beside the installation area. Mobile
+uses a compact badge next to the monthly price. Public Safari review confirmed
+the visual treatment. HTML and CSS SHA256 hashes match the local files and the
+published downloads. Private server backup: `landing-trial-20261015T225352Z`.
+No pricing, trial eligibility or billing behavior changed.
