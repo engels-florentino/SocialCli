@@ -1,7 +1,8 @@
 # Current rollout status
 
-rc5 audit fixes are under verification. The public deployment remains rc4 until
-its successor has been published and the rollout verified; follow [release.md](release.md).
+The public pilot runs rc5, published on TestPyPI with its artifacts verified.
+Schema9, maintenance and public agent guides were checked after deployment.
+See [rc5 rollout](rollout-rc5-2026-10-15.md) and [release.md](release.md).
 
 ## Previous status and historical checkpoints
 

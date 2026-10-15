@@ -1,12 +1,13 @@
-# Candidate under verification: 0.3.0rc5
+# Current public candidate: 0.3.0rc5
 
 This release addresses the October 15 audit: deployment consistency, schema9
 indexed cleanup, interrupted media quota recovery, concurrent session reads,
 invalid-email diagnostics, explicit noninteractive approval, combined preflight,
 resumable batch diagnostics and verified nested reply context.
 
-Until publication and rollout evidence are recorded, the public installed release
-remains rc4. Never overwrite an existing candidate tag or artifact. See the
+Published on TestPyPI and deployed to the public pilot; the installation guide
+now targets rc5. See [verified rollout evidence](rollout-rc5-2026-10-15.md).
+Never overwrite an existing candidate tag or artifact. See the
 [implementation plan](../../docs/superpowers/plans/2026-10-15-rc4-audit-corrections.md)
 and [schema9 deployment requirements](schema9-migration.md).
 

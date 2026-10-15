@@ -64,5 +64,5 @@
 ### 6. Integration, docs and release
 - [x] Review integrated diff, run full suite, build/check clean archives and smoke installed wheel.
 - [x] Update capability/agent/help and audit closure docs with evidence and remaining provider limits.
-- [ ] Publish new immutable candidate through existing protected workflow; deploy after verified backup and check migrations, health, maintenance, public guide/version.
-- [ ] Do not claim external release approval, live social acceptance or finished work without matching evidence.
+- [x] Publish new immutable candidate through existing protected workflow; deploy after verified backup and check migrations, health, maintenance, public guide/version.
+- [x] Record verified rollout and retain explicit limits on external approvals and live social acceptance in deploy/saas/rollout-rc5-2026-10-15.md.
