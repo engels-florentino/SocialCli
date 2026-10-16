@@ -2,7 +2,7 @@
 
 # SocialCli
 
-**Current source version: 0.3.0rc9 (published TestPyPI candidate).** SocialCli SaaS is the current SocialCli
+**Current source version: 0.3.0rc10 (validation candidate; public installation remains rc9 until release verification).** SocialCli SaaS is the current SocialCli
 product. The repository root on `main` is its single development workspace;
 the CLI, hosted connection service and account/billing components live together
 here. Earlier versions remain in Git history for reference and migration.

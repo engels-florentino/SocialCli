@@ -30,6 +30,7 @@ MESSAGES={
     'provider_authorization_expired':'Provider authorization expired. Reconnect this account explicitly.',
     'provider_permissions_changed':'Provider permissions changed. Reconnect this account explicitly to review the required permissions.',
     'connection_inactive':'This SocialCli connection expired after inactivity. Review your account before connecting again.',
+    'connection_unavailable':'This local connection is no longer available. Review your SocialCli account; use socialcli account attach PLATFORM --brand BRAND --root WORKSPACE to restore an existing owner-approved connection. Do not reconnect automatically.',
     'connection_replaced':'This connection was replaced. Review the current account before connecting again.',
     'connection_changed':'Another connection changed. Review your SocialCli account.',
     'activation_required':'Connection activation is pending. Run socialcli account recover.',

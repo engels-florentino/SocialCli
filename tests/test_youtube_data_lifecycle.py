@@ -297,3 +297,67 @@ def test_observation_cleanup_waits_for_import_lock_without_losing_studio_index(t
     assert cleanup(brand,purge=True)['complete'] is True
     assert not api.exists() and studio.exists()
     assert json.loads(index.read_text())['active']=={'studio-period':'studio'}
+
+
+def test_cleanup_waits_for_short_inbox_write_and_preserves_fresh_data(tmp_path):
+    import threading
+    from socialctl.management.meta_comment_inbox import CommentInboxStore
+    brand = crear_brand(tmp_path, 'Fictional')
+    state = {'version':1, 'items':{'yt':{'platform':'youtube',
+             'first_observed_at':NOW.isoformat(), 'text':'fresh'}}, 'watermarks':{}}
+    path = write(brand.raiz/'.socialctl/unified-inbox/state.json', state)
+    locked = threading.Event()
+
+    def writer():
+        with CommentInboxStore(brand.raiz).lock():
+            locked.set()
+            threading.Event().wait(0.15)
+
+    thread = threading.Thread(target=writer)
+    thread.start()
+    try:
+        assert locked.wait(2)
+        result = cleanup(brand)
+        assert result['complete'], result
+        assert json.loads(path.read_text()) == state
+    finally:
+        thread.join(timeout=2)
+
+
+def test_persistent_cleanup_lock_is_retryable_not_corrupt_and_retention_stays_blocked(tmp_path, monkeypatch):
+    from socialctl import youtube_data
+    from socialctl.agent_errors import error_document
+    from socialctl.management.meta_comment_inbox import CommentInboxStore
+    brand = crear_brand(tmp_path, 'Fictional')
+    path = write(brand.raiz/'.socialctl/unified-inbox/state.json',
+                 {'version':1, 'items':{'yt':{'platform':'youtube', 'first_observed_at':OLD}}, 'watermarks':{}})
+    before = path.read_bytes()
+    monkeypatch.setattr(youtube_data, 'LOCK_WAIT_SECONDS', 0.02, raising=False)
+    with CommentInboxStore(brand.raiz).lock():
+        result = cleanup(brand)
+        assert result['complete'] is False
+        assert result['errors'][0]['code'] == 'local_data_busy'
+        with pytest.raises(youtube_data.YouTubeDataCleanupError) as caught:
+            youtube_data.enforce_youtube_data(brand.raiz)
+        assert 'another SocialCli operation' in str(caught.value)
+        assert 'corrupt' not in str(caught.value)
+        detail = error_document(caught.value, read_only=True)
+        assert detail['code'] == 'local_data_busy' and detail['retryable'] is True
+        assert path.read_bytes() == before
+    assert cleanup(brand)['complete']
+    assert json.loads(path.read_text())['items'] == {}
+
+
+def test_json_read_preserves_cleanup_busy_action(tmp_path, monkeypatch, capsys):
+    import typer
+    from socialctl import youtube_data
+    from socialctl.management.meta_comment_inbox import CommentInboxStore
+    from socialctl.read_reports import load_read_brand
+    brand = crear_brand(tmp_path, 'Fictional')
+    write(brand.raiz/'.socialctl/unified-inbox/state.json', {'version':1,'items':{},'watermarks':{}})
+    monkeypatch.setattr(youtube_data, 'LOCK_WAIT_SECONDS', 0.01)
+    with CommentInboxStore(brand.raiz).lock(), pytest.raises(typer.Exit):
+        load_read_brand(tmp_path, 'Fictional')
+    report = json.loads(capsys.readouterr().out)
+    assert report['errors'][0]['code'] == 'local_data_busy'
+    assert report['errors'][0]['retryable'] is True

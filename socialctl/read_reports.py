@@ -60,8 +60,12 @@ def annotate_partial_read(result):
 def load_read_brand(root, brand):
     """JSON read entry points must keep a structured error before any request."""
     from socialctl.brands import cargar_brand, BrandNoEncontrada, NombreDeMarcaInvalido, AccountsInvalido
+    from socialctl.youtube_data import YouTubeDataCleanupError
     try:
         return cargar_brand(root, brand)
+    except YouTubeDataCleanupError as exc:
+        emit_report(ReadReport(status='error', errors=[error_document(exc,read_only=True)]))
+        raise typer.Exit(1) from None
     except (BrandNoEncontrada, NombreDeMarcaInvalido, AccountsInvalido, OSError):
         emit_report(ReadReport(status='error', errors=[error_for_code('invalid_input')]))
         raise typer.Exit(1) from None

@@ -94,6 +94,11 @@ test mode; it is not collecting live subscriptions.
 
 Managed YouTube API observations expire after six days. User-supplied originals and independent Studio imports are preserved. Re-read the platform when needed; do not report absent old snapshots as zero or invent weekly growth. Unknown ages and failed cleanup block affected data. Disconnect, terminal authorization failure and account deletion trigger a managed-data purge when observed by this runner. Exported reports, chats and independent backups require separate deletion.
 
+Concurrent commands can briefly contend for a managed-store lock. Cleanup waits
+up to two seconds per lock. `local_data_busy` means wait for the other command to
+finish and retry; it does not mean corruption and never calls for deleting files.
+Retention remains enforced while cleanup is blocked.
+
 Preview the daily cleanup service for this exact brand and root, show it to the owner, then install only with their authorization:
 
 ```sh
@@ -115,6 +120,15 @@ A fresh conversation alone does not require reconnecting YouTube.
 
     socialcli account status --brand MyBrand --json
     socialcli connections --brand MyBrand --json
+
+`connections` retains successful platforms and identifies each failed platform in
+`errors` with a fixed code, next action and HTTP status when available. Exit 3 is
+partial, exit 1 means the read failed, and exit 0 is complete. Do not discard a
+healthy YouTube result because another platform returns `connection_unavailable`.
+After the owner revokes and relinks an assistant, explicit `account attach` can
+restore an existing approved connection even when its old capability was deleted.
+The current installation must still have owner-approved access, and an existing
+local account must match exactly. This does not repeat OAuth or approve publication.
 
 Use `account attach PLATFORM --brand MyBrand` to attach an existing owner-approved
 connection after signing in on a second installation. Use `account recover

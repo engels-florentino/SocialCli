@@ -287,35 +287,41 @@ def register(app):
                     root:Path=typer.Option(default_root(),'--root'),
                     json_output:bool=typer.Option(False,'--json')):
         """Read connection status without renewing provider tokens or publishing."""
+        from socialctl.agent_errors import error_document, emit_error
+        from socialctl.connections.saas_client import ServiceRejected
         try:
             brand=cargar_brand(root,brand_name)
             rows=[]
+            errors=[]
             with http_client() as transport:
                 for platform in Platform:
-                    metadata=brand.leer_secreto(platform)
-                    if metadata.get('auth_mode')!='broker':
-                        continue
-                    broker=broker_for(metadata,transport)
-                    secret=keychain.get(brand,platform,metadata)
                     try:
+                        metadata=brand.leer_secreto(platform)
+                        if metadata.get('auth_mode')!='broker':
+                            continue
+                        broker=broker_for(metadata,transport)
+                        secret=keychain.get(brand,platform,metadata)
                         status=broker.request('GET',f"/v1/connections/{opaque(metadata['connection_id'])}",secret=secret)
-                    except ValueError as exc:
+                        if status.get('platform')!=platform.value or status.get('account',{}).get('id')!=metadata['account_id']:
+                            raise ValueError('connection account mismatch')
+                        if platform is Platform.YOUTUBE and status.get('data_cleanup_required'):
+                            from socialctl.youtube_data import request_youtube_purge
+                            status['local_data_cleanup']=request_youtube_purge(brand.raiz)
+                        rows.append(status)
+                    except Exception as exc:
                         if platform is Platform.YOUTUBE and getattr(exc,'code',None) in {
                                 'provider_authorization_expired','provider_permissions_changed',
                                 'connection_inactive','connection_unavailable','installation_revoked','installation_expired'}:
                             from socialctl.youtube_data import request_youtube_purge
                             request_youtube_purge(brand.raiz)
-                        raise
-                    if status.get('platform')!=platform.value or status.get('account',{}).get('id')!=metadata['account_id']:
-                        raise ValueError('connection account mismatch')
-                    if platform is Platform.YOUTUBE and status.get('data_cleanup_required'):
-                        from socialctl.youtube_data import request_youtube_purge
-                        status['local_data_cleanup']=request_youtube_purge(brand.raiz)
-                    rows.append(status)
-            result={'version':1,'brand':brand.nombre,'connections':rows}
+                        detail={'platform':platform.value, **error_document(exc,read_only=True)}
+                        if isinstance(exc,ServiceRejected): detail['http_status']=exc.status
+                        errors.append(detail)
+            state='partial' if errors and rows else 'error' if errors else 'ok'
+            result={'version':1,'brand':brand.nombre,'status':state,'connections':rows,'errors':errors}
             if json_output:
                 typer.echo(json.dumps(result,indent=2))
-            elif not rows:
+            elif not rows and not errors:
                 typer.echo('No shared connections. Independent-app credentials use socialcli auth status.')
             else:
                 for row in rows:
@@ -329,10 +335,13 @@ def register(app):
                     label=('reconnect required with your explicit approval' if row.get('needs_reconnect')
                         else renewal_label.get(row.get('renewal_status'),'review your SocialCli account'))
                     typer.echo(f"{row['platform']}: {visible(row['account']['name'])} ({row['account']['id']}) — {label}")
-        except ValueError as exc:
-            fail(str(exc))
-        except Exception:
-            fail('Could not read connection status safely.')
+            if not json_output:
+                for error in errors:
+                    typer.echo(f"{error['platform']}: {error['code']} — {error['message']}",err=True)
+        except Exception as exc:
+            if json_output: emit_error(exc,read_only=True)
+            fail(str(exc) if isinstance(exc,ValueError) else 'Could not read connection status safely.')
+        if errors: raise typer.Exit(3 if rows else 1)
 
     @app.command('disconnect')
     def disconnect(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root')):

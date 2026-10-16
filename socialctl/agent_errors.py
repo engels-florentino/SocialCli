@@ -19,6 +19,7 @@ _ACTIONS = {
     'subscription_required': 'user_action',
     'brand_limit': 'user_action',
     'connection_inactive': 'user_action',
+    'connection_unavailable': 'user_action',
     'connection_replaced': 'user_action',
     'connection_changed': 'user_action',
 }
@@ -60,6 +61,7 @@ _CATALOG = {
     'operation_accepted_unverified': ('inspect', 'The provider accepted the operation. Independent verification is unavailable; this is not a rejection. Preserve the receipt and do not replay the write.'),
     'provider_response_invalid': ('inspect', 'Preserve verified observations and inspect the incomplete provider response.'),
     'storage_failure': ('repair_storage', 'Inspect local storage and preserve saved observations before recovery.'),
+    'local_data_busy': ('retry_later', 'Another SocialCli operation is using local data. Wait for it to finish, then retry. Do not delete or repair the files.'),
     'persistence_failed': ('repair_storage', 'Preserve verified observations and repair local persistence before collecting again.'),
     'unsupported_operation': ('unsupported', 'This integration does not support the requested operation.'),
     'account_not_configured': ('user_action', 'Ask the owner to select and authorize the intended account; never infer one.'),
@@ -100,6 +102,7 @@ def error_document(exc: BaseException, *, read_only: bool) -> dict:
     from socialctl.management.meta_comments import CommentError, CommentUncertain
     from socialctl.management.meta_schema import MetaError, MetaUncertain
     from socialctl.metricas.base import SinPermiso
+    from socialctl.youtube_data import YouTubeDataBusy, YouTubeDataCleanupError
 
     # A read flow may refresh a token via POST. A lost response to that operation
     # cannot be classified as a harmless GET retry merely from the CLI command.
@@ -137,7 +140,8 @@ def error_document(exc: BaseException, *, read_only: bool) -> dict:
                 if type(status) is int else 'operation_rejected')
     elif isinstance(exc, httpx.RequestError): code = 'provider_response_invalid'
     elif isinstance(exc, ChangeError): code = 'operation_rejected'
-    elif isinstance(exc, OSError): code = 'storage_failure'
+    elif isinstance(exc, YouTubeDataBusy): code = 'local_data_busy'
+    elif isinstance(exc, (OSError, YouTubeDataCleanupError)): code = 'storage_failure'
     elif isinstance(exc, ValueError): code = 'invalid_local_state'
     else: code = 'operation_failed'
     return error_for_code(code,read_only=read_only)

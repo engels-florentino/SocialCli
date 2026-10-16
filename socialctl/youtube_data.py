@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,7 +25,13 @@ from socialctl.brands import AccountsInvalido
 class YouTubeDataCleanupError(AccountsInvalido, ValueError):
     """Managed provider data could not be removed; access remains blocked."""
 
+
+class YouTubeDataBusy(YouTubeDataCleanupError):
+    """Another operation still owns a managed-store lock after a bounded wait."""
+
+
 MAX_AGE_DAYS = 6
+LOCK_WAIT_SECONDS = 2.0
 JOURNALS = ('changes', 'metadata-batches', 'youtube-resources', 'youtube-owned',
             'youtube-community', 'community-batches', 'youtube-analytics-changes')
 
@@ -59,7 +66,16 @@ def _lock(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        deadline = time.monotonic() + LOCK_WAIT_SECONDS
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(0.05, remaining))
         yield
     finally:
         os.close(fd)
@@ -219,7 +235,11 @@ def cleanup_youtube_data(brand_root, *, now=None, purge=False):
               'limits':'Runs only while this client/cleanup job runs. External exports, chats, user files and independent backups are outside this managed store.'}
     def fail(path, exc):
         result['complete'] = False
-        result['errors'].append({'path':str(path.relative_to(root)), 'error':type(exc).__name__})
+        busy = isinstance(exc, BlockingIOError) or (
+            isinstance(exc, sqlite3.OperationalError) and
+            getattr(exc, 'sqlite_errorcode', None) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED})
+        result['errors'].append({'path':str(path.relative_to(root)), 'error':type(exc).__name__,
+                                 'code':'local_data_busy' if busy else 'storage_failure'})
     try:
         _safe(marker,root)
     except ValueError as exc:
@@ -423,8 +443,14 @@ def request_youtube_purge(brand_root):
 def enforce_youtube_data(brand_root):
     result=cleanup_youtube_data(brand_root)
     if not result['complete']:
-        paths=', '.join(item['path'] for item in result['errors'])
-        raise YouTubeDataCleanupError('YouTube local data cleanup is incomplete (corrupt/unreadable cache or journal): '+paths+'. Run data-cleanup --brand BRAND --root WORKSPACE and resolve these paths before reading or writing this brand.')
+        busy=[item['path'] for item in result['errors'] if item['code']=='local_data_busy']
+        failed=[item['path'] for item in result['errors'] if item['code']!='local_data_busy']
+        message=''
+        if busy:
+            message='YouTube local data cleanup is waiting for another SocialCli operation: '+', '.join(busy)+'. Wait for it to finish, then retry this command. Do not delete or repair these files. '
+        if failed:
+            message+='YouTube local data cleanup is incomplete (unreadable cache or journal): '+', '.join(failed)+'. Run data-cleanup --brand BRAND --root WORKSPACE and resolve these paths before reading or writing this brand.'
+        raise (YouTubeDataCleanupError if failed else YouTubeDataBusy)(message.strip())
     return result
 
 

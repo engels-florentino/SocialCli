@@ -327,9 +327,14 @@ def attach(platform:Platform,brand_name:str=typer.Option(...,'--brand'),root:Pat
                     client.request('GET','/api/saas/v1/connections/'+opaque(previous['connection_id']),
                         secret=keychain.get(brand,platform,previous))
                 except ServiceRejected as exc:
-                    # Only an authenticated capability whose installation is
-                    # confirmed inactive may be replaced without another OAuth.
-                    if exc.status!=401 or exc.code not in {'installation_revoked','installation_expired'}:raise
+                    # Browser revocation removes capabilities, so their status
+                    # becomes 404. This explicit attach still authenticates the
+                    # current installation, requires its owner-approved platform
+                    # and existing grant, and checks the exact old account below.
+                    if (exc.status,exc.code) not in {
+                            (401,'installation_revoked'),(401,'installation_expired'),
+                            (404,'connection_unavailable')}:
+                        raise
                 else:raise ValueError('A local connection already exists. Review it before replacing it.')
             result=client.request('POST','/api/saas/v1/installations/'+opaque(saved['connection_id'])+'/attach',
                 secret=keychain.get(brand,Slot.ACCOUNT,saved),body={'platform':platform.value,'brand':brand.nombre})

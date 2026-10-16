@@ -57,7 +57,11 @@ Send the user: “Open this link in your own browser to connect your account: <p
 
 For an installed client and service supporting the SaaS protocol, use
 `socialcli connections --brand MyBrand --json` to read `renewal_status` without
-renewing credentials. The current rc4 SaaS pilot exposes these states:
+renewing credentials. The result preserves healthy platforms in `connections`
+and reports failures separately in `errors`, with the platform, action and HTTP
+status when available. Exit 3 means partial results, exit 1 means no successful
+observations, and exit 0 means the listing completed. A stale capability on one
+platform does not invalidate the other platforms. The service exposes these states:
 
 | State | Action |
 | --- | --- |
