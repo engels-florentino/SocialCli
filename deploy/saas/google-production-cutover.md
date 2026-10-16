@@ -25,8 +25,10 @@ Current evidence:
 
 - [Google project record](google-project.md) identifies project `socialcli`, Web
   client `SocialCli SaaS`, and both `socialcli.app` and `pilot.socialcli.app`
-  YouTube callbacks. The separate Desktop client in that project is used for
-  operator Drive backups. The audience remains Testing.
+  YouTube callbacks. Operator Drive backups have since migrated to the separate
+  `socialcli-operator-backups` project with verified repository copies and a
+  successful full backup. The customer audience remains Testing; only the backup
+  project is In production. See the dated migration evidence in `google-project.md`.
 - The operator reports that the two hostnames now reach the same deployment.
   Older rollout documents describe separate containers; do not use those older
   records as proof of the current routing. Capture current deployment, ingress,
