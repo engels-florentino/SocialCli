@@ -7,7 +7,12 @@ and the authenticated Google console for project `socialcli`. This is a
 technical readiness review, not Google's approval or a comprehensive legal opinion.
 At the original review, no provider setting, credentials, user data, public policy or deployed code was changed. Subsequent remediation is tracked below.
 
-## Remediation checkpoint (source, not a deployed-release claim)
+## Remediation checkpoint
+
+Update: the rc9 implementation and matching public policies have now been deployed.
+See [verified rollout evidence](rollout-rc9-2026-10-15.md). The original findings
+below remain historical; demonstration, assistant-configuration evidence and
+Google verification are still pending.
 
 - Domain ownership completed: Namecheap TXT is publicly visible; Search Console confirmed the `socialcli.app` domain under the project administrator.
 - G-01/G-07: versioned owner privacy and separate assistant data acknowledgment gates added to SaaS and standalone connection flows. Existing installations require owner relinking; unknown third-party AI configurations are not certified for production.
@@ -15,7 +20,7 @@ At the original review, no provider setting, credentials, user data, public poli
 - G-03: explicit managed-store inventory, six-day YouTube expiry, disconnect/authorization failure purge, fail-closed cleanup, daily macOS/Linux service installer. Offline and arbitrary-export limitations remain explicit. Older weekly comparison baselines are unavailable; native remote receipts require regular reconciliation.
 - G-04: absolute six-day repository cutoff, verified Drive mirror, six-hour independent retention with freshness/error alerts, and a quarantined restore workflow requiring a fresh current-authority deletion manifest plus separately verified Auth cleanup.
 - G-05: Community Guidelines certification is displayed and bound to immediate and scheduled upload approvals. Old upload approvals require fresh review.
-- Public-policy source and packaged agent guidance updated in English to reflect these changes. No deployment claim until public readback and operational verification are recorded.
+- Public-policy source and packaged agent guidance updated in English to reflect these changes. Public readback and operational verification are recorded in the rc9 rollout.
 - G-06 environment separation and G-08 real demo/submission remain launch gates. The operator backup authorization was subsequently migrated to the owner-approved, isolated `socialcli-operator-backups` project (In production, `drive.file` only); both encrypted repositories and a full backup were verified. This resolves the shared-project backup prerequisite, not the remaining customer launch gates. See [the cutover runbook](google-production-cutover.md). Google audience remains Testing. [Verification package](google-verification-package.md) contains exact scope justification, data-flow disclosure and recording script; it is not a completed recording or an approval.
 
 The sections below preserve the original findings. See the release checkpoint for final test and deployment evidence.

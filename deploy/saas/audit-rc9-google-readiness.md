@@ -1,5 +1,10 @@
 # rc9 Google-readiness checkpoint — October 15, 2026
 
+Current update: rc9 is now published on TestPyPI and deployed; public policies and
+guides were verified. See [rollout evidence](rollout-rc9-2026-10-15.md). The sections
+below retain the earlier preparation/isolation checkpoint. Google customer
+production verification remains outstanding.
+
 ## Source and verification
 
 Candidate source: 0.3.0rc9. Full local suite: **3,083 passed**, one upstream Starlette/httpx deprecation warning, 70.84 seconds. UI bundles and git whitespace checks passed. New tests cover privacy/assistant bypasses, revocation failures and late-credential races, deletion-safe restore and raw-service quarantine, all enumerated managed YouTube stores, supplied-file/Meta preservation, supervisor installation/status, absolute backup retention and remote-completion proof, and immediate/scheduled uploader certification.
@@ -20,7 +25,7 @@ These are local artifacts, not proof of publication. The same wheel was staged o
 - Backup, backup-alert and independent six-hour retention timers are active. The independent retention service also completed successfully; backup status remained `ok` with no issues.
 - No backup repository was downloaded to the Mac. No user grant was revoked, reconnected or deleted; no social publication occurred.
 
-## Explicit rollout hold
+## Earlier rollout hold (resolved by the linked deployment)
 
 The application container and public installation/policy pages still run rc8. The operator backup authorization has now been migrated to the separate `socialcli-operator-backups` project, activated In production with explicit owner approval and only `drive.file`. Both encrypted repositories were copied and checked; a full backup using the new active destination succeeded. After checking both new repositories again and confirming distinct Drive folder IDs, the old app-visible encrypted backup files were permanently removed and a recursive files-only listing returned zero files. Google rejected whole-folder deletion (`appNotAuthorizedToChild`); directory shells were preserved because `drive.file` cannot establish whether unseen children exist. No broader permission was requested. The active rclone configuration now contains only the isolated backup remote. The backup project switch does not publish rc9 or switch the customer Google project.
 

@@ -1,10 +1,10 @@
-# Next candidate: 0.3.0rc9 — Google readiness
+# Current public candidate: 0.3.0rc9 — Google readiness
 
 Source includes versioned owner/assistant consent, Google revocation with durable retry, managed local YouTube data expiry and daily cleanup supervisor, bounded Drive backup retention and guarded restore, and uploader certification bound to approvals. Updated policy version: 2026-10-15. Schema10 is additive; old clients/installations require the owner review flow. Domain ownership is verified; Google remains External / Testing.
 
-The previously published release is rc8. Do not activate rc9 installation instructions until its exact artifact is published and downloaded/verified. Public policy must be deployed with the corresponding behavior. Final test, review, artifact and operational evidence will be recorded separately; this preparation is not a deployment or provider-approval claim.
+Published on TestPyPI after owner approval and deployed to the hosted pilot. Both published archives match the reviewed hashes; a fresh downloaded-wheel install passed. The running service is healthy on schema10, all operational timers are active, and post-deployment backups were verified. Public guides, privacy and terms match rc9. See [verified rollout evidence](rollout-rc9-2026-10-15.md). This is not stable PyPI publication or provider approval.
 
-# Current public candidate: 0.3.0rc8
+# Previous public candidate: 0.3.0rc8
 
 Includes all rc6/rc7 fixes and network-specific connection UI. rc7 publication was
 blocked by four ANSI-sensitive test assertions in GitHub Actions, corrected to
