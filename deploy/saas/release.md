@@ -1,3 +1,14 @@
+# Current public candidate: 0.3.0rc10
+
+Published to TestPyPI after owner approval and deployed to the hosted pilot.
+Both actual TestPyPI archives match reviewed hashes; clean-install checks and
+server health passed. Public onboarding targets rc10. Google is External /
+In production with verified branding; sensitive scopes remain unverified.
+See [verified rc10 rollout](rollout-rc10-2026-10-16.md). Stable PyPI and provider
+verification remain separate.
+
+## Previous release checkpoints
+
 # Current public candidate: 0.3.0rc9 — Google readiness
 
 Source includes versioned owner/assistant consent, Google revocation with durable retry, managed local YouTube data expiry and daily cleanup supervisor, bounded Drive backup retention and guarded restore, and uploader certification bound to approvals. Updated policy version: 2026-10-15. Schema10 is additive; old clients/installations require the owner review flow. Domain ownership is verified; Google remains External / Testing.
