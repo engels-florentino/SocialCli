@@ -1,6 +1,6 @@
 # Current retention and restore changes — October 15, 2026
 
-The source now implements an absolute six-day snapshot cutoff, post-prune integrity checks, and a checked Drive mirror with permanent removal of expired objects. `backup_host.py --preview-retention` inventories both repositories without deletion; `--retention` uses the same worker lock as backups. Configure both `drive_remote` (the exact `socialcli_backup:SocialCli-Backups/candidate` root) and private `drive_config` before enabling remote completion. Independent six-hour retention has a durable status receipt and freshness/error alerts. Do not keep the older copy-only systemd post-commands: install the current drive-copy.conf.
+The source now implements an absolute six-day snapshot cutoff, post-prune integrity checks, and a checked Drive mirror with permanent removal of expired objects. `backup_host.py --preview-retention` inventories both repositories without deletion; `--retention` uses the same worker lock as backups. Configure both `drive_remote` (the exact `socialcli_backup_isolated:SocialCli-Backups/candidate` root) and private `drive_config` before enabling remote completion. Independent six-hour retention has a durable status receipt and freshness/error alerts. Do not keep the older copy-only systemd post-commands: install the current drive-copy.conf.
 
 New snapshots have a startup quarantine marker. Use the [deletion-safe restore procedure](restore-guard.md), including a fresh current-authority manifest and separately verified Auth cleanup, before release. Historical unmarked snapshots also require that procedure. Never launch a raw restored backup. No authority means no release. This section describes source behavior; actual deployment evidence must be recorded separately.
 
@@ -274,3 +274,25 @@ active; an actual service invocation returned Result=success, ExecMainStatus=0.
 The English delivery-test message was accepted by SMTP. Inbox receipt of that
 English message has not yet been confirmed. The monitor uses the operator-approved
 recipient; it does not change the customer reminder configuration or public service.
+
+
+## Isolated production backup authorization — October 15, 2026
+
+The active backup remote is now `socialcli_backup_isolated:SocialCli-Backups/candidate`,
+using the owner-approved **SocialCli Backups** project (`socialcli-operator-backups`).
+Its Google Audience is In production and its only scope is `drive.file`. The
+customer SocialCli project remains Testing. Both encrypted repositories were
+copied server-to-Drive, checked against local repositories, and a full backup
+service run completed successfully on the new destination. Existing six-day
+retention and independent alerts remain enabled.
+
+The old remote's app-visible backup files were permanently deleted after checking
+the new repositories and confirming distinct folder IDs. Recursive files-only
+listings returned zero old files. Whole-folder deletion was denied by Google
+(`appNotAuthorizedToChild`); folder shells remain because app-specific access
+cannot prove the absence of unseen children. No broad Drive permission was added.
+The active private rclone configuration no longer contains the old remote.
+
+No backup repository was downloaded to the Mac, no customer Google grant was
+revoked, and this operator migration does not establish rc9 deployment or
+customer OAuth verification. See [Google project evidence](google-project.md).

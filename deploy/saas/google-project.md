@@ -39,6 +39,45 @@ See backup-restore.md for verified upload and hourly-copy evidence and limits.
 
 Added the Google verification TXT at Namecheap without removing existing TXT records. Public DNS returned the record and Search Console confirmed Ownership verified using Domain name provider; the property overview is `sc-domain:socialcli.app` under the project administrator account. Keep this TXT record. The Google audience remains External / Testing. This resolves domain ownership, not production approval.
 
-## Backup isolation gate — October 15, 2026
+## Backup isolation — October 15, 2026
 
-Verified privately that the active rclone backup client belongs to project `socialcli`, the same project as the customer Web client. Google revocation for the same user can affect all clients in that project. The new project `socialcli-operator-backups` (SocialCli Backups) was created in Google Cloud; its OAuth configuration is prepared through the final Google User Data Policy acceptance screen. Acceptance, client creation, owner authorization, isolated Drive copy verification and migration remain incomplete. Do not deploy the revocation release until the backup migration succeeds. Existing backup credentials and the running rc8 service are unchanged.
+The former operator Desktop client belonged to the customer project `socialcli`.
+Because same-user Google revocation can affect all clients in one project, the
+operator explicitly approved a separate project, its Google API Services User
+Data Policy, Desktop credential creation, and production activation.
+
+Project `socialcli-operator-backups` (**SocialCli Backups**) is now **In production**,
+verified by reloading Google's Audience screen. Its Desktop client is
+**SocialCli Server Backup**. Drive API is enabled; Data Access contains only the
+non-sensitive `drive.file` scope. Branding links `socialcli.app` and its policies;
+developer contact is `admin@socialcli.app`. The customer project remains Testing.
+
+The owner's Drive authorization completed. Private token inspection verified
+that its audience is the new client, its only scope is `drive.file`, and a refresh
+token exists. Credentials were saved root-only on florentino.pro. No credential
+values belong in this document. The new app initially saw zero Drive root items;
+its app-specific permission does not expose the former client's files.
+
+Both encrypted repositories were copied directly from the server to the isolated
+Drive destination and checked against the local repositories. The active backup
+configuration now uses `socialcli_backup_isolated:SocialCli-Backups/candidate`.
+A complete scheduled-service invocation succeeded with verified remote mirroring
+and a healthy freshness report. No backup repository was downloaded to the Mac.
+Old app-visible encrypted backup files were then removed permanently after a
+second check of the new repositories and distinct folder IDs. Recursive file
+listings of both old repositories returned zero files. Google denied deleting
+whole folders (`appNotAuthorizedToChild`), so directory shells were preserved:
+`drive.file` cannot establish the absence of unseen children. The active rclone
+configuration now contains only the isolated remote.
+
+This operator-only production switch is not customer OAuth verification or
+approval. No customer grant was revoked and the running app remains rc8.
+
+
+After the verified backup migration, `drive.file` was removed from the customer
+project's declared Data Access scopes. Saving and reloading the Google console
+confirmed exactly `youtube.readonly`, `youtube.upload`, `youtube.force-ssl`, and
+`yt-analytics.readonly`; no restricted scopes. This changes the declared review
+scope inventory, not existing user grants. The customer Audience was independently
+checked as External / Testing. The isolated rclone configuration was added to
+the encrypted recovery backup inventory so the new authorization can be restored.
