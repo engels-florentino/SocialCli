@@ -41,7 +41,7 @@ socialcli connections --brand MyBrand --json
 socialcli account status --brand MyBrand --json
 ```
 
-Google remains in Testing, Meta in development and TikTok in sandbox for eligible test accounts. TikTok draft delivery requires the user to complete publication in TikTok. Installed code, a configured connector or a working connection does not establish provider production approval or every permission.
+Google is External / In production with verified branding, but sensitive YouTube scopes remain unverified and subject to the unverified-app warning and user cap. Meta remains in development and TikTok in sandbox for eligible test accounts. TikTok draft delivery requires the user to complete publication in TikTok. Installed code, a configured connector or a working connection does not establish provider production approval or every permission.
 
 In rc8, `auth PLATFORM` also routes signed-in SaaS installations through this same browser-owned connection flow. SaaS customers never supply a TikTok developer client key or secret. Without a signed-in installation, the command exits with setup guidance instead of waiting for credentials. Independent developer-app authentication requires explicit `--independent` and an interactive terminal.
 

@@ -24,4 +24,4 @@ Use only supplied media. Show the FULL `--dry-run` preview and obtain explicit
 approval before writes. Never retry an uncertain write. Preserve credentials and
 workspace across sessions. JSON stdout is separate from progress stderr; exit 3
 means partial reads, not an empty inbox. Trial: 14 days, then USD 10/month.
-This pilot uses Stripe test mode and provider test accounts; no approval implied.
+Stripe is in test mode. Google is In production with verified branding, but sensitive YouTube scopes remain unverified with a warning and user cap. Meta development and TikTok sandbox restrictions remain. No provider-wide approval is implied.

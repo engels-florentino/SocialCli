@@ -1,14 +1,14 @@
 # SocialCli for AI agents — Candidate 0.3.0rc9
 
-Candidate 0.3.0rc9 instructions. Require published metadata before installing;
+Candidate setup instructions. Require published metadata before installing;
 do not replace an existing 0.2.6 installation or migrate its credentials silently.
-Stripe remains in test mode. Google is in testing and permits configured test users.
+Stripe remains in test mode. Google is External / In production with verified branding, but sensitive YouTube scopes remain unverified, with an unverified-app warning and user cap.
 Real-agent acceptance is performed by the owner; do not claim it from installation.
 
 SocialCli gives terminal-enabled agents tools for creator-owned social accounts.
 You need a persistent shell workspace, Python 3.11+, macOS or Linux, and protected
 credential storage. SocialCli does not include a model or MCP server. Provider
-availability depends on account eligibility; Google production is still pending.
+availability depends on account eligibility; Google sensitive-scope verification is still pending.
 
 ## Install the reviewed candidate
 

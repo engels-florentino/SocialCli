@@ -10,8 +10,8 @@ workspace and protected credentials across conversations.
 
 The agent gives you a sign-in link. Open that link yourself, enter the email code
 on the SocialCli page, and approve the assistant and your selected social account connection. Never
-paste codes or provider credentials into the agent conversation. Google currently
-allows configured test users only; this is not production provider approval.
+paste codes or provider credentials into the agent conversation. Google is External / In production with verified branding; sensitive YouTube
+scopes remain unverified, with an unverified-app warning and user cap.
 
 Ask the agent to verify the connection and read account information. Begin a new
 conversation and ask it to use the same workspace and check the connection again.
@@ -21,7 +21,7 @@ requires your original media, the complete preview and your explicit approval.
 The SaaS is the successor to 0.2.6. Its pilot enables YouTube, Facebook, Instagram
 and TikTok. Meta access depends on app roles and granted permissions. TikTok uses
 the existing sandbox and configured target users, with draft uploads only.
-The deployed rc4 service retains the four existing Histopast connections. That
+The service retains existing authorized connections. That
 does not prove every feature for every creator; verify the exact account and
 permissions in each supervised pilot. Stripe uses test
 mode; no real subscriptions are collected. The planned price is USD 10/month with

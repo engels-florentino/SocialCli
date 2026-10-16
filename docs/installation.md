@@ -35,7 +35,7 @@ The setup order is brand → credentials → account login → connect. See the 
 
 Ask your assistant to read account status, connections and capabilities before writing. Then use your own produced content, inspect the complete preview and explicitly approve the exact operation. Installation and connection consent do not approve publication.
 
-Google Testing, Meta development and TikTok sandbox eligibility still apply. Stripe uses test payments only. The plan is USD 10/month after 14 free days from the first successful social connection. See [availability](platforms.html) and [terms](terms.html).
+Google is External / In production, but its sensitive YouTube scopes are not yet verified; the unverified-app warning and user cap still apply. Meta development and TikTok sandbox eligibility remain separate. Stripe uses test payments only. The plan is USD 10/month after 14 free days from the first successful social connection. See [availability](platforms.html) and [terms](terms.html).
 
 ## Commands and development
 
