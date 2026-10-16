@@ -66,7 +66,7 @@ def connection_symbols(platform):
 def landing_page(authorization_id: str, form_token: str, *, platform='youtube', browser_selection=False) -> str:
     from socialctl.saas import consent
     from socialctl.saas.pages import assistant_choice_html
-    privacy = f'<input type="hidden" name="privacy_version" value="{escape(consent.PRIVACY_VERSION,quote=True)}"><label for="privacy-accept"><input id="privacy-accept" type="checkbox" name="privacy_accept" value="1" required> I am the account owner and have read and agree to the <a href="https://socialcli.app/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> (version {escape(consent.PRIVACY_VERSION)}).</label>'
+    privacy = f'<input type="hidden" name="privacy_version" value="{escape(consent.PRIVACY_VERSION,quote=True)}"><label for="privacy-accept"><input id="privacy-accept" type="checkbox" name="privacy_accept" value="1" required> I am the account owner and have read and agree to the <a href="https://socialcli.app/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</label>'
     assistant = '' if browser_selection else assistant_choice_html()
     action = escape('/connect/' + authorization_id, quote=True)
     token = escape(form_token, quote=True)

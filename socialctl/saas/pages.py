@@ -105,7 +105,7 @@ def subscription(decision,entitlement,billing,csrf,*,enabled,processing=False):
 def privacy_choice_html(*, required=True):
     needed=' required' if required else ''
     return f'''{hidden('privacy_version',consent.PRIVACY_VERSION)}
-<label for="privacy-accept"><input id="privacy-accept" type="checkbox" name="privacy_accept" value="1"{needed}> I have read and agree to the <a href="https://socialcli.app/privacy.html" target="_blank" rel="noopener">Privacy Policy</a> (version {escape(consent.PRIVACY_VERSION)}).</label>
+<label for="privacy-accept"><input id="privacy-accept" type="checkbox" name="privacy_accept" value="1"{needed}> I have read and agree to the <a href="https://socialcli.app/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</label>
 <p class="expiry-note">Only the account owner may accept. Acceptance is required to enable features. You can sign in to delete your account or sign out without accepting.</p>'''
 
 
