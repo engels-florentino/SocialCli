@@ -4,7 +4,7 @@ Copy this line into Muse, Grok, Dots or another assistant that can run terminal 
 
 > Install SocialCli: https://socialcli.app/agents
 
-The assistant follows a compact bootstrap, verifies the published 0.3.0rc9 wheel from TestPyPI by SHA256 and installs it in an isolated environment. Dependencies come from normal PyPI. The pilot is not a stable production PyPI release; do not substitute a similarly named package or overwrite an existing installation silently.
+The assistant follows a compact bootstrap, verifies the published 0.3.0rc10 wheel from TestPyPI by SHA256 and installs it in an isolated environment. Dependencies come from normal PyPI. The pilot is not a stable production PyPI release; do not substitute a similarly named package or overwrite an existing installation silently.
 
 ## If your assistant still reports rc1
 
@@ -12,7 +12,7 @@ The server and the CLI installed in an assistant's environment update separately
 Ask the assistant to fetch https://socialcli.app/agents again using its
 terminal HTTP client, rather than reuse a previous conversation or search excerpt.
 It must follow the verified wheel installation instructions and run the selected
-executable with `--version`; the result must be exactly `0.3.0rc9`. If PATH still
+executable with `--version`; the result must be exactly `0.3.0rc10`. If PATH still
 selects an older installation, use the new environment's absolute executable for
 all commands. Never infer the installed version from the website.
 
@@ -39,7 +39,7 @@ Google is External / In production, but its sensitive YouTube scopes are not yet
 
 ## Commands and development
 
-Run socialcli --version to verify 0.3.0rc9. The packaged socialcli agent-guide provides offline setup, publish, schedule, inbox and error topics. The internal Python module is socialctl; socialctl remains a command alias.
+Run socialcli --version to verify 0.3.0rc10. The packaged socialcli agent-guide provides offline setup, publish, schedule, inbox and error topics. The internal Python module is socialctl; socialctl remains a command alias.
 
 For source development only:
 
