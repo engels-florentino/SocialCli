@@ -128,7 +128,7 @@ def render_preview(
             if mode == 'inbox':
                 lineas.append('Delivery: creator review — finish publishing in TikTok; not automatically scheduled.')
             elif mode == 'direct':
-                lineas.append('Delivery: direct public publication after approval and provider checks; not automatically scheduled.')
+                lineas.append('Delivery: TikTok Direct Post is disabled and excluded. Use mode: inbox for creator-reviewed inbox upload; the creator must finish publishing in TikTok.')
             else:
                 lineas.append('Delivery: TikTok mode unverified; inspect the explicit brand accounts.yml before approval.')
         if platform is Platform.INSTAGRAM and brand:

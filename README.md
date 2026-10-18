@@ -108,7 +108,7 @@ Each command group documents its options with `socialcli <group> --help`. The in
 
 ## Status and limitations
 
-Public source code does not grant production API access. Each platform imposes requirements, permissions, quotas and reviews. SocialCli **has no accredited TikTok production approval**. Direct Post requires an audit and still lacks the complete user experience controls described in [the technical review](docs/tiktok-review.md). Publishing this repository does not satisfy those requirements.
+Public source code does not grant production API access. Each platform imposes requirements, permissions, quotas and reviews. SocialCli **has no accredited TikTok production approval**. Direct Post is disabled and excluded from the current offer; creator-reviewed inbox upload is supported. Direct Post still lacks the complete user experience controls described in [the technical review](docs/tiktok-review.md). Publishing this repository does not satisfy those requirements.
 
 Metrics and management permissions are separate from publishing permissions. A valid connection does not demonstrate authorization for every feature. Check capabilities and verify remote results before retrying an uncertain operation.
 

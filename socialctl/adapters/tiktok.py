@@ -1,4 +1,10 @@
-"TikTok Content Posting API v2 with inbox and audited direct modes.\n\nInbox sends a draft for the creator to finish in TikTok; it does not report a\npublic post. Direct mode is blocked unless auditada is explicitly true. Before\ndirect publication, query creator_info and validate the supported privacy level\nand creator-specific duration limit. This implementation fixes direct privacy\nto PUBLIC_TO_EVERYONE; additional public-product UX controls remain incomplete.\n\nFILE_UPLOAD streams sequential chunks: 5–64 MB except a final chunk up to\n128 MB, at most 1000 chunks. Small files use one upload. A lost final-chunk\nresponse may mean acceptance; mark duplicate risk and require remote verification\nbefore retrying. Credentials travel in Authorization headers and are never\nincluded in diagnostic output. Upload success and publication confirmation are\nseparate states. Audit approval does not automatically change an earlier post's\nprivacy settings."
+"""TikTok Content Posting API v2 creator-reviewed inbox upload.
+
+Fresh Direct Post is disabled and excluded regardless of legacy audit settings.
+Retained direct-mode helpers do not enable that route. Inbox success remains
+pending creator confirmation. Upload response loss retains duplicate risk and
+requires remote verification before retrying; credentials stay out of diagnostics.
+"""
 
 from __future__ import annotations
 
@@ -235,12 +241,12 @@ def _consultar_creator_info(
 
 
 class TikTokAdapter(Adapter):
-    'Publish to TikTok through Content Posting API v2 in inbox or direct mode.'
+    'Upload creator-reviewed TikTok inbox drafts; fresh Direct Post is excluded.'
 
     platform = Platform.TIKTOK
 
     def validate(self, post: PlatformPost, brand: Brand) -> list[ValidationError]:
-        'Add TikTok account, upload mode and audit checks without network access.'
+        'Validate TikTok account, upload mode and stable scope without network access.'
         errores = super().validate(post, brand)
         cuenta = brand.cuentas.get("tiktok") or {}
         open_id = cuenta.get("open_id")
@@ -506,36 +512,15 @@ class TikTokAdapter(Adapter):
         return _PRIVACY_LEVEL_DESEADO, None
 
     def _comprobar_auditoria(self, brand: Brand, modo: str, valor_auditada: object) -> None:
-        'Reject direct publication unless the audit configuration is explicitly true.'
+        'Enforce the stable Direct Post exclusion before credentials or provider access.'
         if modo != "direct":
             return
 
-        auditada, reconocido = _interpretar_auditada(valor_auditada)
-        if auditada:
-            return
-
-        ruta = brand.raiz / "accounts.yml"
-        if reconocido:
-            raise AuditoriaRequerida(
-                f"tiktok.mode is 'direct', but the app is not audited "
-                f"(auditada: {valor_auditada!r} in {ruta}). Publishing this way "
-                'would restrict the video to private visibility; '
-                'later audit approval does not automatically make it public. Use mode: inbox, '
-                'or wait until TikTok approves your app audit and '
-                'then set auditada: true.'
-            )
-        # Valor no reconocido (ni true/false canónico, ni booleano, ni
-        # ausente): mensaje distinto para que quien configuró la cuenta
-        # note el error de tecleo, en vez de creer que ya dejó la cuenta
-        # marcada como "no auditada" a propósito.
         raise AuditoriaRequerida(
-            f"tiktok.mode is 'direct', but the 'auditada' value in {ruta} "
-            f"is not recognized ({valor_auditada!r}): treating the app as NOT "
-            'audited for safety to avoid restricting the video '
-            'to private visibility (later audit approval '
-            'does not automatically make it public). If your app audit is approved, '
-            'set auditada: true (a boolean, without '
-            'quotes) in accounts.yml.'
+            "TikTok Direct Post is disabled and excluded from the current offer, "
+            "regardless of auditada configuration. Use mode: inbox for supported "
+            "creator-reviewed inbox upload; the creator must finish publishing in TikTok. "
+            "No upload was attempted."
         )
 
     def _error(self, mensaje: str, *, riesgo_duplicado: bool = False) -> PostResult:

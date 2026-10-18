@@ -187,9 +187,10 @@ recorded follow-up; never upload the video again to retry a comment.
 
 TikTok defaults to `mode: inbox` in the brand's accounts.yml: the file goes directly
 to TikTok and the creator finishes from its inbox notification. Report **awaiting
-creator confirmation**, not published or scheduled. `mode: direct` requires an
-actually audited app, the required creator UX and permission checks. Never set
-`auditada: true` to bypass a failed check; configuration is not audit evidence.
+creator confirmation**, not published or scheduled. `mode: direct` is disabled and excluded
+from the current offer, regardless of `auditada`. Use creator-reviewed inbox
+upload; the creator must finish publishing in TikTok. Configuration is not
+provider approval evidence.
 
 SaaS Instagram publishing uses temporary hosting automatically when no
 `media_url_base` is configured. Independent credentials still need their own

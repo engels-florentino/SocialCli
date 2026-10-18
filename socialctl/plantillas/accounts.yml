@@ -27,7 +27,7 @@ tiktok:
   # by `socialcli auth tiktok` in .secrets/tiktok.json.
   open_id: ""
   # inbox  -> upload to inbox; you finish publishing in the app
-  # direct -> automatic publication ONLY after TikTok audit approval and
-  #           completion of required UX controls; see docs/tiktok-review.md
+  # direct -> disabled and excluded from the current offer, regardless of
+  #           auditada; use creator-reviewed inbox upload
   mode: inbox
   auditada: false

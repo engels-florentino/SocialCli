@@ -85,7 +85,7 @@ def _mock_creator_info(
     )
 
 
-# --- Los dos modos y la salvaguarda de auditoría ---------------------------
+# --- Supported inbox route and retained legacy helper coverage -------------
 
 
 @respx.mock
@@ -105,149 +105,54 @@ def test_modo_inbox_deja_el_post_pendiente_de_confirmacion(tmp_path, post):
     assert resultado.status is PostStatus.PENDIENTE_CONFIRMACION
     assert resultado.platform_id == "pid"
     assert "open TikTok" in resultado.error
+    request = respx.calls[0].request
+    body = json.loads(request.content)
+    assert str(request.url).endswith('/inbox/video/init/')
+    assert body['source_info'] == {'source': 'FILE_UPLOAD', 'video_size': 14, 'chunk_size': 14, 'total_chunk_count': 1}
+    assert 'post_info' not in body
 
 
 @respx.mock
-def test_modo_direct_con_auditoria_publica(tmp_path, post):
-    brand = _brand(tmp_path, "direct", auditada=True)
+def test_retained_creator_info_helper_accepts_supported_privacy_and_duration(post):
     creator_info = _mock_creator_info()
-    init = respx.post(f"{API}/video/init/").mock(
-        return_value=httpx.Response(
-            200,
-            json={"data": {"publish_id": "pid", "upload_url": "https://upload.example/x"}},
-        )
-    )
-    respx.put("https://upload.example/x").mock(return_value=httpx.Response(201))
-
     with httpx.Client() as client:
-        resultado = TikTokAdapter().publish(post, brand, client)
-
-    assert resultado.status is PostStatus.PUBLICADO
+        privacy, error = TikTokAdapter()._resolver_privacidad_y_duracion('fictional-token', post.media[0], client)
     assert creator_info.called
-    cuerpo = json.loads(init.calls[0].request.content)
-    assert cuerpo["post_info"]["privacy_level"] == "PUBLIC_TO_EVERYONE"
-    assert "#historia" in cuerpo["post_info"]["title"]
-    # Con un vídeo de 14 bytes (muy por debajo de 5 MB), debe subirse de una
-    # sola pieza: chunk_size == video_size y total_chunk_count == 1.
-    assert cuerpo["source_info"]["video_size"] == 14
-    assert cuerpo["source_info"]["chunk_size"] == 14
-    assert cuerpo["source_info"]["total_chunk_count"] == 1
-
-
-# --- Hallazgo 2 (auditoría fix-meta-tiktok, 2026-09-07): privacy_level ------
-# fijo sin consultar creator_info/query/. La cuenta puede no admitir
-# PUBLIC_TO_EVERYONE (cuenta privada, de un menor, etc.): en ese caso el
-# comportamiento correcto es NO publicar, nunca degradar en silencio a otro
-# nivel de privacidad.
+    assert privacy == 'PUBLIC_TO_EVERYONE'
+    assert error is None
 
 
 @respx.mock
-def test_modo_direct_llama_a_creator_info_antes_de_video_init(tmp_path, post):
-    """La consulta a creator_info/query/ es obligatoria en modo direct
-    (Content Posting API Reference - Query Creator Info, confirmado con
-    Context7) y debe hacerse ANTES de video/init/, no en paralelo ni
-    después. Verificado por el orden real de llamadas capturado por respx,
-    no solo por que ambas se hayan llamado.
-    """
-    brand = _brand(tmp_path, "direct", auditada=True)
-    creator_info = _mock_creator_info()
-    init = respx.post(f"{API}/video/init/").mock(
-        return_value=httpx.Response(
-            200,
-            json={"data": {"publish_id": "pid", "upload_url": "https://upload.example/x"}},
-        )
-    )
-    respx.put("https://upload.example/x").mock(return_value=httpx.Response(201))
-
+def test_retained_creator_info_helper_refuses_unsupported_privacy(post):
+    _mock_creator_info(privacy_level_options=['MUTUAL_FOLLOW_FRIENDS', 'SELF_ONLY'])
     with httpx.Client() as client:
-        resultado = TikTokAdapter().publish(post, brand, client)
-
-    assert resultado.status is PostStatus.PUBLICADO
-    assert creator_info.called and init.called
-    # `respx.calls` registra las peticiones en el orden real en que se
-    # hicieron: confirma que creator_info se llamó ANTES que video/init/,
-    # no solo que ambas se llamaron.
-    urls_en_orden = [str(llamada.request.url) for llamada in respx.calls]
-    assert urls_en_orden.index(f"{API}/creator_info/query/") < urls_en_orden.index(
-        f"{API}/video/init/"
-    )
+        privacy, result = TikTokAdapter()._resolver_privacidad_y_duracion('fictional-token', post.media[0], client)
+    assert privacy is None
+    assert result.status is PostStatus.ERROR
+    assert 'does not support' in result.error
+    assert 'PUBLIC_TO_EVERYONE' in result.error
+    assert 'MUTUAL_FOLLOW_FRIENDS' in result.error
 
 
 @respx.mock
-def test_modo_direct_sin_privacy_level_admitido_no_publica(tmp_path, post):
-    brand = _brand(tmp_path, "direct", auditada=True)
-    creator_info = _mock_creator_info(
-        privacy_level_options=["MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY"]
-    )
-    init = respx.post(f"{API}/video/init/").mock(
-        return_value=httpx.Response(
-            200,
-            json={"data": {"publish_id": "pid", "upload_url": "https://upload.example/x"}},
-        )
-    )
-
+def test_retained_creator_info_helper_refuses_excessive_duration(post):
+    _mock_creator_info(max_video_post_duration_sec=30)
     with httpx.Client() as client:
-        resultado = TikTokAdapter().publish(post, brand, client)
-
-    assert creator_info.called
-    # El punto central del hallazgo: si la cuenta no admite el nivel
-    # esperado, NUNCA se llama a video/init/ con otro nivel distinto -se
-    # aborta sin publicar-.
-    assert not init.called
-    assert resultado.status is PostStatus.ERROR
-    assert 'does not support' in resultado.error
-    assert "PUBLIC_TO_EVERYONE" in resultado.error
-    assert "MUTUAL_FOLLOW_FRIENDS" in resultado.error
+        privacy, result = TikTokAdapter()._resolver_privacidad_y_duracion('fictional-token', post.media[0], client)
+    assert privacy is None
+    assert result.status is PostStatus.ERROR
+    assert '45' in result.error
+    assert '30' in result.error
 
 
 @respx.mock
-def test_modo_direct_con_duracion_mayor_que_el_maximo_del_creador_no_publica(
-    tmp_path, post
-):
-    # El vídeo del fixture `post` dura 45s; si creator_info dice que esta
-    # cuenta admite, como mucho, 30s para un post directo (un límite por
-    # creador que puede ser menor que el estático de PLATFORM_SPECS, ver
-    # docstring de _resolver_privacidad_y_duracion), debe abortar sin
-    # publicar en vez de dejar que TikTok lo rechace después de subir los
-    # bytes.
-    brand = _brand(tmp_path, "direct", auditada=True)
-    creator_info = _mock_creator_info(max_video_post_duration_sec=30)
-    init = respx.post(f"{API}/video/init/").mock(
-        return_value=httpx.Response(
-            200,
-            json={"data": {"publish_id": "pid", "upload_url": "https://upload.example/x"}},
-        )
-    )
-
+def test_retained_creator_info_helper_reports_provider_failure(post):
+    respx.post(f'{API}/creator_info/query/').mock(side_effect=httpx.ConnectError('Connection refused'))
     with httpx.Client() as client:
-        resultado = TikTokAdapter().publish(post, brand, client)
-
-    assert creator_info.called
-    assert not init.called
-    assert resultado.status is PostStatus.ERROR
-    assert "45" in resultado.error
-    assert "30" in resultado.error
-
-
-@respx.mock
-def test_modo_direct_con_creator_info_caido_no_publica_y_no_lanza(tmp_path, post):
-    brand = _brand(tmp_path, "direct", auditada=True)
-    respx.post(f"{API}/creator_info/query/").mock(
-        side_effect=httpx.ConnectError("Connection refused")
-    )
-    init = respx.post(f"{API}/video/init/").mock(
-        return_value=httpx.Response(
-            200,
-            json={"data": {"publish_id": "pid", "upload_url": "https://upload.example/x"}},
-        )
-    )
-
-    with httpx.Client() as client:
-        resultado = TikTokAdapter().publish(post, brand, client)
-
-    assert not init.called
-    assert resultado.status is PostStatus.ERROR
-    assert "creator_info" in resultado.error
+        privacy, result = TikTokAdapter()._resolver_privacidad_y_duracion('fictional-token', post.media[0], client)
+    assert privacy is None
+    assert result.status is PostStatus.ERROR
+    assert 'creator_info' in result.error
 
 
 @respx.mock
@@ -304,15 +209,11 @@ def test_modo_direct_sin_auditoria_aborta_sin_llamar_a_la_api(tmp_path, post):
     with httpx.Client() as client:
         resultado = TikTokAdapter().publish(post, brand, client)
 
-    # La salvaguarda de auditoría (intocable) debe seguir actuando ANTES de
-    # cualquier llamada de red, incluida la nueva consulta a creator_info:
-    # ni siquiera esa consulta -de por sí inocua- debe hacerse si la app no
-    # está auditada.
+    # Stable exclusion runs before all provider access.
     assert not creator_info.called
     assert not init.called
     assert resultado.status is PostStatus.ERROR
-    assert "auditada" in resultado.error
-    assert "private" in resultado.error
+    assert "Direct Post is disabled and excluded" in resultado.error
 
 
 def test_la_salvaguarda_de_auditoria_es_una_excepcion_propia():
@@ -337,14 +238,7 @@ def _brand_direct_con_auditada(tmp_path, linea_auditada: str, token: str = "t"):
     return cargar_brand(tmp_path, "Histopast")
 
 
-# Hallazgo 1 (CRÍTICO) de la revisión de la Task 10: `bool(cuenta.get(
-# "auditada", False))` se saltaba la salvaguarda cuando `auditada` venía
-# entrecomillada en accounts.yml ("false", "no", ...), porque yaml.safe_load
-# la deserializa como CADENA no vacía, y bool() de cualquier cadena no
-# vacía es True en Python. Solo "true" (booleano o cadena, sin distinguir
-# mayúsculas ni espacios alrededor) debe dejar pasar la publicación; todo
-# lo demás -incluidos "false", "no", "si", "yes", 1, "1", 0, None y la
-# clave ausente- debe abortar ANTES de llamar a la API.
+# Legacy audit parsing remains strict; it never enables Direct Post.
 CASOS_AUDITADA = [
     pytest.param('auditada: "false"', False, id="cadena_false_entrecomillada"),
     pytest.param('auditada: "no"', False, id="cadena_no_entrecomillada"),
@@ -363,67 +257,13 @@ CASOS_AUDITADA = [
 ]
 
 
-@respx.mock
 @pytest.mark.parametrize("linea_auditada, se_espera_publicar", CASOS_AUDITADA)
-def test_interpretacion_estricta_de_auditada(
-    tmp_path, post, linea_auditada, se_espera_publicar
-):
+def test_interpretacion_estricta_de_auditada(tmp_path, linea_auditada, se_espera_publicar):
+    # Retain strict legacy configuration parsing; no value enables fresh Direct Post.
+    from socialctl.adapters.tiktok import _interpretar_auditada
     brand = _brand_direct_con_auditada(tmp_path, linea_auditada)
-    _mock_creator_info()
-    init = respx.post(f"{API}/video/init/").mock(
-        return_value=httpx.Response(
-            200,
-            json={"data": {"publish_id": "pid", "upload_url": "https://upload.example/x"}},
-        )
-    )
-    respx.put("https://upload.example/x").mock(return_value=httpx.Response(201))
-
-    with httpx.Client() as client:
-        resultado = TikTokAdapter().publish(post, brand, client)
-
-    if se_espera_publicar:
-        assert init.called
-        assert resultado.status is PostStatus.PUBLICADO
-    else:
-        # El punto central del hallazgo 1: si el valor no es
-        # inequívocamente verdadero, la API NUNCA debe llegar a llamarse.
-        assert not init.called
-        assert resultado.status is PostStatus.ERROR
-        assert "auditada" in resultado.error
-
-
-@respx.mock
-def test_auditada_con_valor_no_reconocido_da_un_mensaje_distinto_de_no_auditada(
-    tmp_path, post
-):
-    # "si" no es ni la forma canónica "true"/"false" ni un booleano de
-    # Python: probablemente sea un error de tecleo (alguien que pensó que
-    # "si" en español cuenta como verdadero), no una cuenta deliberadamente
-    # no auditada. El mensaje debe distinguir ambos casos para que quien
-    # configuró la cuenta note el error.
-    brand_no_reconocido = _brand_direct_con_auditada(tmp_path, 'auditada: "si"')
-    init = respx.post(f"{API}/video/init/").mock(
-        return_value=httpx.Response(200, json={"data": {}})
-    )
-    with httpx.Client() as client:
-        resultado_no_reconocido = TikTokAdapter().publish(post, brand_no_reconocido, client)
-    assert not init.called
-    assert resultado_no_reconocido.status is PostStatus.ERROR
-    assert "is not recognized" in resultado_no_reconocido.error
-
-
-@respx.mock
-def test_auditada_false_canonico_da_el_mensaje_estandar_de_no_auditada(tmp_path, post):
-    brand_reconocido = _brand_direct_con_auditada(tmp_path, "auditada: false")
-    init = respx.post(f"{API}/video/init/").mock(
-        return_value=httpx.Response(200, json={"data": {}})
-    )
-    with httpx.Client() as client:
-        resultado_reconocido = TikTokAdapter().publish(post, brand_reconocido, client)
-    assert not init.called
-    assert resultado_reconocido.status is PostStatus.ERROR
-    assert "is not recognized" not in resultado_reconocido.error
-    assert "is not audited" in resultado_reconocido.error
+    audited, _ = _interpretar_auditada(brand.cuentas['tiktok'].get('auditada'))
+    assert audited is se_espera_publicar
 
 
 @respx.mock
@@ -778,14 +618,7 @@ def test_el_token_nunca_aparece_ni_ante_un_fallo_de_red_inesperado(tmp_path, pos
     assert TOKEN_RECONOCIBLE not in (resultado.error or "")
 
 
-# --- Hallazgo I4 (revisión final): la salvaguarda de auditoría (y la falta
-# de `open_id`/un `mode` desconocido) solo se comprobaban al publicar; con
-# `mode: direct` y `auditada: false`, el preview decía "Problemas
-# detectados: 0" y el usuario aprobaba una publicación condenada a fallar.
-# Ahora `validate()` también las comprueba -sin tocar la red: la consulta a
-# creator_info/query/ sigue siendo solo de `_publicar`-, y la salvaguarda
-# SIGUE estando en `publish()` (no se ha quitado de ahí: `publish()` no
-# puede confiar en que `validate()` se haya llamado antes).
+# Validation and execution independently enforce the stable exclusion.
 
 
 def test_validate_detecta_falta_de_auditoria_en_modo_direct(tmp_path, post):
@@ -794,7 +627,7 @@ def test_validate_detecta_falta_de_auditoria_en_modo_direct(tmp_path, post):
     errores = TikTokAdapter().validate(post, brand)
 
     motivos = [e.motivo for e in errores]
-    assert any("is not audited" in m for m in motivos)
+    assert any("Direct Post is disabled and excluded" in m for m in motivos)
     # Con este `post` (vídeo 1080x1920, 45s: válido para TikTok) y una
     # cuenta por lo demás bien configurada, este es el ÚNICO problema: antes
     # del arreglo, `validate()` no veía ninguno (el preview diría "Problemas
@@ -802,12 +635,12 @@ def test_validate_detecta_falta_de_auditoria_en_modo_direct(tmp_path, post):
     assert len(errores) == 1
 
 
-def test_validate_no_marca_error_de_auditoria_si_esta_auditada(tmp_path, post):
+def test_validate_rejects_direct_even_when_audited(tmp_path, post):
     brand = _brand(tmp_path, "direct", auditada=True)
 
     errores = TikTokAdapter().validate(post, brand)
 
-    assert not any("auditada" in e.motivo for e in errores)
+    assert any("Direct Post is disabled and excluded" in e.motivo for e in errores)
 
 
 def test_validate_no_comprueba_auditoria_en_modo_inbox(tmp_path, post):
@@ -858,7 +691,7 @@ def test_publish_sigue_rechazando_la_falta_de_auditoria_aunque_nadie_llame_a_val
         resultado = TikTokAdapter().publish(post, brand, client)
 
     assert resultado.status is PostStatus.ERROR
-    assert "is not audited" in resultado.error
+    assert "Direct Post is disabled and excluded" in resultado.error
 
 
 @respx.mock
@@ -881,3 +714,31 @@ def test_message_vacio_no_da_un_error_sin_motivo(tmp_path, post):
     assert resultado.status is PostStatus.ERROR
     assert resultado.error
     assert "HTTP 400" in resultado.error
+
+
+@pytest.mark.parametrize('entry', ['validate', 'publish', '_publicar'])
+@pytest.mark.parametrize('auditada', [True, 'true', ' TRUE ', False, 'si', 1, None])
+def test_stable_direct_exclusion_precedes_all_external_access(tmp_path, post, monkeypatch, auditada, entry):
+    import socialctl.adapters.tiktok as tiktok
+    brand = crear_brand(tmp_path, 'Fictional')
+    brand.cuentas['tiktok'] = {'open_id': 'fictional-creator', 'mode': 'direct', 'auditada': auditada}
+    calls = []
+    def forbidden(*args, **kwargs):
+        calls.append('external-access')
+        raise AssertionError('Direct Post must be refused before token, network or upload')
+    monkeypatch.setattr(tiktok, 'obtener_token', forbidden)
+    monkeypatch.setattr(tiktok, '_consultar_creator_info', forbidden)
+    monkeypatch.setattr(tiktok, '_subir_chunks', forbidden)
+    monkeypatch.setattr(httpx.Client, 'send', forbidden)
+    adapter = TikTokAdapter()
+    if entry == 'validate':
+        errors = adapter.validate(post, brand)
+        assert any('Direct Post is disabled and excluded' in error.motivo for error in errors)
+    else:
+        # Each execution entry is invoked without any prior validate() call.
+        with httpx.Client() as client:
+            result = getattr(adapter, entry)(post, brand, client)
+        assert result.status is PostStatus.ERROR
+        assert 'Direct Post is disabled and excluded' in result.error
+        assert 'creator-reviewed inbox upload' in result.error
+    assert calls == []

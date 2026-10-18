@@ -179,3 +179,32 @@ def test_meta_inventory_diagnostics_profiles_and_content_insights_are_closed():
         assert not any(item["task"] == 12 for item in row["remaining"]), method
     assert any("meta insights" in item["command"] for item in rows["facebook.insights.get"]["implemented_scopes"])
     assert any("include-moderation" in item["command"] for item in rows["facebook.comments.list"]["implemented_scopes"])
+
+
+def test_tiktok_catalogue_separates_creator_review_from_excluded_direct_post():
+    rows = {row['id']: row for row in load_capabilities()['capabilities']}
+    inbox = rows['tiktok.inbox.upload']
+    assert inbox['enabled'] and inbox['availability'] == 'api'
+    assert inbox['required_scopes']['alternatives'] == ['video.upload']
+    assert inbox['implemented_scopes'][0]['handler'].endswith('TikTokAdapter.publish')
+    assert 'pending creator confirmation' in inbox['field_scope']
+    direct = rows['tiktok.direct-post']
+    assert direct['enabled'] is False
+    assert direct['implemented_scopes'] == [] and direct['remaining'] == []
+    assert 'excluded' in direct['field_scope']
+    assert 'not live approval evidence' in direct['source']['evidence']
+
+
+def test_youtube_owned_catalogue_handlers_name_actual_client_methods():
+    import importlib
+    handlers = [item['handler'] for row in load_capabilities()['capabilities']
+                for item in row['implemented_scopes'] if 'youtube_owned.py:' in item['handler']]
+    assert len(handlers) == 6
+    module = importlib.import_module('socialctl.management.youtube_owned')
+    for handler in handlers:
+        symbol = handler.split(':')[1]
+        assert symbol.startswith('YouTubeOwnedClient.')
+        target = module
+        for name in symbol.split('.'):
+            target = getattr(target, name)
+        assert callable(target)

@@ -1,6 +1,8 @@
 """Agent-facing delivery choices must not promise unattended cloud publishing."""
 import json
 
+import pytest
+
 from typer.testing import CliRunner
 
 from socialctl.brands import crear_brand
@@ -72,7 +74,7 @@ def test_packaged_native_examples_support_preview_and_local_reconciliation(tmp_p
     assert json.loads(result.stdout)['state'] == 'native_scheduled'
 
 
-def test_delivery_choices_distinguish_tiktok_inbox_from_audited_direct(tmp_path):
+def test_delivery_choices_distinguish_tiktok_inbox_from_excluded_direct(tmp_path):
     brand = crear_brand(tmp_path, 'Example')
     (brand.raiz / 'accounts.yml').write_text('tiktok:\n  open_id: creator-one\n')
     common = ['--brand', 'Example', '--root', str(tmp_path), '--json']
@@ -89,8 +91,8 @@ def test_delivery_choices_distinguish_tiktok_inbox_from_audited_direct(tmp_path)
     (brand.raiz / 'accounts.yml').write_text('tiktok:\n  open_id: creator-one\n  mode: direct\n  auditada: true\n')
     result = runner.invoke(app, ['delivery-options', *common])
     row = json.loads(result.stdout)['platforms']['tiktok']
-    assert row['selected_delivery'] == 'direct_post'
-    assert row['direct_post_enabled'] is True
+    assert row['selected_delivery'] == 'excluded_direct_post'
+    assert row['direct_post_enabled'] is False
     assert row['authorization_verified'] is False
 
 
@@ -110,8 +112,8 @@ def test_tiktok_direct_preview_cannot_look_like_inbox(tmp_path):
     post = Post(slug='clip', brand='Example', campaign=CampaignType.CLIP_VERTICAL,
                 platforms={Platform.TIKTOK: PlatformPost(platform=Platform.TIKTOK, body='Approved caption')})
     preview = render_preview(post, {}, brand=brand)
-    assert 'direct public publication' in preview
-    assert 'creator review' not in preview
+    assert 'Direct Post is disabled and excluded' in preview
+    assert 'creator-reviewed inbox upload' in preview
 
 
 def test_bootstrap_is_compact_and_topic_guides_work_offline(tmp_path,monkeypatch):
@@ -134,3 +136,35 @@ def test_instagram_preview_discloses_temporary_server_upload(tmp_path):
         platforms={Platform.INSTAGRAM:PlatformPost(platform=Platform.INSTAGRAM,body='Approved caption')})
     preview=render_preview(post,{},brand=brand)
     assert '15 minutes' in preview and 'temporary' in preview and 'florentino.pro' in preview
+
+
+@pytest.mark.parametrize('auditada', [True, 'true', ' TRUE ', False, 'si'])
+def test_public_tiktok_direct_is_excluded_without_token_or_network(tmp_path, monkeypatch, auditada):
+    import httpx
+    import yaml
+    import socialctl.adapters.tiktok as tiktok
+    calls = []
+    def forbidden(*args, **kwargs):
+        calls.append('token-or-network')
+        raise AssertionError('Direct Post must be refused before external access')
+    monkeypatch.setattr(tiktok, 'obtener_token', forbidden)
+    monkeypatch.setattr(httpx.Client, 'send', forbidden)
+    brand = crear_brand(tmp_path, 'Fictional')
+    (brand.raiz / 'accounts.yml').write_text(yaml.safe_dump({
+        'tiktok': {'open_id': 'fictional-creator', 'mode': 'direct', 'auditada': auditada}}))
+    common = ['--brand', 'Fictional', '--root', str(tmp_path)]
+    options = runner.invoke(app, ['delivery-options', *common, '--json'])
+    assert options.exit_code == 0, options.output
+    row = json.loads(options.stdout)['platforms']['tiktok']
+    assert row['direct_post_enabled'] is False
+    assert row['selected_delivery'] == 'excluded_direct_post'
+    assert row['delivery_status'] == 'excluded'
+    folder = brand.dir_posts / 'fictional-clip'
+    folder.mkdir()
+    (folder / 'post.yml').write_text(yaml.safe_dump({
+        'slug': 'fictional-clip', 'campaign': 'clip-vertical',
+        'platforms': {'tiktok': {'body': 'Fictional caption'}}}))
+    preview = runner.invoke(app, ['publish', 'fictional-clip', *common, '--only', 'tiktok', '--dry-run'])
+    assert 'Direct Post is disabled and excluded' in preview.output
+    assert 'creator-reviewed inbox upload' in preview.output
+    assert calls == []

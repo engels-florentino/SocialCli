@@ -496,7 +496,7 @@
         {
           "fields": "explicit owned channel ID with selected snippet,brandingSettings,status,localizations,contentDetails,statistics,topicDetails,contentOwnerDetails; distinct identity verification",
           "command": "content youtube-owned channel-show CHANNEL_ID --parts PARTS --brand BRAND",
-          "handler": "socialctl/management/youtube_owned.py:inspect_channel",
+          "handler": "socialctl/management/youtube_owned.py:YouTubeOwnedClient.inspect_channel",
           "tests": [
             "tests/test_youtube_owned_cli.py::test_owned_cli_named_reads_and_strict_unknown_schema"
           ]
@@ -1070,7 +1070,7 @@
         {
           "fields": "owned channel section stable IDs/ETags and snippet type/title/position, contentDetails playlists/channels; no invented pagination",
           "command": "content youtube-owned sections-list --brand BRAND",
-          "handler": "socialctl/management/youtube_owned.py:list_sections",
+          "handler": "socialctl/management/youtube_owned.py:YouTubeOwnedClient.list_sections",
           "tests": [
             "tests/test_youtube_owned.py::test_section_update_and_create_preserve_types_and_content"
           ]
@@ -1384,7 +1384,7 @@
         {
           "fields": "input owned playlist ID via discovery parent filter, part=snippet; output opaque composite image id and snippet playlistId/type/width/height; bounded partial list",
           "command": "content youtube-owned images-list PLAYLIST_ID --brand BRAND",
-          "handler": "socialctl/management/youtube_owned.py:list_images",
+          "handler": "socialctl/management/youtube_owned.py:YouTubeOwnedClient.list_images",
           "tests": [
             "tests/test_youtube_owned.py::test_playlist_images_use_discovery_parent_and_no_fabricated_etag"
           ]
@@ -1619,7 +1619,7 @@
         {
           "fields": "owned playlist IDs/snippet/status/localizations/contentDetails; bounded pagination and explicit partial reports",
           "command": "content youtube-owned playlists-list --brand BRAND",
-          "handler": "socialctl/management/youtube_owned.py:list_playlists",
+          "handler": "socialctl/management/youtube_owned.py:YouTubeOwnedClient.list_playlists",
           "tests": [
             "tests/test_youtube_owned.py::test_playlist_update_preserves_parts_and_conditional_intent"
           ]
@@ -2515,7 +2515,7 @@
         {
           "fields": "explicit owned playlistId; stable playlistItemId distinct from videoId, snippet positions/contentDetails/status; bounded pages/partial report",
           "command": "content youtube-owned items-list PLAYLIST_ID --brand BRAND",
-          "handler": "socialctl/management/youtube_owned.py:list_items",
+          "handler": "socialctl/management/youtube_owned.py:YouTubeOwnedClient.list_items",
           "tests": [
             "tests/test_youtube_owned.py::test_membership_dedup_uses_video_id_and_rejects_partial_list"
           ]
@@ -2688,7 +2688,7 @@
         {
           "fields": "exact owned id; explicit part allowlist snippet/status/localizations/contentDetails/processingDetails/statistics/recordingDetails/fileDetails/suggestions/player/topicDetails/liveStreamingDetails/paidProductPlacementDetails; defaultAudioLanguage readable",
           "command": "content youtube-owned video-show VIDEO_ID --parts PARTS --brand BRAND",
-          "handler": "socialctl/management/youtube_owned.py:inspect_video",
+          "handler": "socialctl/management/youtube_owned.py:YouTubeOwnedClient.inspect_video",
           "tests": [
             "tests/test_youtube_owned.py::test_video_inspection_exposes_selected_owner_fields_without_mutability"
           ]
@@ -5798,6 +5798,71 @@
       "implemented_scopes": [],
       "remaining": [],
       "limitation": "No API scheduling claim; Facebook and Instagram require independent verification even in a shared composer"
+    },
+    {
+      "id": "tiktok.inbox.upload",
+      "platform": "tiktok",
+      "api": "tiktok",
+      "api_version": "v2",
+      "http_method": "POST",
+      "endpoint": "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
+      "availability": "api",
+      "delivery": "normal",
+      "enabled": true,
+      "field_scope": "Creator-supplied original video FILE_UPLOAD to creator-reviewed inbox; accepted upload remains pending creator confirmation, not public or scheduled",
+      "required_scopes": {
+        "alternatives": [
+          "video.upload"
+        ],
+        "evidence": "Requested scope contract only; not evidence of actual account grants or provider production approval"
+      },
+      "eligibility": "Explicit complete preview and creator approval, authenticated exact creator identity and eligible video.upload grant; provider account/review restrictions still apply",
+      "source": {
+        "url": "https://developers.tiktok.com/docs/en/content-posting-api-reference-upload-video",
+        "observed_at": "2026-10-18",
+        "evidence": "Local stable-scope and existing adapter reconciliation; fictional regressions only, no new provider/live approval evidence"
+      },
+      "implemented_scopes": [
+        {
+          "fields": "Original FILE_UPLOAD with sequential chunks; PENDIENTE_CONFIRMACION requires creator to finish publishing in TikTok",
+          "command": "publish SLUG --brand BRAND --only tiktok --dry-run; publish SLUG --brand BRAND --only tiktok (after exact preview approval)",
+          "handler": "socialctl/adapters/tiktok.py:TikTokAdapter.publish",
+          "tests": [
+            "tests/test_adapter_tiktok.py::test_modo_inbox_deja_el_post_pendiente_de_confirmacion",
+            "tests/test_adapter_tiktok.py::test_modo_inbox_no_llama_a_creator_info",
+            "tests/test_agent_product.py::test_tiktok_complete_preview_discloses_human_finish_in_inbox"
+          ]
+        }
+      ],
+      "remaining": [],
+      "limitation": "Creator-reviewed inbox upload only. No automatic public publication, future scheduling or TikTok comments. Production approval and live upload/creator-completion evidence are not established by local tests. Preserve uncertain responses and reconcile without replay."
+    },
+    {
+      "id": "tiktok.direct-post",
+      "platform": "tiktok",
+      "api": "tiktok",
+      "api_version": "v2",
+      "http_method": "POST",
+      "endpoint": "https://open.tiktokapis.com/v2/post/publish/video/init/",
+      "availability": "api",
+      "delivery": "documentation_review",
+      "enabled": false,
+      "field_scope": "Fresh TikTok Direct Post is disabled and excluded from the current offer regardless of legacy mode=direct or auditada values",
+      "required_scopes": {
+        "alternatives": [
+          "video.publish"
+        ],
+        "evidence": "Separate provider contract; a grant or auditada configuration does not enable the excluded product route"
+      },
+      "eligibility": "Excluded from the current offer; no configuration, audit setting or approval bypass",
+      "source": {
+        "url": "https://developers.tiktok.com/docs/en/content-posting-api-reference-direct-post",
+        "observed_at": "2026-10-18",
+        "evidence": "Existing stable-scope exclusion enforced locally before credentials, provider access or upload; not live approval evidence"
+      },
+      "implemented_scopes": [],
+      "remaining": [],
+      "limitation": "Provider API existence is not an offered SocialCli function. Use creator-reviewed inbox upload instead. Retained helpers and historical read/reconciliation evidence do not enable new Direct Post or authorize replay of uncertain writes."
     },
     {
       "id": "tiktok.native-scheduling-ui",
