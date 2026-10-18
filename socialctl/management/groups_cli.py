@@ -144,7 +144,7 @@ def _write_new(path: Path, content: str) -> None:
 @group_app.command("prepare")
 def prepare(
     group_name: str = typer.Option(..., "--group-name", help="Visible target Group name."),
-    group_url: str = typer.Option(..., "--group-url", help="URL HTTPS exacta /groups/GRUPO."),
+    group_url: str = typer.Option(..., "--group-url", help="Exact HTTPS URL /groups/GROUP."),
     copy: str = typer.Option(..., "--copy", help="Exact supplied post text."),
     youtube_url: str = typer.Option(..., "--youtube-url", help="Link to the long-form documentary."),
     window_start: str = typer.Option(..., "--window-start", help="ISO 8601 start with timezone."),
@@ -209,7 +209,7 @@ def export(
     except (ChangeError, OSError, ValueError) as exc:
         _fail(str(exc))
     if output is not None:
-        typer.echo(f"Export local escrito: {output}")
+        typer.echo(f"Local export written: {output}")
 
 
 @group_app.command("handoff")

@@ -48,7 +48,7 @@ def render_story_preview(change) -> str:
         else "Facebook: Page Stories has a public API, but socialcli does not implement its separate flow yet; apply returns handoff_required without POST."
     )
     return (
-        "PREVIEW COMPLETO — Story independiente\n"
+        "FULL PREVIEW — standalone Story\n"
         + _json(change)
         + f"\n{delivery}"
         + "\nLocal media is not modified, generated or reencoded."

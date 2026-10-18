@@ -876,7 +876,7 @@ def schedule(
     except ScheduleError as exc:
         _fallar(str(exc))
     for entry in nuevas:
-        typer.echo(f"Programado: {entry.id} → {scheduled_at.isoformat()}")
+        typer.echo(f"Scheduled: {entry.id} → {scheduled_at.isoformat()}")
     typer.echo(f"Queue updated: {len(destinos)} entry/entries.")
 
 
@@ -896,7 +896,7 @@ def schedule_status(
         return
     for entry in entries:
         error = " — error recorded (details omitted)" if entry.last_error else ""
-        typer.echo(f"{entry.id} | {entry.scheduled_at.isoformat()} | {entry.status} | intentos={entry.attempts}{error}")
+        typer.echo(f"{entry.id} | {entry.scheduled_at.isoformat()} | {entry.status} | attempts={entry.attempts}{error}")
 
 
 @app.command("schedule-batch")
