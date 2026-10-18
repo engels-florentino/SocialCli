@@ -1402,19 +1402,21 @@ def test_sin_only_el_preview_no_marca_ninguna_exclusion(social, monkeypatch):
     assert 'not requested' not in resultado.stdout.lower()
 
 
-# --- Hallazgo I4 (revisión final): la salvaguarda de auditoría de TikTok
-# solo se comprobaba al publicar; con mode: direct y auditada: false, el
-# preview de --dry-run decía "Problemas detectados: 0" y el fallo solo
-# aparecía después de que el usuario aprobara. Ahora TikTokAdapter.validate()
-# también la comprueba, así que aparece ya en el preview, antes de aprobar.
+# Fresh TikTok Direct Post is excluded before approval, regardless of audit settings.
 
 
-def test_preview_de_tiktok_muestra_falta_de_auditoria_antes_de_aprobar(tmp_path):
-    brand = crear_brand(tmp_path, "Histopast")
+def test_preview_de_tiktok_rechaza_direct_post_antes_de_aprobar(tmp_path, monkeypatch):
+    brand = crear_brand(tmp_path, "Fictional")
     (brand.raiz / "accounts.yml").write_text(
-        "tiktok:\n  open_id: 'oid'\n  mode: direct\n  auditada: false\n",
+        "tiktok:\n  open_id: 'fictional-creator'\n  mode: direct\n  auditada: false\n",
         encoding="utf-8",
     )
+    calls = []
+    def forbidden_publish(*args, **kwargs):
+        calls.append('publish')
+        raise AssertionError('Excluded Direct Post must stop before publication')
+    from socialctl.adapters.tiktok import TikTokAdapter
+    monkeypatch.setattr(TikTokAdapter, 'publish', forbidden_publish)
     video = brand.raiz / "media" / "clip.mp4"
     subprocess.run(
         ["ffmpeg", "-y", "-f", "lavfi",
@@ -1434,12 +1436,13 @@ def test_preview_de_tiktok_muestra_falta_de_auditoria_antes_de_aprobar(tmp_path)
     )
 
     resultado = runner.invoke(app, [
-        "publish", "2026-09-07-prueba", "--brand", "Histopast",
+        "publish", "2026-09-07-prueba", "--brand", "Fictional",
         "--root", str(tmp_path), "--dry-run",
     ])
 
     assert 'Problems found: 0' not in resultado.stdout
-    assert 'not audited' in resultado.stdout
-    # No se publica nada (aborta antes de llegar al --dry-run): la
-    # aprobación nunca llega a pedirse sobre un post condenado a fallar.
+    assert 'Direct Post is disabled and excluded' in resultado.stdout
+    assert 'creator-reviewed inbox upload' in resultado.stdout
+    # Refuse before approval or adapter execution, even for a dry-run.
     assert resultado.exit_code == 1
+    assert calls == []
