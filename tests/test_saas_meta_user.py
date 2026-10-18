@@ -93,6 +93,7 @@ class GranularMetaProvider(MetaProvider):
         self.bad_scope = None
         self.page_id = '123'
         self.linked_ig = '456'
+        self.association = None
         self.accounts_response = None
 
     def __call__(self, request):
@@ -114,7 +115,7 @@ class GranularMetaProvider(MetaProvider):
             assert request.headers['authorization'] == 'Bearer USER-PRIVATE'
             assert request.url.params['fields'] == 'id,instagram_business_account'
             return httpx.Response(200, json={'id': self.page_id,
-                'instagram_business_account': {'id': self.linked_ig}})
+                'instagram_business_account': self.association if self.association is not None else {'id': self.linked_ig}})
         return super().__call__(request)
 
 
@@ -191,6 +192,36 @@ def test_granular_asset_revoked_after_preview_prevents_delete(tmp_path):
     graph.empty_accounts = True
     approved = proposal(client, connection)
     graph.bad_scope = 'instagram_manage_contents'
+    assert call(client, connection, 'mutate', **approved).status_code == 400
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('association', ['malformed', ['456']])
+def test_malformed_granular_page_association_is_sanitized_rejection(tmp_path, association):
+    graph = GranularMetaProvider()
+    client, _, _, connection = connected(tmp_path, graph)
+    approved = proposal(client, connection)
+    graph.empty_accounts = True
+    graph.association = association
+    response = call(client, connection, 'mutate', **approved)
+    assert response.status_code == 400
+    assert not graph.writes and 'PRIVATE' not in response.text
+
+
+@pytest.mark.parametrize('entries', [
+    [{'scope': 'instagram_basic', 'target_ids': ['456']}] * 2,
+    [{'scope': 'instagram_basic'}],
+    [{'scope': 'instagram_basic', 'target_ids': '456'}],
+    [{'scope': 'instagram_basic', 'target_ids': [{'id': '456'}]}],
+])
+def test_ambiguous_or_malformed_granular_targets_block_delete(tmp_path, entries):
+    graph = GranularMetaProvider()
+    client, _, _, connection = connected(tmp_path, graph)
+    approved = proposal(client, connection)
+    graph.empty_accounts = True
+    graph.metadata_patch = {'granular_scopes': entries + [
+        {'scope': s, 'target_ids': ['123' if s.startswith('pages_') else '456']}
+        for s in ('pages_show_list', 'pages_read_engagement', 'instagram_manage_contents')]}
     assert call(client, connection, 'mutate', **approved).status_code == 400
     assert not graph.writes
 

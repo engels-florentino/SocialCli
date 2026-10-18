@@ -117,8 +117,9 @@ def install_meta_user_route(app, connections, clock):
             page = providers.request('GET', f'{GRAPH}/{account["page_id"]}',
                 headers={'Authorization': 'Bearer ' + user['access_token']},
                 params={'fields': 'id,instagram_business_account'})
-            if (page.get('id') != account['page_id'] or
-                    (page.get('instagram_business_account') or {}).get('id') != account['id']):
+            association = page.get('instagram_business_account')
+            if (page.get('id') != account['page_id'] or not isinstance(association, dict)
+                    or association.get('id') != account['id']):
                 raise MetaError('Current Page and Instagram association could not be verified')
             return page
 
