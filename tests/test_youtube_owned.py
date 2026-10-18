@@ -104,6 +104,10 @@ class API:
             self.rows[resource].append(row)
         else:
             row = next(r for r in self.rows[resource] if r["id"] == body["id"])
+            # Observed playlists.update behavior: writing snippet without the
+            # translation map can remove separately stored translations.
+            if resource == "playlists" and "snippet" in body and "localizations" not in body:
+                row["localizations"] = {}
             if resource == "playlistItems" and "position" in body.get("snippet", {}):
                 ordered = sorted(self.rows[resource], key=lambda r: r["snippet"]["position"])
                 ordered.remove(row)
@@ -193,7 +197,117 @@ def test_playlist_update_preserves_parts_and_conditional_intent(env):
     assert result.status == "verified"
     assert api.writes[0].headers["If-Match"] == "playlist-etag"
     assert "channelId" not in json.loads(api.writes[0].content)["snippet"]
-    assert api.writes[0].url.params["part"] == "snippet,status"
+    assert api.writes[0].url.params["part"] == "localizations,snippet,status"
+
+
+@pytest.mark.parametrize("patch", [
+    {"status": {"privacyStatus": "unlisted"}},
+    {"snippet": {"title": "New title", "description": "New description"}},
+])
+def test_playlist_snippet_updates_preserve_existing_translation_end_to_end(env, patch):
+    from socialctl.management.owned_cli import render_owned_preview
+    api, _, store, _ = env
+    change = prepare(env, "playlist-update", playlist_id="playlist-1", patch=patch)
+    original_fingerprint = change.fingerprint
+    preview = render_owned_preview(store.load(change.id))
+    after_preview = json.loads(preview.split("\n", 1)[1].split("\nApproval covers", 1)[0])["after"]
+    result = apply(env, change)
+    assert api.rows["playlists"][0]["localizations"] == {
+        "en": {"title": "Keep title", "description": "Keep text"}}
+    assert result.status == "verified"
+    expected = {"en": {"title": "Keep title", "description": "Keep text"}}
+    assert change.after["localizations"] == expected
+    assert json.loads(api.writes[0].content)["localizations"] == expected
+    assert "localizations" in api.writes[0].url.params["part"].split(",")
+    assert result.journal[-1]["observed"]["localizations"] == expected
+    assert after_preview["localizations"] == expected
+    assert result.fingerprint == original_fingerprint
+    assert api.writes[0].headers["If-Match"] == "playlist-etag"
+    assert len(api.writes) == 1
+
+
+@pytest.mark.parametrize("difference", ["missing", "changed"])
+def test_playlist_unpatched_translation_readback_drift_stays_uncertain_without_replay(env, difference):
+    api, client, store, _ = env
+    change = prepare(env, "playlist-update", playlist_id="playlist-1", patch={"status": {"privacyStatus": "unlisted"}})
+    original_after, original_fingerprint = copy.deepcopy(change.after), change.fingerprint
+
+    def read(request):
+        if request.url.path.endswith("/playlists") and api.writes:
+            row = copy.deepcopy(api.rows["playlists"][0])
+            row["localizations"] = {} if difference == "missing" else {
+                "en": {"title": "Unexpected", "description": "Keep text"}}
+            return httpx.Response(200, json={"items": [row], "pageInfo": {"totalResults": 1, "resultsPerPage": 50}})
+
+    api.on_read = read
+    result = apply(env, change)
+    assert result.status == "uncertain" and result.verified is False
+    assert result.journal[-1]["matches"] is False
+    assert reconcile_owned(client, store, change.id).status == "uncertain"
+    assert apply(env, change).status == "uncertain"
+    assert result.after == original_after and result.fingerprint == original_fingerprint
+    assert len(api.writes) == 1
+
+
+@pytest.mark.parametrize("default_entry,default_patch,expected", [
+    ({"title": "Supplied title", "description": "Keep description"}, {},
+     {"title": "New title", "description": "New description"}),
+    ({"title": "Explicit title", "description": "Explicit text"}, {},
+     {"title": "Explicit title", "description": "Explicit text"}),
+    ({"title": "Supplied title", "description": "Keep description"},
+     {"es": {"title": "Explicit new title"}},
+     {"title": "Explicit new title", "description": "Keep description"}),
+])
+def test_playlist_title_update_exposes_exact_default_mirror_normalization(env, default_entry, default_patch, expected):
+    api = env[0]
+    api.rows["playlists"][0]["localizations"]["es"] = default_entry
+    patch = {"snippet": {"title": "New title", "description": "New description"}}
+    if default_patch:
+        patch["localizations"] = default_patch
+    change = prepare(env, "playlist-update", playlist_id="playlist-1", patch=patch)
+    assert change.after["localizations"]["es"] == expected
+    assert change.after["localizations"]["en"] == {"title": "Keep title", "description": "Keep text"}
+    assert apply(env, change).status == "verified"
+    assert json.loads(api.writes[0].content)["localizations"]["es"] == expected
+    assert len(api.writes) == 1
+
+
+def test_playlist_default_language_change_preserves_old_default_mirror_as_translation(env):
+    api = env[0]
+    api.rows["playlists"][0]["localizations"]["es"] = {
+        "title": "Supplied title", "description": "Keep description"}
+    change = prepare(env, "playlist-update", playlist_id="playlist-1", patch={
+        "snippet": {"defaultLanguage": "fr", "title": "Nouveau", "description": "Texte"}})
+    assert change.after["localizations"] == {
+        "es": {"title": "Supplied title", "description": "Keep description"},
+        "en": {"title": "Keep title", "description": "Keep text"}}
+    assert apply(env, change).status == "verified"
+
+
+@pytest.mark.parametrize("invalid", [None, {"en": None}, {"en": {"title": "Keep", "unknown": "value"}}])
+def test_playlist_unpatched_invalid_translations_fail_closed(env, invalid):
+    env[0].rows["playlists"][0]["localizations"] = invalid
+    with pytest.raises(ChangeError):
+        prepare(env, "playlist-update", playlist_id="playlist-1", patch={"status": {"privacyStatus": "unlisted"}})
+    assert not env[0].writes
+
+
+def test_playlist_translation_drift_after_preview_blocks_write_even_without_etag_change(env):
+    change = prepare(env, "playlist-update", playlist_id="playlist-1", patch={"status": {"privacyStatus": "unlisted"}})
+    env[0].rows["playlists"][0]["localizations"]["en"]["title"] = "Other editor"
+    with pytest.raises(ChangeError, match="changed since preview"):
+        apply(env, change)
+    assert not env[0].writes
+
+
+def test_playlist_preserved_translation_is_bound_to_approval_fingerprint(env):
+    change = prepare(env, "playlist-update", playlist_id="playlist-1", patch={"status": {"privacyStatus": "unlisted"}})
+    raw = json.loads(env[2].path_for(change.id).read_text())
+    raw["after"]["localizations"]["en"]["title"] = "Unapproved"
+    env[2].path_for(change.id).write_text(json.dumps(raw))
+    with pytest.raises(ChangeError):
+        apply(env, change)
+    assert not env[0].writes
 
 
 def test_channel_audience_is_separate_and_branding_preserves_omitted(env):
@@ -599,9 +713,14 @@ def test_unknown_existing_mutable_nested_field_is_not_discarded(env):
 
 
 def test_localization_patch_keeps_omitted_languages_and_fields(env):
+    env[0].rows["playlists"][0]["localizations"]["de"] = {"title": "Behalten", "description": "Text"}
     change = prepare(env, "playlist-update", playlist_id="playlist-1", patch={"localizations": {"en": {"title": "New"}, "fr": {"title": "Nouveau", "description": "Texte"}}})
     assert change.after["localizations"]["en"]["description"] == "Keep text"
     assert apply(env, change).status == "verified"
+    assert env[0].rows["playlists"][0]["localizations"] == {
+        "en": {"title": "New", "description": "Keep text"},
+        "fr": {"title": "Nouveau", "description": "Texte"},
+        "de": {"title": "Behalten", "description": "Text"}}
 
 
 @pytest.mark.parametrize("action,kwargs", [("playlist-delete", {"playlist_id": "playlist-1"}), ("section-delete", {"section_id": "section-1"})])

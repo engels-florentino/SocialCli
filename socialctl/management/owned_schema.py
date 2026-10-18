@@ -301,6 +301,11 @@ def build_after(edit, resource, before, account):
     parts = set(patch)
     if resource in {"playlists", "playlistItems", "channelSections", "playlistImages"}:
         parts.add("snippet")
+    if action == "playlist-update" and "localizations" in before:
+        # Writing the required snippet can remove translations even for a
+        # privacy-only update. Bind the complete preserved map to the preview,
+        # approval, single outgoing write and fresh readback.
+        parts.add("localizations")
     if resource == "channelSections":
         parts.add("contentDetails")
     after = {part: merge(editable(resource, part, before), patch.get(part, {})) for part in sorted(parts)}
@@ -315,6 +320,21 @@ def build_after(edit, resource, before, account):
             raise ResourceError("position requires a valid zero-based integer")
     if resource == "playlists":
         snip = after["snippet"]
+        previous = before.get("snippet", {})
+        language = snip.get("defaultLanguage")
+        translations = after.get("localizations", {})
+        if (action == "playlist-update" and language
+                and language == previous.get("defaultLanguage")
+                and language not in patch.get("localizations", {})
+                and {"title", "description"} <= previous.keys()
+                and {"title", "description"} <= snip.keys()
+                and translations.get(language) == {
+                    "title": previous["title"], "description": previous["description"]}):
+            # Only an exact redundant default-language mirror follows snippet
+            # edits. Explicit/nonmirror entries and former defaults remain
+            # translations. Show normalization before approval, never hide a
+            # changed entry behind the readback mirror exception.
+            translations[language] = {"title": snip["title"], "description": snip["description"]}
         if not snip.get("title", "").strip():
             raise ResourceError("invalid playlist title/description")
         status = after.get("status", {})
