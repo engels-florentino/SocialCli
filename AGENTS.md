@@ -6,7 +6,7 @@ Public Python CLI for creator-owned social accounts. Run `uv run pytest` and
 ## One product, one canonical workspace
 
 SocialCli SaaS is the current version of this product, not a separate project.
-Work from this repository root on `main`; the current source version is 0.3.0rc15.
+Work from this repository root on `main`; the current source version is 0.3.0rc16.
 The former `.worktrees/saas` and `.worktrees/shared-connect` checkouts have been
 consolidated here. Do not maintain a second permanent application checkout.
 Historical versions and tags remain migration/release evidence, not active copies.
