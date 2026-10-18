@@ -143,7 +143,7 @@ def test_public_prepare_apply_reconcile_use_scoped_server_only(tmp_path,monkeypa
     assert 'PRIVATE' not in ''.join(responses)+store.load(change.id).model_dump_json()
 
 
-@pytest.mark.parametrize('observed', ['changed', 'unchanged', 'unreadable', 'wrong_identity'])
+@pytest.mark.parametrize('observed', ['changed', 'unchanged', 'unreadable', 'wrong_identity', 'stale_once'])
 def test_public_provider_timeout_reconciles_after_pilot_expiry_without_receipt(tmp_path, monkeypatch, observed):
     from socialctl.brands import crear_brand
     from socialctl.models import Platform
@@ -180,11 +180,40 @@ def test_public_provider_timeout_reconciles_after_pilot_expiry_without_receipt(t
     if observed == 'unchanged': graph.hidden = False
     if observed == 'unreadable': graph.incomplete = True
     if observed == 'wrong_identity': graph.actor = '999'
+    if observed == 'stale_once':
+        graph.hidden = False
+        stale_reads = []
+        def eventually_consistent(self, request):
+            response = original(self, request)
+            if (request.method == 'GET' and request.url.path.endswith('/789/comments')
+                    and not stale_reads):
+                stale_reads.append(self.hidden)
+                # The status read saw the old state; every subsequent GET sees
+                # the applied hide, including the old client's fallback GET.
+                self.hidden = True
+            return response
+        monkeypatch.setattr(ModerationProvider, '__call__', eventually_consistent)
     result = reconcile_meta(client, store, change.id)
     assert result.receipt is None
     assert result.status == ('verified' if observed == 'changed' else 'uncertain')
     assert len(graph.writes) == 1
-    if observed == 'changed':
+    if observed == 'stale_once':
+        vault = server.app.state.saas.vault
+        def original_server_state():
+            with vault.read_transaction() as db:
+                rows = db.execute("SELECT id FROM records WHERE kind='saas-meta-operation'").fetchall()
+                assert len(rows) == 1
+                return vault.get(db, 'saas-meta-operation', rows[0]['id'])['payload']
+        assert graph.hidden is True and stale_reads == [False]
+        assert original_server_state()['status'] == 'uncertain'
+        # A later explicit public reconciliation must resolve the server guard
+        # before local verification permits a separately approved restoration.
+        result = reconcile_meta(client, store, change.id)
+        assert result.status == 'verified' and result.receipt is None
+        saved = original_server_state()
+        assert saved['status'] == 'verified_readback'
+        assert 'receipt' not in saved['response'] and len(graph.writes) == 1
+    if observed in {'changed', 'stale_once'}:
         graph.timeout = False
         enable(server, connection, now, monkeypatch)
         restore = prepare_meta(client, store, EDIT | {'hide': False})

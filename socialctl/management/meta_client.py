@@ -391,13 +391,11 @@ class MetaClient:
 
     def recover_receipt(self, edit, change):
         if self._uses_remote_user(edit):
-            try:
-                return self._remote_user.request('status', edit, change=change).get('receipt')
-            except MetaError as exc:
-                if (edit.action == 'comment-moderate' and getattr(exc, '_socialcli_error_code', None)
-                        in {'operation_unavailable', 'operation_uncertain'}):
-                    return None
-                raise
+            # Status already performs independent moderation reconciliation.
+            # Explicit server uncertainty must keep the local change unresolved:
+            # a later GET can see a newer state without releasing the server guard.
+            # A successful verified_readback response has no provider receipt.
+            return self._remote_user.request('status', edit, change=change).get('receipt')
         return None
 
     def require_write_capability(self, edit):
