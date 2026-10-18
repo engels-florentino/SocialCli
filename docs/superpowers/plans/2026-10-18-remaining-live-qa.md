@@ -99,8 +99,8 @@ produce one row per remaining method/field/variant with explicit AND/OR scope ch
   Source inspection already shows the selection path substitutes the Page token and the client defaults to Page mode. Design an operation-specific user-token route with ownership enforcement; do not simply relabel a Page token as a User token.
 - [x] If routing fails, add a fictional integration test at that boundary first; assert the delete uses the user actor, fails before DELETE when scope/token is missing, and existing publishing still selects its intended actor. Implemented in local commit `6242a67`; independent review and deployment remain separate gates.
 - [ ] Package/deploy through the existing release path; verify actual server and Muse versions. Never overwrite an existing immutable release or approve an owner's protected deployment.
-- [ ] Hand any renewed-consent link to the owner without opening it. Verify the returned grant explicitly includes the new permission; preserve existing connections.
-- [ ] Use a disposable Instagram fixture from Task 4 to verify API deletion and cleanup. UI deletion is fallback cleanup, not an API pass.
+- [x] Hand any renewed-consent link to the owner without opening it. Verify the returned grant explicitly includes the new permission; preserve existing connections. Owner completed consent; fresh permission and rc15 hosted User identity checks passed.
+- [x] Use a disposable Instagram fixture from Task 4 to verify API deletion and cleanup. Feed IMAGE passed with a successful API receipt and separate authenticated UI/account-list cleanup evidence. CLI `accepted_unverifiable` is preserved; this does not certify other media types. UI deletion is fallback cleanup, not an API pass.
 
 **Tests:** `uv run pytest tests/test_connection_providers.py tests/test_connection_service.py tests/test_saas_connections.py tests/test_meta_management.py -q`.
 
@@ -129,8 +129,8 @@ produce one row per remaining method/field/variant with explicit AND/OR scope ch
 **Interfaces:** Existing `verify_challenge(mode, provided_token, challenge, expected_token)` and
 `WebhookStore.ingest(raw, signature, app_secret)`; no event is authorization to write.
 
-- [ ] Publish one supplied image to the feed, verify returned media ID/type/caption and use it for Task 2 deletion. Do not repeat the passed Reel or Story publication tests.
-- [ ] GAP-070 covers the separate JPEG image Story path. Preserve the successful video Story exclusion; use only an owner-supplied valid JPEG and verified cleanup. Track API deletion by media type without creating additional already-passed formats solely to repeat publication.
+- [x] Publish one supplied image to the feed, verify returned media ID/type/caption and use it for Task 2 deletion. Exact JPEG feed variant passed on rc15; private evidence `instagram-image-live-verification.json`. Do not repeat it.
+- [ ] GAP-070 evidence correction: the previously verified Story used a JPEG image, not video. Its durable proposal, exact provider readback and UI cleanup record establish that image publication/listing already passed. Exclude it; audit the unproven video Story variant separately. A duplicate preparation was refused locally before any provider write. Track API deletion by media type without creating additional already-passed formats solely to repeat publication.
 - [ ] Audit the exposed Instagram comment hide/unhide and mention-read/reply proposals, absent from the old capability matrix. Use eligible consenting fixtures, confirm each scope/token contract, restore hidden state and remove only the temporary reply. The current mention handler requires a User token and shares the Task 2 routing dependency.
 - [ ] Audit existing subscribed fields, callback ownership and `pages_manage_metadata`/Instagram grants. Preserve original subscriptions; no blanket unsubscribe.
   Include Page `subscriptions` read, `subscription-set` and `subscription-remove` as separate cases; the current schema enables feed only. Never delete an existing real subscription to test cleanup.
