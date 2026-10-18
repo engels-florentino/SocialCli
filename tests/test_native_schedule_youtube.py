@@ -10,12 +10,12 @@ from socialctl.native_schedule.store import NativeStore
 from socialctl.native_schedule.youtube import schedule_youtube, reconcile_youtube, resume_youtube, YouTubeEligibility
 
 
-def setup(tmp_path, monkeypatch, existing=False, never_published=True):
+def setup(tmp_path, monkeypatch, existing=False, never_published=True, first_comment=None):
     monkeypatch.setattr('socialctl.management.youtube.obtener_token', lambda *a: 'token')
     video = tmp_path / 'clip.mp4'; video.write_bytes(b'video')
     brand = Brand(nombre='Test', raiz=tmp_path, cuentas={'youtube': {'channel_id':'channel'}})
     payload = dict(copy='description',content_origin='standalone',source_video_id=None,
-        visibility='public',media=[dict(path=str(video),origin='user')],first_comment=None,
+        visibility='public',media=[dict(path=str(video),origin='user')],first_comment=first_comment,
         options=dict(format='video',title='Title',categoryId='27',selfDeclaredMadeForKids=False))
     if existing: payload['options'].update(video_id='abcdefghijk',never_published=never_published)
     now = datetime.now(timezone.utc)
@@ -288,3 +288,36 @@ def test_expired_resumable_session_stays_uncertain_without_new_insert(tmp_path,m
     assert result.state=='uncertain'
     assert calls==['GET','PUT']
     assert ctx['store'].get(job.id).state=='uncertain'
+
+
+def test_historical_first_comment_keeps_session_reconciliation_and_resume_available(tmp_path, monkeypatch):
+    job, payload, ctx = setup(tmp_path, monkeypatch, first_comment='Historical approved first comment')
+    store = ctx['store']
+    claimed = store.claim(job.id, 'approved')
+    from socialctl.native_schedule.youtube import _checkpoint
+    _checkpoint(store, claimed, session_uri='https://www.googleapis.com/upload/session', total_bytes=5)
+    store.transition(job.id, 'dispatching', 'uncertain')
+    queries, chunks, posts = [], [], []
+    def handler(request):
+        if request.method == 'GET':
+            return httpx.Response(200, json={'items': [{'id': 'channel'}] if request.url.path.endswith('/channels') else [resource(payload)]})
+        if request.method == 'POST': posts.append(request)
+        assert request.method == 'PUT'
+        if request.headers['content-range'] == 'bytes */5':
+            queries.append(request)
+            assert request.read() == b''
+            return httpx.Response(308, headers={'Range': 'bytes=0-1'})
+        chunks.append(request.read())
+        assert request.headers['content-range'] == 'bytes 2-4/5'
+        return httpx.Response(200, json={'id': 'abcdefghijk'})
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    current = store.get(job.id)
+    assert schedule_youtube(current, payload, client=client, **ctx).state == 'uncertain'
+    assert not queries and not chunks and not posts
+    result = reconcile_youtube(current, payload, client=client, brand=ctx['brand'], store=store)
+    assert result.state == 'uncertain' and len(queries) == 1 and not chunks
+    result = resume_youtube(store.get(job.id), payload, client=client, **ctx)
+    assert result.state == 'pending_verification' and len(queries) == 2
+    assert chunks == [b'deo'] and posts == []
+    assert len(store.get_attempts(job.id)) == 1
+    assert store.get_payload(job.id) == payload

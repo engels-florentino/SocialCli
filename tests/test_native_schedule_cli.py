@@ -93,6 +93,7 @@ def test_submit_api_after_interruption_reports_checkpoint_without_new_requests(t
     import httpx
     from zoneinfo import ZoneInfo
     brand, data = fixture(tmp_path)
+    data['payload']['first_comment'] = None  # This fixture tests upload uncertainty, not follow-up.
     now = datetime.now(timezone.utc)
     data.update(route='api', dispatch_after=(now - timedelta(minutes=1)).isoformat(),
         publish_at=(now.astimezone(ZoneInfo('America/New_York')) + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0).isoformat())

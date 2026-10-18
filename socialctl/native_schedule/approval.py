@@ -51,6 +51,13 @@ def _decode_component(value: str) -> str:
 
 
 
+def native_api_followup_pending(payload: dict) -> str | None:
+    """Fresh native submissions cannot fulfill approved first comments yet."""
+    if payload.get('first_comment'):
+        return 'Native API first-comment delivery pending durable follow-up; no submission attempted'
+    return None
+
+
 def validate_payload(platform: str, payload: dict) -> None:
     """Validate content semantics separately from file provenance; never rewrite."""
     from socialctl.models import MediaAsset, MediaKind, Platform, PlatformPost

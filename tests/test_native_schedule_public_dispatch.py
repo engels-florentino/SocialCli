@@ -11,20 +11,34 @@ from socialctl.native_schedule.store import NativeStore
 from tests.test_native_schedule_cli import fixture, invoke, digest
 
 
-def prepared(tmp_path):
+def prepared(tmp_path, *, platform='facebook', first_comment=None, existing=False):
     brand, data = fixture(tmp_path)
     now = datetime.now(timezone.utc)
     data.update(route='api', dispatch_after=(now - timedelta(minutes=1)).isoformat(),
         publish_at=(now.astimezone(ZoneInfo('America/New_York')) + timedelta(days=2)).replace(
             hour=9, minute=0, second=0, microsecond=0).isoformat())
+    # Success/uncertainty fixtures approve no first comment; comment obligations
+    # are covered explicitly by the public pending-follow-up regressions below.
+    data['payload']['first_comment'] = first_comment
+    account = 'page-1' if platform == 'facebook' else 'channel'
+    data.update(platform=platform, account_id=account)
+    if platform == 'youtube':
+        (brand/'accounts.yml').write_text('youtube:\n  channel_id: channel\n')
+        data['payload']['options'] = dict(format='video', title='Title', categoryId='27', selfDeclaredMadeForKids=False)
+        if existing: data['payload']['options'].update(video_id='abcdefghijk', never_published=True)
+    elif first_comment:
+        data['payload'].update(content_origin='youtube_long', source_video_id='M3zbWgbb4lo')
     (brand / 'native.json').write_text(json.dumps(data))
     inventory = json.loads((brand / 'native-calendar.json').read_text())
-    inventory.update(coverage_start=(now-timedelta(days=1)).isoformat(), coverage_end=(now+timedelta(days=7)).isoformat())
+    inventory.update(coverage_start=(now-timedelta(days=1)).isoformat(), coverage_end=(now+timedelta(days=7)).isoformat(),
+        accounts=[dict(platform=platform, account_id=account, complete=True)])
     (brand / 'native-calendar.json').write_text(json.dumps(inventory))
     (brand / 'pilot.txt').write_text('Fictional account-specific pilot evidence')
     (brand / 'eligibility').mkdir()
-    (brand / 'eligibility/facebook.json').write_text(json.dumps(dict(version=1, platform='facebook',
-        account_id='page-1', api_enabled=True, page_pilot_verified=True, evidence_ref='pilot.txt')))
+    proof = dict(version=1, platform=platform, account_id=account, api_enabled=True, evidence_ref='pilot.txt')
+    proof.update({'page_pilot_verified': True} if platform == 'facebook' else
+        {'project_verified': True, 'studio_pilot_verified': True})
+    (brand / f'eligibility/{platform}.json').write_text(json.dumps(proof))
     approval = digest(invoke(tmp_path, 'prepare', 'native.json', '--dry-run').output)
     assert invoke(tmp_path, 'prepare', 'native.json', '--persist', '--approval-digest', approval).exit_code == 0
     assert invoke(tmp_path, 'approve', 'clip', '--approval-digest', approval).exit_code == 0
@@ -340,3 +354,88 @@ def test_public_instagram_carousel_preserves_preview_order_bytes_and_failures(tm
     count = len(writes)
     invoke(tmp_path, 'dispatch', 'clip', '--eligibility', 'pilot.json')
     assert len(writes) == count
+
+
+@pytest.mark.parametrize('command', ['submit-api', 'dispatch', 'deliver'])
+@pytest.mark.parametrize('platform,existing', [('facebook', False), ('youtube', False), ('youtube', True)])
+@pytest.mark.parametrize('with_comment', [False, True])
+def test_public_native_first_comment_pending_preserves_approval_without_claim(tmp_path, monkeypatch, command, platform, existing, with_comment):
+    from tests.test_native_schedule_youtube import resource
+    from socialctl.native_schedule import facebook
+    comment = ('🎥 Video completo en https://www.youtube.com/watch?v=M3zbWgbb4lo' if platform == 'facebook'
+               else 'Approved first comment') if with_comment else None
+    brand = prepared(tmp_path, platform=platform, first_comment=comment, existing=existing)
+    store = NativeStore(brand, brand='Histopast')
+    approved = store.get('clip')
+    payload = store.get_payload('clip')
+    assert payload['first_comment'] == comment
+    monkeypatch.setattr(facebook, 'obtener_token', lambda *a: 'fictional')
+    monkeypatch.setattr('socialctl.management.youtube.obtener_token', lambda *a: 'fictional')
+    writes = []
+    def send(client, request, **kwargs):
+        if request.method != 'GET': writes.append(request.method)
+        if 'googleapis.com' in request.url.host:
+            if request.url.path.endswith('/channels'):
+                return httpx.Response(200, json={'items': [{'id': 'channel'}]}, request=request)
+            if request.method == 'POST':
+                return httpx.Response(200, headers={'Location': 'https://www.googleapis.com/upload/session'}, request=request)
+            if request.method == 'PUT': return httpx.Response(200, json={'id': 'abcdefghijk'}, request=request)
+            item = resource(payload, when=approved.publish_at.isoformat())
+            return httpx.Response(200, json={'items': [item]}, request=request)
+        if request.method == 'GET':
+            item = ({'id': 'page-1'} if request.url.path.endswith('/me') else
+                {'id': 'video-123', 'from': {'id': 'page-1'}, 'description': payload['copy'],
+                 'published': False, 'scheduled_publish_time': approved.publish_at.isoformat()})
+            return httpx.Response(200, json=item, request=request)
+        if 'rupload.facebook.com' in request.url.host:
+            assert request.read() == b'video'
+            return httpx.Response(200, json={'success': True}, request=request)
+        form = dict(httpx.QueryParams(request.read().decode()))
+        if form['upload_phase'] == 'START':
+            return httpx.Response(200, json={'video_id': 'video-123',
+                'upload_url': 'https://rupload.facebook.com/video-upload/v26.0/video-123'}, request=request)
+        return httpx.Response(200, json={'success': True}, request=request)
+    monkeypatch.setattr(httpx.Client, 'send', send)
+    args = (['deliver', '--eligibility-dir', 'eligibility'] if command == 'deliver' else
+        [command, 'clip', '--eligibility', f'eligibility/{platform}.json'])
+    result = invoke(tmp_path, *args)
+    assert store.get_payload('clip') == payload
+    assert store.get('clip').approval_digest == approved.approval_digest
+    if with_comment:
+        assert result.exit_code == 1, result.output
+        assert writes == [] and store.get_attempts('clip') == [], result.output
+        if command == 'submit-api':
+            assert json.loads(result.stdout)['state'] == 'ui_required'
+            assert 'first-comment delivery pending durable follow-up' in result.output
+            assert store.get('clip').state == 'approved'
+        else:
+            assert store.get('clip').state == 'blocked'
+            assert any('first-comment delivery pending durable follow-up' in note['message']
+                for note in store.get_notices('clip'))
+    else:
+        assert result.exit_code == 0, result.output
+        assert store.get('clip').state == 'verifying'
+        assert len(store.get_attempts('clip')) == 1 and writes
+
+
+@pytest.mark.parametrize('command', ['submit-api', 'dispatch', 'deliver'])
+@pytest.mark.parametrize('platform', ['facebook', 'youtube'])
+def test_public_native_historical_comment_attempt_remains_uncertain_without_replay(tmp_path, monkeypatch, command, platform):
+    comment = ('🎥 Video completo en https://www.youtube.com/watch?v=M3zbWgbb4lo' if platform == 'facebook'
+               else 'Historical approved first comment')
+    brand = prepared(tmp_path, platform=platform, first_comment=comment)
+    store = NativeStore(brand, brand='Histopast')
+    payload = store.get_payload('clip')
+    claimed = store.claim('clip', 'approved')
+    store.checkpoint('clip', claimed.attempt_id, {'video_id': 'video-123' if platform == 'facebook' else 'abcdefghijk'})
+    store.transition('clip', 'dispatching', 'uncertain')
+    attempts = store.get_attempts('clip')
+    monkeypatch.setattr(httpx.Client, 'send', lambda *a, **k: pytest.fail('historical attempt must not resend'))
+    args = (['deliver', '--eligibility-dir', 'eligibility'] if command == 'deliver' else
+        [command, 'clip', '--eligibility', f'eligibility/{platform}.json'])
+    result = invoke(tmp_path, *args)
+    assert result.exit_code == 1, result.output
+    assert store.get('clip').state == 'uncertain'
+    assert store.get_payload('clip') == payload
+    assert store.get_attempts('clip') == attempts
+    assert 'first-comment delivery pending' not in result.output

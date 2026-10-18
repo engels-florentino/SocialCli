@@ -33,6 +33,17 @@ and every media format require their exact account/permission/public-route tests
 Keep unverified candidate routes explicitly gated; retain their outstanding QA
 cases until verified or explicitly removed from the offered product scope.
 
+Fresh Facebook/YouTube native API schedules and Instagram worker deliveries with
+an approved nonempty `first_comment` are blocked until durable follow-up execution
+is connected to the verified public media ID. This includes source-linked derived
+Reels and first comments on existing private YouTube videos. `submit-api`,
+`dispatch` and `deliver` preserve the approved comment and make no new attempt or
+provider mutation for these variants. A display label, retained payload or manual
+follow-up is not fulfillment of the API obligation; these variants remain pending.
+No-comment native submissions still require their exact candidate pilot evidence;
+this guard does not establish general availability. Historical scheduled/uncertain
+records retain readback and explicit session-resume paths without a new upload.
+
 TikTok Direct Post is disabled and excluded from the current offer. The supported
 posting mode is creator-reviewed draft upload with `video.upload`. Direct Post is
 a separate implementation and provider-review project, not an implicit condition

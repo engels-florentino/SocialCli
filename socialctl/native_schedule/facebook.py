@@ -12,7 +12,7 @@ from socialctl.brands import Brand
 from socialctl.auth import obtener_token
 from socialctl.models import Platform
 
-from .approval import verify_approval
+from .approval import native_api_followup_pending, verify_approval
 from .models import NativeJob
 from .store import NativeStore
 from .facebook_reels import FacebookReelDelivery, GRAPH, _safe_identifier
@@ -70,10 +70,13 @@ def schedule_facebook(
             or eligibility.api_enabled is not True or eligibility.page_pilot_verified is not True
             or not eligibility.evidence_ref or payload.get('options', {}).get('format') != 'reel'):
         return FacebookScheduleResult()
-    if store.get_attempts(job.id):
+    if job.state in {'uncertain', 'dispatching', 'verifying'} or store.get_attempts(job.id):
         target = _target(job, payload, store)
         remote_id = _safe_identifier(target) if target is not None else None
         return FacebookScheduleResult('uncertain', remote_id, 'Existing attempt requires reconciliation; never upload again')
+    pending = native_api_followup_pending(payload)
+    if pending:
+        return FacebookScheduleResult('ui_required', reason=pending)
     if payload.get('delivery_mode', 'native_schedule') != 'native_schedule':
         raise ValueError('Native Facebook submission requires native_schedule delivery mode')
     options = payload['options']

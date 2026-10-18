@@ -17,7 +17,7 @@ from socialctl.adapters.youtube import URL_UPLOAD, URL_VIDEOS, _TIPO_MIME_VIDEO
 from socialctl.brands import Brand
 from socialctl.management.metadata_parts import MetadataEdit, propose_parts, validate_status
 from socialctl.management.youtube_metadata import YouTubeMetadataClient
-from .approval import verify_approval
+from .approval import native_api_followup_pending, verify_approval
 from .models import NativeJob
 from .store import NativeStore
 
@@ -199,6 +199,9 @@ def schedule_youtube(job: NativeJob, payload: dict, *, brand: Brand, store: Nati
     if (job.route!='api' or eligibility.account_id!=job.account_id or not eligibility.api_enabled or
         not eligibility.project_verified or not eligibility.studio_pilot_verified or not eligibility.evidence_ref):
         return YouTubeScheduleResult('ui_required',reason='API eligibility unproven; reprepare and approve route=ui')
+    pending = native_api_followup_pending(payload)
+    if pending:
+        return YouTubeScheduleResult('ui_required', reason=pending)
     _future(job)
     metadata=_metadata(payload,job)
     api=YouTubeMetadataClient(brand,client)
