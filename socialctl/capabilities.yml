@@ -5318,7 +5318,7 @@
       "endpoint": "https://graph.facebook.com/v26.0/IG_USER_ID/content_publishing_limit",
       "availability": "api",
       "delivery": "normal",
-      "enabled": false,
+      "enabled": true,
       "field_scope": "quota_usage/config documented fields",
       "required_scopes": {
         "all_of": [
@@ -5584,13 +5584,29 @@
       "window_min": null,
       "window_max": null,
       "precision": null,
-      "candidate_api": {"create_endpoint": "https://youtube.googleapis.com/youtube/v3/videos", "create_source_url": "https://developers.google.com/youtube/v3/docs/videos", "read_endpoint": "https://youtube.googleapis.com/youtube/v3/videos?part=status&id=VIDEO_ID", "read_source_url": "https://developers.google.com/youtube/v3/docs/videos/list"},
+      "candidate_api": {
+        "create_endpoint": "https://youtube.googleapis.com/youtube/v3/videos",
+        "create_source_url": "https://developers.google.com/youtube/v3/docs/videos",
+        "read_endpoint": "https://youtube.googleapis.com/youtube/v3/videos?part=status&id=VIDEO_ID",
+        "read_source_url": "https://developers.google.com/youtube/v3/docs/videos/list"
+      },
       "delivery": "later",
       "enabled": false,
       "field_scope": "Long-form video and Short: status.publishAt on a private, never-published video; read back with videos.list(part=status). Window and precision unverified.",
-      "required_scopes": {"alternatives": ["https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl", "https://www.googleapis.com/auth/youtube.upload"], "evidence": "documented_requirements_not_grants"},
+      "required_scopes": {
+        "alternatives": [
+          "https://www.googleapis.com/auth/youtube",
+          "https://www.googleapis.com/auth/youtube.force-ssl",
+          "https://www.googleapis.com/auth/youtube.upload"
+        ],
+        "evidence": "documented_requirements_not_grants"
+      },
       "eligibility": "configured creator channel identity is configured and Studio was accessible 2026-09-20; effective scheduling grant, calendar visibility, window and precision remain unverified",
-      "source": {"url": "https://developers.google.com/youtube/v3/docs/videos", "observed_at": "2026-09-13", "evidence": "Registry evidence date retained; contract reconfirmed 2026-09-20. Official status.publishAt contract and videos.list readback; past timestamps publish immediately and must be rejected locally"},
+      "source": {
+        "url": "https://developers.google.com/youtube/v3/docs/videos",
+        "observed_at": "2026-09-13",
+        "evidence": "Registry evidence date retained; contract reconfirmed 2026-09-20. Official status.publishAt contract and videos.list readback; past timestamps publish immediately and must be rejected locally"
+      },
       "implemented_scopes": [],
       "remaining": [],
       "limitation": "Route is documented but disabled until durable native scheduling and identity-bound calendar verification exist; never treat a private draft as scheduled"
@@ -5610,13 +5626,29 @@
       "window_min": null,
       "window_max": null,
       "precision": null,
-      "candidate_api": {"create_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/feed", "create_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/feed", "read_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/scheduled_posts", "read_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/scheduled_posts"},
+      "candidate_api": {
+        "create_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/feed",
+        "create_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/feed",
+        "read_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/scheduled_posts",
+        "read_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/scheduled_posts"
+      },
       "delivery": "later",
       "enabled": false,
       "field_scope": "Text/link feed posts with published=false, scheduled_publish_time and unpublished_content_type=SCHEDULED; candidate read through PAGE_ID/scheduled_posts. Photos and feed-video scheduling are excluded from this row.",
-      "required_scopes": {"all_of": ["pages_show_list", "pages_read_engagement", "pages_manage_posts"], "evidence": "documented_requirements_not_grants"},
+      "required_scopes": {
+        "all_of": [
+          "pages_show_list",
+          "pages_read_engagement",
+          "pages_manage_posts"
+        ],
+        "evidence": "documented_requirements_not_grants"
+      },
       "eligibility": "configured creator Page is connected in Business Suite; token grants, per-format selector, window, precision and native calendar readback remain unverified",
-      "source": {"url": "https://developers.facebook.com/docs/graph-api/reference/page/feed", "observed_at": "2026-09-13", "evidence": "Historical registry source date retained; contract checked_at is structured separately as 2026-09-20"},
+      "source": {
+        "url": "https://developers.facebook.com/docs/graph-api/reference/page/feed",
+        "observed_at": "2026-09-13",
+        "evidence": "Historical registry source date retained; contract checked_at is structured separately as 2026-09-20"
+      },
       "implemented_scopes": [],
       "remaining": [],
       "limitation": "Blocked because account support, window and precision are unknown; candidate contract is not an active API route"
@@ -5636,13 +5668,30 @@
       "window_min": null,
       "window_max": null,
       "precision": null,
-      "candidate_api": {"create_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/photos", "finalize_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/feed", "create_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/photos", "read_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/scheduled_posts", "read_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/scheduled_posts"},
+      "candidate_api": {
+        "create_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/photos",
+        "finalize_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/feed",
+        "create_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/photos",
+        "read_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/scheduled_posts",
+        "read_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/scheduled_posts"
+      },
       "delivery": "later",
       "enabled": false,
       "field_scope": "Single/multi-photo feed candidate: upload photos then create scheduled /feed post with published=false, scheduled_publish_time and unpublished_content_type=SCHEDULED",
-      "required_scopes": {"all_of": ["pages_show_list", "pages_read_engagement", "pages_manage_posts"], "evidence": "documented_requirements_not_grants"},
+      "required_scopes": {
+        "all_of": [
+          "pages_show_list",
+          "pages_read_engagement",
+          "pages_manage_posts"
+        ],
+        "evidence": "documented_requirements_not_grants"
+      },
       "eligibility": "configured creator Page is connected in Business Suite; token grants, per-format selector, window, precision and native calendar readback remain unverified",
-      "source": {"url": "https://developers.facebook.com/docs/graph-api/reference/page/photos", "observed_at": "2026-09-13", "evidence": "Historical registry source date retained; contract checked_at is structured separately as 2026-09-20"},
+      "source": {
+        "url": "https://developers.facebook.com/docs/graph-api/reference/page/photos",
+        "observed_at": "2026-09-13",
+        "evidence": "Historical registry source date retained; contract checked_at is structured separately as 2026-09-20"
+      },
       "implemented_scopes": [],
       "remaining": [],
       "limitation": "Blocked because account support, window and precision are unknown; candidate contract is not an active API route"
@@ -5662,13 +5711,29 @@
       "window_min": null,
       "window_max": null,
       "precision": null,
-      "candidate_api": {"create_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/video_reels", "create_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/video_reels", "read_endpoint": null, "read_source_url": null},
+      "candidate_api": {
+        "create_endpoint": "https://graph.facebook.com/v26.0/PAGE_ID/video_reels",
+        "create_source_url": "https://developers.facebook.com/docs/graph-api/reference/page/video_reels",
+        "read_endpoint": null,
+        "read_source_url": null
+      },
       "delivery": "later",
       "enabled": false,
       "field_scope": "Candidate Reel creation contract with video_state=SCHEDULED and scheduled_publish_time; no native API read contract established",
-      "required_scopes": {"all_of": ["pages_show_list", "pages_read_engagement", "pages_manage_posts"], "evidence": "documented_requirements_not_grants"},
+      "required_scopes": {
+        "all_of": [
+          "pages_show_list",
+          "pages_read_engagement",
+          "pages_manage_posts"
+        ],
+        "evidence": "documented_requirements_not_grants"
+      },
       "eligibility": "CREATE_CONTENT Page task and effective grants required; configured creator-specific Reel scheduling, window and precision remain unverified",
-      "source": {"url": "https://developers.facebook.com/docs/graph-api/reference/page/video_reels", "observed_at": "2026-09-13", "evidence": "Historical registry source date retained; creation contract checked_at is 2026-09-20. No PagePost or scheduled_posts readback claim"},
+      "source": {
+        "url": "https://developers.facebook.com/docs/graph-api/reference/page/video_reels",
+        "observed_at": "2026-09-13",
+        "evidence": "Historical registry source date retained; creation contract checked_at is 2026-09-20. No PagePost or scheduled_posts readback claim"
+      },
       "implemented_scopes": [],
       "remaining": [],
       "limitation": "Disabled until staged upload persistence, no-reupload reconciliation and visible per-account verification exist"
@@ -5692,9 +5757,16 @@
       "delivery": "normal",
       "enabled": false,
       "field_scope": "Feed video scheduling in Meta Business Suite after live validation of format, window and exact calendar entry",
-      "required_scopes": {"alternatives": [], "evidence": "UI eligibility is separate from API authorization"},
+      "required_scopes": {
+        "alternatives": [],
+        "evidence": "UI eligibility is separate from API authorization"
+      },
       "eligibility": "configured creator Business Suite Planner accessible; feed-video selector and limits unverified",
-      "source": {"url": "https://www.youtube.com/watch?v=PQjvbXyMhkM", "observed_at": "2026-09-13", "evidence": "Registry evidence date retained; UI rechecked 2026-09-20. Official Meta for Business scheduling UI source; no exact feed-video API contract asserted"},
+      "source": {
+        "url": "https://www.youtube.com/watch?v=PQjvbXyMhkM",
+        "observed_at": "2026-09-13",
+        "evidence": "Registry evidence date retained; UI rechecked 2026-09-20. Official Meta for Business scheduling UI source; no exact feed-video API contract asserted"
+      },
       "implemented_scopes": [],
       "remaining": [],
       "limitation": "Assisted UI only; not a daemon and never a draft-as-scheduled shortcut"
@@ -5718,9 +5790,16 @@
       "delivery": "normal",
       "enabled": false,
       "field_scope": "Image, carousel and Reel scheduling through Meta Business Suite after live per-format validation",
-      "required_scopes": {"alternatives": [], "evidence": "UI eligibility is separate from instagram_content_publish and other API grants"},
+      "required_scopes": {
+        "alternatives": [],
+        "evidence": "UI eligibility is separate from instagram_content_publish and other API grants"
+      },
       "eligibility": "Instagram configured creator is connected and the Planner exposes Schedule; per-format eligibility, window, precision and displayed timezone remain unverified",
-      "source": {"url": "https://developers.facebook.com/docs/instagram-platform/content-publishing/", "observed_at": "2026-09-13", "evidence": "Registry evidence date retained; API and UI rechecked 2026-09-20. Official API review did not establish a future-time field or scheduled-calendar readback; live read-only Planner observation establishes only the assisted UI route"},
+      "source": {
+        "url": "https://developers.facebook.com/docs/instagram-platform/content-publishing/",
+        "observed_at": "2026-09-13",
+        "evidence": "Registry evidence date retained; API and UI rechecked 2026-09-20. Official API review did not establish a future-time field or scheduled-calendar readback; live read-only Planner observation establishes only the assisted UI route"
+      },
       "implemented_scopes": [],
       "remaining": [],
       "limitation": "No API scheduling claim; Facebook and Instagram require independent verification even in a shared composer"
@@ -5744,12 +5823,58 @@
       "delivery": "normal",
       "enabled": false,
       "field_scope": "Video scheduling in TikTok Studio; future date and exact account/calendar row must be observed",
-      "required_scopes": {"alternatives": [], "evidence": "Studio scheduling is independent of Direct Post audit and inbox mode"},
+      "required_scopes": {
+        "alternatives": [],
+        "evidence": "Studio scheduling is independent of Direct Post audit and inbox mode"
+      },
       "eligibility": "@histo.past showed scheduled rows for 2026-09-21 and 2026-09-22 at 10:00 on 2026-09-20; displayed timezone, window and precision remain unverified",
-      "source": {"url": "https://support.tiktok.com/es/using-tiktok/creating-videos/creator-tools-on-tiktok", "observed_at": "2026-09-13", "evidence": "Registry evidence date retained; UI rechecked 2026-09-20. Official Studio source plus read-only account observation; Direct Post schema reviewed without a future-time field"},
+      "source": {
+        "url": "https://support.tiktok.com/es/using-tiktok/creating-videos/creator-tools-on-tiktok",
+        "observed_at": "2026-09-13",
+        "evidence": "Registry evidence date retained; UI rechecked 2026-09-20. Official Studio source plus read-only account observation; Direct Post schema reviewed without a future-time field"
+      },
       "implemented_scopes": [],
       "remaining": [],
       "limitation": "Assisted UI only; c65ffe2dfe327af1, metrics, inbox mode and Direct Post audit do not block or prove Studio scheduling"
+    },
+    {
+      "id": "instagram.media.comments.set",
+      "platform": "instagram",
+      "api": "instagram",
+      "api_version": "v26.0",
+      "http_method": "POST",
+      "endpoint": "https://graph.facebook.com/v26.0/IG_MEDIA_ID",
+      "availability": "api",
+      "delivery": "normal",
+      "enabled": true,
+      "field_scope": "Enable or disable comments on owned media with comment_enabled; read is_comment_enabled as an exact boolean",
+      "required_scopes": {
+        "all_of": [
+          "instagram_basic",
+          "instagram_manage_comments",
+          "pages_read_engagement"
+        ],
+        "evidence": "documented_requirements_not_grants; Business Manager role assignments may additionally require ads_management or ads_read"
+      },
+      "eligibility": "Facebook Login mode; exact configured Page and linked professional Instagram identity; required Page tasks/app review and resource ownership must be verified",
+      "source": {
+        "url": "https://developers.facebook.com/documentation/instagram-platform/reference/instagram-media",
+        "observed_at": "2026-10-17",
+        "evidence": "Official IG Media updating and reading contracts checked through Context7; owned Reel disable and restoration verified separately in private QA evidence"
+      },
+      "implemented_scopes": [
+        {
+          "fields": "comment_enabled boolean only; preserve unknown state if is_comment_enabled is omitted or malformed",
+          "command": "meta prepare --platform instagram --brand BRAND --file EDIT.yml --dry-run; meta apply CHANGE_ID --brand BRAND after exact fingerprint approval",
+          "handler": "socialctl/management/meta_client.py:MetaClient.snapshot",
+          "tests": [
+            "tests/test_meta_management.py::test_instagram_comment_setting_uses_read_field_and_write_parameter",
+            "tests/test_meta_management.py::test_ig_only_documented_comment_enabled_patch"
+          ]
+        }
+      ],
+      "remaining": [],
+      "limitation": "No caption, biography or arbitrary media editing. Missing comment state blocks changes. Current token grants and provider review must be verified independently."
     }
   ],
   "notes": [

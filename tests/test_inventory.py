@@ -436,3 +436,37 @@ def test_cached_output_uses_one_snapshot_during_concurrent_replacement(tmp_path,
     assert [row["remote_id"] for row in data["items"]] == ["v1"]
     assert "raw" not in data["items"][0]
     assert len(loads) == 1
+
+
+@pytest.mark.parametrize('open_id,code,expected', [
+    ('owner-fictional','ok',None), ('another-owner','ok','identity_mismatch'),
+    ('secret-never-print','ok','identity_mismatch'),
+    ('owner-fictional','access_token_invalid','provider_error'),
+])
+def test_tiktok_identity_verifies_open_id_through_read_only_user_info(tmp_path,open_id,code,expected):
+    brand=brand_at(tmp_path)
+    brand.cuentas['tiktok']={'open_id':'owner-fictional'}
+    brand.guardar_secreto(Platform.TIKTOK,{'access_token':'secret-never-print'})
+    requests=[]
+    def provider(request):
+        requests.append(request)
+        assert request.method=='GET'
+        assert str(request.url)=='https://open.tiktokapis.com/v2/user/info/?fields=open_id'
+        assert request.headers['Authorization']=='Bearer secret-never-print'
+        return httpx.Response(200,json={'data':{'user':{'open_id':open_id}},
+            'error':{'code':code,'message':'secret-never-print'}})
+    result=auth_status(brand,Platform.TIKTOK,httpx.Client(transport=httpx.MockTransport(provider)))
+    assert result['failure_class']==expected
+    assert result['identity']['verified'] is (expected is None)
+    assert len(requests)==1
+    assert result['write_permissions_verified'] is False
+    assert 'secret-never-print' not in json.dumps(result)
+
+
+def test_tiktok_inventory_remains_explicitly_unsupported_without_graph_requests(tmp_path):
+    brand=brand_at(tmp_path)
+    brand.cuentas['tiktok']={'open_id':'owner-fictional'}
+    brand.guardar_secreto(Platform.TIKTOK,{'access_token':'secret-never-print'})
+    def forbidden(request): raise AssertionError('unsupported inventory must not call a provider')
+    with pytest.raises(ReadError,match='unsupported_platform'):
+        sync_content(brand,Platform.TIKTOK,httpx.Client(transport=httpx.MockTransport(forbidden)))

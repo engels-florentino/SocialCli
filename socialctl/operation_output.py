@@ -32,7 +32,10 @@ class OperationOutput:
                 return False
             typer.echo(safe_error(str(exc)))
             raise typer.Exit(1) from None
-        if self.started:
+        from socialctl.management.meta_comments import CommentAlreadyVerified
+        if isinstance(exc, CommentAlreadyVerified):
+            detail = error_for_code('operation_already_verified', read_only=False)
+        elif self.started:
             # Service entry can persist/send a write before a later failure. Even
             # a failed journal save cannot prove that the provider rejected it.
             detail = error_for_code('operation_uncertain', read_only=False)

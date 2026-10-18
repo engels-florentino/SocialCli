@@ -2,6 +2,7 @@
 import asyncio
 import secrets
 from html import escape
+from urllib.parse import quote
 from fastapi import HTTPException,Request
 from fastapi.responses import HTMLResponse,RedirectResponse
 from socialctl.saas import pages, permissions
@@ -14,6 +15,28 @@ from socialctl.saas import revocation
 class AccountLifecycle:
     def __init__(self,metadata,clock):
         self.metadata,self.vault,self.clock=metadata,metadata.vault,clock
+
+    def expandable_installation(self,db,user_id,installation_id):
+        record=self.vault.get(db,'saas-installation',installation_id)
+        if (record is None or record['expires']<=self.clock()
+                or record['payload'].get('user_id')!=user_id):
+            raise HTTPException(404,'Assistant unavailable.')
+        from socialctl.saas import consent
+        consent.require_privacy(self.metadata,db,user_id)
+        consent.require_assistant(record['payload'])
+        try:permissions.approved(record['payload'])
+        except ValueError:
+            raise HTTPException(403,'installation_permissions_invalid: Revoke and link this assistant again.') from None
+        return record
+
+    def add_platforms(self,db,user_id,installation_id,additions):
+        record=self.expandable_installation(db,user_id,installation_id)
+        current=permissions.approved(record['payload'])
+        # Additive inside one transaction: a stale form cannot remove a platform
+        # or overwrite an addition approved in another tab.
+        record['payload']['platform_access']=permissions.policy(set(current)|set(additions))
+        self.vault.put(db,'saas-installation',installation_id,record['payload'],
+                       expires=record['expires'],credential_hash=record['credential_hash'])
 
     def owned_records(self,db,user_id,*,kinds=None):
         owned=[]
@@ -172,10 +195,11 @@ class AccountLifecycle:
             elif kind=='saas-installation':
                 label=escape(data['label']);rid=escape(record_id,quote=True)
                 expired=' · Expired' if record['expires']<=self.clock() else ''
-                installations.append(f'<li><strong>{label}{expired}</strong>{permissions.summary_html(data)}<form method="post" action="/account/installations/{rid}/revoke">{pages.hidden("csrf",csrf)}<button class="secondary-button" type="submit">Revoke assistant</button></form></li>')
+                add_link=(f'<a class="text-link" href="/account/installations/{rid}/platforms">Add social platforms</a>' if not expired else '')
+                installations.append(f'<li><strong>{label}{expired}</strong>{permissions.summary_html(data)}{add_link}<form method="post" action="/account/installations/{rid}/revoke">{pages.hidden("csrf",csrf)}<button class="secondary-button" type="submit">Revoke assistant</button></form></li>')
         brand_panel=(f'<section aria-label="Brand"><h2>Brand</h2><form method="post" action="/account/brand" class="form-stack">{pages.hidden("csrf",csrf)}<label for="brand">Brand name</label><input id="brand" name="brand" maxlength="80" required value="{escape(brand["label"],quote=True)}"><button class="secondary-button" type="submit">Rename brand</button></form><p class="expiry-note">Existing connections stay active. Use this name when connecting another network; update your assistant’s local brand name separately.</p></section>' if brand else '')
         pending_notice='<p class="status-notice">Your Google connection is blocked in SocialCli. Google authorization cleanup is pending and retries automatically. An interrupted request whose credential has not arrived may require operator review. Connect again after cleanup completes.</p>' if pending else ''
-        return brand_panel+pending_notice+'<section aria-label="Connected accounts"><h2>Connected accounts</h2>'+('<ul class="account-list">'+''.join(connections)+'</ul>' if connections else '<p class="description">No social accounts connected yet. Ask your assistant to connect your account.</p>')+'</section><section aria-label="Assistants"><h2>Assistants</h2>'+('<ul class="account-list">'+''.join(installations)+'</ul>' if installations else '<p class="description">No assistants linked yet.</p>')+'<p class="expiry-note">Selections control access to SocialCli connections. They do not narrow provider permissions, including permissions for linked accounts or individual actions. Previously issued provider tokens may remain usable until they expire or are revoked at the provider. To change an assistant’s selected platforms, revoke it and link it again.</p></section><a class="text-link" href="/account/delete">Delete my account</a>'
+        return brand_panel+pending_notice+'<section aria-label="Connected accounts"><h2>Connected accounts</h2>'+('<ul class="account-list">'+''.join(connections)+'</ul>' if connections else '<p class="description">No social accounts connected yet. Ask your assistant to connect your account.</p>')+'</section><section aria-label="Assistants"><h2>Assistants</h2>'+('<ul class="account-list">'+''.join(installations)+'</ul>' if installations else '<p class="description">No assistants linked yet.</p>')+'<p class="expiry-note">Selections control access to SocialCli connections. They do not narrow provider permissions, including permissions for linked accounts or individual actions. Previously issued provider tokens may remain usable until they expire or are revoked at the provider. Use Add social platforms to approve additional access without disconnecting existing accounts. To remove platform access, revoke the assistant and link it again.</p></section><a class="text-link" href="/account/delete">Delete my account</a>'
 
 
 def run_deletions(metadata,identity,billing,clock,limit=100,*,budget=None):
@@ -234,6 +258,37 @@ def install_lifecycle_routes(app,settings,metadata,sessions,clock):
         app.state.saas_valid_form(request,form,purpose)
         user=await asyncio.to_thread(sessions.require_user,request,privacy=False)
         return user,form
+
+    @app.get('/account/installations/{installation_id}/platforms',response_class=HTMLResponse)
+    def platform_page(installation_id:str,request:Request):
+        url='/account/installations/'+quote(installation_id,safe='')+'/platforms'
+        try:user=sessions.require_user(request)
+        except HTTPException as exc:
+            if exc.status_code!=401:raise
+            return RedirectResponse('/account/login?next='+quote(url,safe=''),status_code=303)
+        with metadata.vault.read_transaction() as db:
+            record=lifecycle.expandable_installation(db,user.id,installation_id)
+        payload=record['payload'];current=permissions.approved(payload)
+        choices=''.join(f'<label for="allow-{p}"><input id="allow-{p}" type="checkbox" name="allow_{p}" value="1"> {escape(label)}</label>'
+                        for p,label in permissions.PLATFORMS.items() if p not in current)
+        form=(f'<form method="post" action="{escape(url,quote=True)}" class="form-stack">'
+              +pages.hidden('csrf',app.state.saas_csrf(request,'platforms:'+installation_id))
+              +pages.hidden('platform_access_version','1')
+              +'<fieldset class="permission-options"><legend>Additional platforms to allow</legend>'+choices+'</fieldset>'
+              +'<button class="primary-button" type="submit">Allow selected platforms</button></form>') if choices else '<p>All social platforms are already allowed for this assistant.</p>'
+        content='<p class="eyebrow">ASSISTANT ACCESS</p><h1 id="page-title">Add social platforms</h1><p class="description">Assistant: '+escape(payload['label'])+'</p>'+permissions.summary_html(payload)+(
+            '<p class="description">Choose additional SocialCli connections this assistant may access. Existing accounts stay connected. This does not connect a new account, narrow provider permissions or approve any publication. Return to your assistant after saving to connect the new platform.</p>')+form+'<a class="text-link" href="/account/">Back to account</a>'
+        return HTMLResponse(pages.page('Add social platforms',content))
+
+    @app.post('/account/installations/{installation_id}/platforms')
+    async def add_platforms(installation_id:str,request:Request):
+        user,form=await verified(request,'platforms:'+installation_id)
+        additions=permissions.from_form(form)['platforms']
+        def commit():
+            with metadata.vault.transaction() as db:
+                lifecycle.add_platforms(db,user.id,installation_id,additions)
+        await asyncio.to_thread(commit)
+        return RedirectResponse('/account/',status_code=303)
 
     @app.post('/account/installations/{installation_id}/revoke')
     async def revoke(installation_id:str,request:Request):

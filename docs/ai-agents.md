@@ -55,6 +55,17 @@ Send the user: “Open this link in your own browser to connect your account: <p
 
 ## SaaS candidate: understand connection renewal
 
+To add a platform omitted when the owner linked this assistant, run
+`socialcli account permissions --brand MyBrand --no-browser --json`.
+Give the returned `browser_url` directly to the owner. Only the owner may open
+the page and approve the additional platforms. Existing permissions, installation
+credentials and connected accounts are preserved. The command only reads status
+and provides a link; it does not approve access or connect a provider account.
+After the owner confirms, check `account status --json`, then run
+`connect PLATFORM --brand MyBrand --no-browser` for the new platform.
+Do not log out, revoke the assistant or disconnect YouTube to add another network.
+An older service must be updated before it can offer this flow.
+
 For an installed client and service supporting the SaaS protocol, use
 `socialcli connections --brand MyBrand --json` to read `renewal_status` without
 renewing credentials. The result preserves healthy platforms in `connections`
@@ -113,7 +124,7 @@ Capabilities describe documented support, not permissions already granted to an 
 
 ```yaml
 slug: my-video
-campaign: vertical-clip
+campaign: clip-vertical
 platforms:
   tiktok:
     body: "A story worth telling."
@@ -163,6 +174,18 @@ socialcli changes apply CHANGE_ID --brand MyBrand
 ```
 
 After the user approves the exact proposal, pass `--approval-fingerprint APPROVED_FINGERPRINT`. Noninteractive execution without explicit approval fails promptly; `--approval-stdin` explicitly opts into reading one approved line from stdin. Do not claim that `--yes` bypasses this gate. Remote changes need the appropriate management scopes in addition to publishing access.
+
+For Meta Page profile updates, every field in the patch must be returned by the
+profile read before preparation and application. An omitted field is unknown,
+not "currently not set"; do not silently replace `bio` with `about` or another
+field. Use the provider field and value actually approved by the owner.
+
+Meta management journals preserve sanitized errors, typed guidance, and request
+stage/HTTP status when available. A `write_intent` alone does not prove that a
+request reached Meta or that a response arrived. Older journals without these
+diagnostics cannot recover a lost response. Report `uncertain` as an attempted,
+unconfirmed change; do not claim it was applied. Reconciliation is read-only.
+A new ChangeSet cannot bypass an unresolved operation on the same target.
 
 ## Why use SocialCli with agents?
 
@@ -434,8 +457,9 @@ scope grants remain unknown and cannot satisfy `--require-scope`, which requires
 an explicit `--platform`. Identity verification and recorded scopes do not prove
 write permissions or provider approval. No token refresh, reconnection, remote
 mutation, publication, media generation or reencoding is performed. TikTok
-identity checks remain unsupported by this existing doctor integration and are
-reported as unavailable. Without `--media` or `--post`, file integrity is not
+identity checks compare the authenticated provider `open_id` with the configured
+account using a read-only request; they do not verify publishing permission.
+Without `--media` or `--post`, file integrity is not
 checked. A supplied image passing inspection alone does not prove eligibility
 for a particular publishing route; use `--post` for route validation.
 

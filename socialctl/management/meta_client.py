@@ -18,7 +18,7 @@ PROFILE_FIELDS = {
 CONTENT_FIELDS = {
     "post": "id,from,message,created_time,updated_time,is_published,scheduled_publish_time,permalink_url",
     "video": "id,from,title,description,created_time,updated_time,status,published,scheduled_publish_time,permalink_url",
-    "media": "id,owner,caption,media_type,media_product_type,timestamp,permalink,comment_enabled,alt_text,is_ai_generated",
+    "media": "id,owner,caption,media_type,media_product_type,timestamp,permalink,is_comment_enabled,alt_text,is_ai_generated",
 }
 
 # Only metrics already observed in the project's current Graph API reads are
@@ -61,32 +61,50 @@ class MetaClient:
         if self.token_mode not in {"facebook_page", "facebook_user"}:
             raise MetaError("unsupported token mode; Facebook Login required")
 
-    def request(self, method, path, *, params=None, data=None, files=None):
+    def request(self, method, path, *, params=None, data=None, files=None, require_success=False):
         # Paths are built only by resource methods. No redirect/remote next URL.
         if method not in {"GET", "POST", "DELETE"} or not re.fullmatch(r"(?:me|[0-9]+(?:_[0-9]+)?)(?:/[a-z_]+)?", path):
             raise MetaError("endpoint/method not allowed")
         writing = method != "GET"
+        diagnostic = {"method": method, "path": path, "stage": "transport"}
         try:
             with self.client.stream(method, f"{GRAPH}/{path}", params=params, data=data, files=files,
                     headers={"Authorization": f"Bearer {self._token}"}, timeout=30, follow_redirects=False) as response:
+                diagnostic["http_status"] = response.status_code
                 if not response.is_success:
+                    diagnostic["stage"] = "http"
                     error = (MetaUncertain if response.status_code >= 500 or response.is_redirect or response.status_code in {408, 429}
                              else MetaRejected) if writing else MetaError
                     from socialctl.management.meta_errors import graph_error
                     raise with_http_error_code(error(graph_error(response, method, path, self._token)), response, read_only=not writing)
                 raw = bytearray()
+                diagnostic["stage"] = "response_body"
                 for chunk in response.iter_bytes():
                     raw.extend(chunk)
                     if len(raw) > MAX_RESPONSE:
                         raise ValueError()
+                diagnostic["stage"] = "decode"
                 result = json.loads(raw)
-                if not isinstance(result, dict) or "error" in result:
-                    raise ValueError()
+                error = MetaUncertain if writing else MetaError
+                if not isinstance(result, dict):
+                    diagnostic["stage"] = "response_shape"
+                    raise error("Meta returned a non-object JSON response; outcome unverifiable")
+                if "error" in result:
+                    diagnostic["stage"] = "provider_error"
+                    from socialctl.management.meta_errors import graph_error
+                    raise error(graph_error(response, method, path, self._token, payload=result))
+                if require_success and result.get("success") is not True:
+                    diagnostic["stage"] = "acknowledgement"
+                    raise MetaUncertain("Meta did not confirm success=true; write will not be repeated")
                 return result
-        except MetaError:
+        except MetaError as exc:
+            exc._meta_diagnostic = diagnostic
             raise
         except Exception as exc:
-            raise with_error_code((MetaUncertain if writing else MetaError)("Meta: response/transport unverifiable"), exc, read_only=not writing) from None
+            failure = with_error_code((MetaUncertain if writing else MetaError)(
+                "Meta: response/transport unverifiable"), exc, read_only=not writing)
+            failure._meta_diagnostic = diagnostic
+            raise failure from None
 
     def listing(self, target, edge, *, fields, max_pages=10, params=None):
         meta_id(target, composite=True)
@@ -96,8 +114,10 @@ class MetaClient:
             raise MetaError("maximum pages must be between 1 and 50")
         return self._pages(f"{target}/{edge}", {"fields": fields, "limit": "100", **(params or {})}, max_pages)
 
-    def _pages(self, path, params, maximum=10):
+    def _pages(self, path, params, maximum=10, *, insight_ids=False):
         rows, seen, ids = [], set(), set()
+        if insight_ids and 'since' in params and 'until' in params:
+            seen.add((str(params['since']), str(params['until'])))
         for _ in range(maximum):
             try:
                 result = self.request("GET", path, params=params)
@@ -109,18 +129,57 @@ class MetaClient:
             data = result.get("data")
             if not isinstance(data, list) or len(data) > 100 or any(not isinstance(row, dict) for row in data):
                 raise MetaError("invalid/excessive Meta list")
+            page_ids = set()
             for row in data:
-                if row.get("id") in ids:
-                    raise MetaError("repeated IDs in paginated read")
-                if "id" in row:
-                    ids.add(meta_id(row["id"], composite=True))
-            rows.extend(data)
+                row_id = row.get("id")
+                if insight_ids:
+                    # Metric identity is the requested resource/name/period;
+                    # Graph can omit its redundant string ID.
+                    name, period = row.get("name"), row.get("period")
+                    if (not isinstance(name, str) or not re.fullmatch(r"[a-z_]{1,64}", name)
+                            or not isinstance(period, str) or not re.fullmatch(r"[a-z_0-9]{1,32}", period)
+                            or ("id" in row and row_id != f"{path}/{name}/{period}")):
+                        raise MetaError("insight ID does not match its resource, metric and period")
+                    row_key = (name, period)
+                elif "id" in row:
+                    meta_id(row_id, composite=True)
+                    row_key = row_id
+                else:
+                    rows.append(row)
+                    continue
+                if row_key in ids:
+                    if not insight_ids or row_key in page_ids:
+                        raise MetaError("repeated IDs in paginated read")
+                    from socialctl.management.meta_pagination import merge_metric
+                    index = next(i for i, prior in enumerate(rows)
+                                 if (prior.get("name"), prior.get("period")) == row_key)
+                    merged = merge_metric(rows[index], row)
+                    if merged is None:
+                        return {"data": rows, "complete": False, "absence_proven": False,
+                                "error": "Conflicting insight values across time pages; prior observations retained"}
+                    rows[index] = merged
+                    page_ids.add(row_key)
+                    continue
+                ids.add(row_key)
+                page_ids.add(row_key)
+                rows.append(row)
             paging = result.get("paging", {})
             if not isinstance(paging, dict):
                 raise MetaError("invalid pagination")
             if not paging.get("next"):
                 return {"data": rows, "complete": True, "absence_proven": False}
             cursor = (paging.get("cursors") or {}).get("after")
+            if cursor is None and insight_ids:
+                from socialctl.management.meta_pagination import next_time_params
+                following = next_time_params(paging['next'], f'{GRAPH}/{path}', params)
+                if following is None:
+                    break
+                window = (following['since'], following['until'])
+                if window in seen:
+                    break
+                seen.add(window)
+                params = following
+                continue
             if not isinstance(cursor, str) or not re.fullmatch(r"[A-Za-z0-9_=-]{1,2048}", cursor) or cursor in seen:
                 break
             seen.add(cursor)
@@ -235,10 +294,12 @@ class MetaClient:
             params["until"] = str(until)
         if breakdown is not None:
             params["breakdown"] = ",".join(breakdown)
-        result = self._pages(f"{target_id}/insights", params, max_pages)
+        result = self._pages(f"{target_id}/insights", params, max_pages, insight_ids=True)
         for row in result["data"]:
             if not isinstance(row.get("name"), str) or row["name"] not in names:
                 raise MetaError("insights response contains an unrequested metric")
+            if period is not None and row.get("period") != period:
+                raise MetaError("insights response contains an unrequested period")
             if not isinstance(row.get("values"), list) or any(not isinstance(value, dict) for value in row["values"]):
                 raise MetaError("insights response lacks verifiable values")
         return {"target_id": target_id, "metrics": names, **result}
@@ -333,9 +394,22 @@ class MetaClient:
         if edit.action == "profile-update":
             if edit.target_id != self.account_id:
                 raise MetaError("profile belongs to another account")
-            return self.profile(list(edit.patch))
+            profile = self.profile(list(edit.patch))
+            missing = sorted(set(edit.patch) - set(profile))
+            if missing:
+                raise MetaError("Meta did not return profile fields: " + ", ".join(missing) +
+                                "; missing does not mean unset. Cannot preview or verify this change.")
+            return profile
         kind = "video" if edit.action.startswith("video-") else None
         content = self.content(edit.target_id, kind)
+        if edit.action == "media-update":
+            # IG reads is_comment_enabled but accepts comment_enabled on POST.
+            # Keep the durable proposal's existing write-parameter schema; never
+            # turn an absent (e.g. album child) or malformed read into False.
+            enabled = content.get("is_comment_enabled")
+            if type(enabled) is not bool:
+                raise MetaError("Instagram comment setting is unavailable; cannot preview or verify this change")
+            return {"id": edit.target_id, "comment_enabled": enabled}
         if edit.action == "comment-moderate":
             result = self.comments(edit.target_id)
             rows = [r for r in result["data"] if r.get("id") == edit.comment_id]
@@ -359,10 +433,17 @@ class MetaClient:
                     raise MetaError('Facebook did not confirm that the connected Page can like this comment')
                 return {'id': edit.comment_id, 'media_id': edit.target_id,
                         'comment_text': matches[0].get('message'), 'liked_by_page': summary['has_liked']}
-            result = self.listing(edit.target_id, "likes", fields="id")
-            if not result["complete"]:
-                raise MetaError("incomplete likes; absence not inferred")
-            return {"id": edit.target_id, "liked_by_page": any(r.get("id") == self.page_id for r in result["data"])}
+            # Profile lists can omit the connected Page even after a successful
+            # like. Use the authenticated viewer's explicit state, not absence
+            # from a privacy-filtered list, for both preview and read-back.
+            result = self.request('GET', f'{edit.target_id}/likes',
+                                  params={'summary':'has_liked,can_like', 'limit':'0'})
+            summary = result.get('summary')
+            if not isinstance(summary, dict) or type(summary.get('has_liked')) is not bool:
+                raise MetaError('Page like state unavailable; absence is not inferred from a profile list')
+            if edit.action == 'like' and not summary['has_liked'] and summary.get('can_like') is not True:
+                raise MetaError('Facebook did not confirm that the connected Page can like this post')
+            return {"id": edit.target_id, "liked_by_page": summary['has_liked']}
         if edit.patch:
             if set(edit.patch) - set(content):
                 raise MetaError("resource did not return all fields to be edited")
@@ -384,21 +465,22 @@ class MetaClient:
         edit = self.validate_action(edit)
         if edit.action in {"profile-update", "post-update", "video-update", "media-update"}:
             data = {k: (str(v).lower() if type(v) is bool else v) for k, v in edit.patch.items()}
-            result = self.request("POST", edit.target_id, data=data)
+            result = self.request("POST", edit.target_id, data=data, require_success=True)
         elif edit.action in {"post-delete", "video-delete", "media-delete"}:
-            result = self.request("DELETE", edit.target_id)
+            result = self.request("DELETE", edit.target_id, require_success=True)
         elif edit.action == "schedule-reprogram":
-            result = self.request("POST", edit.target_id, data={"scheduled_publish_time": edit.scheduled_publish_time})
+            result = self.request("POST", edit.target_id, data={"scheduled_publish_time": edit.scheduled_publish_time}, require_success=True)
         elif edit.action == "schedule-cancel":
-            result = self.request("DELETE", edit.target_id)
+            result = self.request("DELETE", edit.target_id, require_success=True)
         elif edit.action == "comment-moderate":
             field = "is_hidden" if self.platform is Platform.FACEBOOK else "hide"
-            result = self.request("POST", edit.comment_id, data={field: str(edit.hide).lower()})
+            result = self.request("POST", edit.comment_id, data={field: str(edit.hide).lower()}, require_success=True)
         elif edit.action in {"like", "unlike"}:
-            result = self.request("POST" if edit.action == "like" else "DELETE", f"{edit.comment_id or edit.target_id}/likes")
+            result = self.request("POST" if edit.action == "like" else "DELETE", f"{edit.comment_id or edit.target_id}/likes", require_success=True)
         elif edit.action.startswith("subscription-"):
             result = self.request("POST" if edit.action == "subscription-set" else "DELETE", f"{edit.target_id}/subscribed_apps",
-                                  data={"subscribed_fields": ",".join(edit.subscribed_fields)} if edit.subscribed_fields else None)
+                                  data={"subscribed_fields": ",".join(edit.subscribed_fields)} if edit.subscribed_fields else None,
+                                  require_success=True)
         elif edit.action == "mention-reply":
             result = self.request("POST", f"{self.account_id}/mentions", data={"media_id": edit.media_id, "comment_id": edit.comment_id, "message": edit.message})
             try:
@@ -407,6 +489,4 @@ class MetaClient:
                 raise MetaUncertain("mention reply lacks ID; do not repeat") from None
         else:
             raise MetaError("handler not yet implemented")
-        if result.get("success") is not True:
-            raise MetaUncertain("Meta did not confirm success=true; write will not be repeated")
         return {"success": True, "target_id": edit.comment_id or edit.target_id}

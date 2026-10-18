@@ -37,7 +37,7 @@ async def read_form(request,origin):
 
 def safe_next(value):
     # Only exact local handoff paths; never arbitrary URLs or query strings.
-    return value if value=='/account/' or re.fullmatch(r'/(?:connect|account/(?:pair|migrate|connect))/[A-Za-z0-9_-]{16,64}',value or '') else '/account/'
+    return value if value=='/account/' or re.fullmatch(r'(?:/(?:connect|account/(?:pair|migrate|connect))/[A-Za-z0-9_-]{16,64}|/account/installations/[A-Za-z0-9_-]{16,64}/platforms)',value or '') else '/account/'
 
 
 def connection_sign_in(path):

@@ -64,6 +64,7 @@ def install_pairing_routes(app,settings,metadata,sessions,clock):
     def capabilities():
         return {'version':1,'service':'socialcli-saas','minimum_client':'0.3.0',
                 'pairing_seconds':PAIR_SECONDS,'oauth_seconds':600,'browser_account_selection':True,
+                'installation_platform_expansion':True,
                 'currency':'usd','monthly_amount':1000,'trial_days':14,
                 'platforms':sorted(settings.providers)}
 

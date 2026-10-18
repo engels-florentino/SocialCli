@@ -13,6 +13,7 @@ from socialctl.identity import IdentityClient, ReadError, remote_id
 from socialctl.inventory_sources import read_page
 from socialctl.media_registry import safe
 from socialctl.migration_files import write_json
+from socialctl.models import Platform
 from socialctl.scheduler import ScheduleStore
 
 
@@ -83,6 +84,8 @@ class InventoryStore:
 
 
 def sync_content(brand, platform, client, *, max_pages=20, resume=False):
+    if platform not in {Platform.YOUTUBE, Platform.FACEBOOK, Platform.INSTAGRAM}:
+        raise ReadError('unsupported_platform')
     if type(max_pages) is not int or not 1 <= max_pages <= 100:
         raise ReadError("invalid_page_limit")
     probe = IdentityClient(brand, platform, client)

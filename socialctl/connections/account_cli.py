@@ -171,6 +171,34 @@ def status(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(def
         typer.echo(str(exc) if isinstance(exc,ValueError) else 'Could not read SocialCli installation status.',err=True);raise typer.Exit(1)
 
 
+@account_app.command('permissions')
+def permissions(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root'),
+                no_browser:bool=typer.Option(False,'--no-browser'),json_output:bool=typer.Option(False,'--json')):
+    """Give the owner a link to add platforms without replacing this installation."""
+    try:
+        brand=cargar_brand(root,brand_name);saved=metadata(brand)
+        if not saved:raise ValueError('Not signed in. Run socialcli account login.')
+        with http_client() as transport:
+            client=SaaSClient(saved['service_url'],transport,allow_http_local=saved.get('development_local') is True)
+            installation_id=opaque(saved['connection_id'])
+            result=client.request('GET','/api/saas/v1/installations/'+installation_id,secret=keychain.get(brand,Slot.ACCOUNT,saved))
+            supported=client.request('GET','/api/saas/v1/capabilities')
+        if supported.get('installation_platform_expansion') is not True:
+            raise ValueError('This SocialCli service needs an update to add platforms. Keep existing connections; do not log out.')
+        url=client.origin+'/account/installations/'+installation_id+'/platforms'
+        typer.echo('Give this link directly to the owner: '+url,err=True)
+        typer.echo('The owner must open it and approve additional platforms. Existing connections stay active. After approval, run connect for the new platform. Do not open or approve it for the owner.',err=True)
+        if json_output:
+            typer.echo(json.dumps({'version':1,'status':'owner_action_required','browser_url':url,
+                                  'platform_access':result.get('platform_access')}))
+        if not no_browser:webbrowser.open(url)
+    except Exception as exc:
+        if json_output:
+            from socialctl.agent_errors import emit_error
+            emit_error(exc,read_only=True)
+        typer.echo(str(exc) if isinstance(exc,ValueError) else 'Could not read SocialCli permissions.',err=True);raise typer.Exit(1)
+
+
 @account_app.command('logout')
 def logout(brand_name:str=typer.Option(...,'--brand'),root:Path=typer.Option(default_root(),'--root')):
     """Revoke this agent installation; other installations keep their access."""

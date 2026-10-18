@@ -104,6 +104,8 @@ def apply(
     except (ChangeError, OSError, MetaError, ValueError) as exc:
         _fail(str(exc))
     typer.echo(render_result(result))
+    if result.status != 'verified':
+        raise typer.Exit(1)
 
 
 @meta_app.command("reconcile")

@@ -130,7 +130,7 @@ together and never reuse an approval for another proposal.
 `--require-scope` with `--platform`. They combine credential, media, account and
 stored-scope observations without requesting new permissions. Unknown scopes
 remain unknown; no probe proves permission to write. TikTok identity probing
-remains unavailable in this doctor integration. Use `--post` to validate a
+compares the provider open_id with the configured account using a read-only request. Use `--post` to validate a
 specific publishing route, including Instagram JPEG requirements.
 
 Noninteractive aggregate reads emit one final request-count/time summary on

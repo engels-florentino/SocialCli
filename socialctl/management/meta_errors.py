@@ -4,14 +4,16 @@ import re
 from socialctl.read_reports import safe_error
 
 
-def graph_error(response, method, path, token):
+def graph_error(response, method, path, token, *, payload=None):
     try:
-        raw = bytearray()
-        for chunk in response.iter_bytes(chunk_size=4096):
-            raw.extend(chunk)
-            if len(raw) > 65536:
-                raise ValueError()
-        error = json.loads(raw).get('error', {})
+        if payload is None:
+            raw = bytearray()
+            for chunk in response.iter_bytes(chunk_size=4096):
+                raw.extend(chunk)
+                if len(raw) > 65536:
+                    raise ValueError()
+            payload = json.loads(raw)
+        error = payload.get('error', {})
         if not isinstance(error, dict):
             error = {}
     except Exception:
@@ -41,3 +43,17 @@ def graph_error(response, method, path, token):
     elif code == 368:
         detail += '; Provider disallowed the action; check object/account eligibility.'
     return safe_error(detail, secrets=(token,))
+
+
+def failure_details(exc, *, token, read_only):
+    """Persist bounded diagnostics, never arbitrary exception bodies or headers."""
+    from socialctl.agent_errors import error_document
+    from socialctl.management.meta_schema import MetaError
+
+    detail = error_document(exc, read_only=read_only)
+    message = str(exc) if isinstance(exc, MetaError) else detail['message']
+    result = {'error': safe_error(message, secrets=(token,)), 'error_detail': detail}
+    diagnostic = getattr(exc, '_meta_diagnostic', None)
+    if diagnostic is not None:
+        result['diagnostic'] = diagnostic
+    return result

@@ -34,6 +34,10 @@ class CommentError(ChangeError):
     """Sanitized read, binding, approval or persistence failure."""
 
 
+class CommentAlreadyVerified(CommentError):
+    """Duplicate blocked before any new write intent or provider mutation."""
+
+
 class CommentRejected(CommentError):
     pass
 
@@ -556,7 +560,7 @@ def apply_comment(client, store, change_id, approval_digest):
                 if other.status in {'applying','uncertain'}:
                     raise CommentError(f'uncertain outcome pending in {other.id}; another UUID cannot replay it')
                 if other.status == 'verified' and _same_verified_operation(client, other, change):
-                    raise CommentError('identical verified operation already exists; do not duplicate')
+                    raise CommentAlreadyVerified('identical verified operation already exists; no new write started')
         if change.parent_id and client.find_comment(change.media_id, change.parent_id) != change.before["parent"]:
             raise CommentError("parent comment changed since preview")
         if change.before.get('reply_context'):

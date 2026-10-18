@@ -11,7 +11,8 @@ from socialctl.models import Platform
 
 YOUTUBE = "https://www.googleapis.com/youtube/v3"
 GRAPH = "https://graph.facebook.com/v26.0"
-SUPPORTED = (Platform.YOUTUBE, Platform.FACEBOOK, Platform.INSTAGRAM)
+TIKTOK = "https://open.tiktokapis.com/v2"
+SUPPORTED = (Platform.YOUTUBE, Platform.FACEBOOK, Platform.INSTAGRAM, Platform.TIKTOK)
 
 
 class ReadError(ValueError):
@@ -30,7 +31,7 @@ def configured_account(brand: Brand, platform: Platform) -> str:
     if platform not in SUPPORTED:
         raise ReadError("unsupported_platform")
     key = {Platform.YOUTUBE: "channel_id", Platform.FACEBOOK: "page_id",
-           Platform.INSTAGRAM: "ig_user_id"}[platform]
+           Platform.INSTAGRAM: "ig_user_id", Platform.TIKTOK: "open_id"}[platform]
     account = brand.cuentas.get(platform.value)
     if not isinstance(account, dict) or not account.get(key):
         raise ReadError("configuration_missing")
@@ -90,9 +91,13 @@ class IdentityClient:
     def get(self, endpoint: str, params: dict):
         allowed = {"channels", "playlistItems", "videos"} if self.platform is Platform.YOUTUBE else {
             "me", f"{self.account_id}/videos", f"{self.account_id}/media"}
+        if self.platform is Platform.TIKTOK:
+            allowed = {'user/info/'}
         if endpoint not in allowed:
             raise ReadError("endpoint_not_allowed")
         base = YOUTUBE if self.platform is Platform.YOUTUBE else GRAPH
+        if self.platform is Platform.TIKTOK:
+            base = TIKTOK
         try:
             response = self.client.get(f"{base}/{endpoint}", params=params,
                 headers={"Authorization": f"Bearer {self._token}"}, timeout=30,
@@ -119,9 +124,18 @@ class IdentityClient:
             raise ReadError("provider_error")
         try:
             data = response.json()
-            if not isinstance(data, dict) or "error" in data:
+            if not isinstance(data, dict):
+                raise ValueError()
+            if self.platform is Platform.TIKTOK:
+                if not isinstance(data.get('error'), dict) or not isinstance(data['error'].get('code'), str):
+                    raise ValueError()
+                if data['error']['code'] != 'ok':
+                    raise ReadError('provider_error')
+            elif 'error' in data:
                 raise ValueError()
             return data
+        except ReadError:
+            raise
         except Exception:
             raise ReadError("invalid_response") from None
 
@@ -138,6 +152,13 @@ class IdentityClient:
             related = details.get("relatedPlaylists") if isinstance(details, dict) else None
             self.uploads_playlist = related.get("uploads") if isinstance(related, dict) else None
             page = None
+        elif self.platform is Platform.TIKTOK:
+            data = self.get('user/info/', {'fields':'open_id'})
+            payload = data.get('data')
+            row = payload.get('user') if isinstance(payload, dict) else None
+            if not isinstance(row, dict):
+                raise ReadError('invalid_response')
+            authenticated, page = row.get('open_id'), None
         else:
             fields = "id,instagram_business_account" if self.platform is Platform.INSTAGRAM else "id"
             row = self.get("me", {"fields": fields})

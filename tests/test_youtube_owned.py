@@ -142,6 +142,43 @@ def apply(env, change):
     return apply_owned(env[1], env[2], change.id, change.fingerprint)
 
 
+@pytest.mark.parametrize('prior_state', ['verified', 'uncertain', 'applying'])
+def test_expired_verified_history_does_not_block_unrelated_new_operation(env, prior_state):
+    from socialctl.youtube_data import _tombstone
+    api, _, store, _ = env
+    old = prepare(env, 'video-delete', video_id='video-1')
+    old.status = prior_state
+    store.path_for(old.id).write_text(json.dumps(_tombstone(old.model_dump(mode='json'))))
+    new = prepare(env, 'playlist-create', patch={
+        'snippet': {'title': 'New QA playlist', 'description': 'Temporary'},
+        'status': {'privacyStatus': 'private'},
+    })
+    with pytest.raises(ChangeError, match='blocked against replay'):
+        store.load(old.id)
+    if prior_state == 'verified':
+        assert apply(env, new).status == 'verified'
+        assert len(api.writes) == 1
+    else:
+        with pytest.raises(ChangeError, match='blocked against replay'):
+            apply(env, new)
+        assert not api.writes
+
+
+@pytest.mark.parametrize('patch', [
+    {'id': '00000000-0000-0000-0000-000000000000'},
+    {'fingerprint': 'invalid'}, {'replay_blocked': False},
+    {'prior_state': 'partial'}, {'user_input': {'edit': {'action': 'unknown'}}},
+])
+def test_malformed_or_unresolved_history_cannot_be_skipped(env, patch):
+    from socialctl.youtube_data import _tombstone
+    old = prepare(env, 'video-delete', video_id='video-1')
+    old.status = 'verified'
+    raw = _tombstone(old.model_dump(mode='json'))
+    raw.update(patch)
+    env[2].path_for(old.id).write_text(json.dumps(raw))
+    assert env[2].completed_history(old.id) is False
+
+
 def test_playlist_update_preserves_parts_and_conditional_intent(env):
     api, _, store, _ = env
     change = prepare(env, "playlist-update", playlist_id="playlist-1", patch={"snippet": {"title": "New title"}, "status": {"privacyStatus": "unlisted"}})

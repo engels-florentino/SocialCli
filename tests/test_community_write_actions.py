@@ -99,6 +99,25 @@ def test_after_write_persistence_failure_requires_reconcile(tmp_path,monkeypatch
     assert store.load(change.id).status=='applying'
 
 
+def test_duplicate_verified_comment_is_reported_as_not_sent(tmp_path,monkeypatch):
+    from socialctl.management.meta_comments import prepare_comment
+    from socialctl.models import Platform
+    brand,api,store,change,command=prepared(tmp_path,monkeypatch,'meta')
+    common=['--brand',brand.nombre,'--root',str(tmp_path),'--json']
+    first=runner.invoke(app,[*command,'apply',change.id,*common,'--approval-fingerprint',change.fingerprint])
+    assert first.exit_code==0
+    import socialctl.management.meta_comments as mod
+    client=mod.MetaCommentsClient(brand, Platform.FACEBOOK,
+        httpx.Client(transport=httpx.MockTransport(api)))
+    duplicate=prepare_comment(client,store,media_id='789',text='Exact supplied text')
+    result=runner.invoke(app,[*command,'apply',duplicate.id,*common,'--approval-fingerprint',duplicate.fingerprint])
+    assert result.exit_code==1
+    assert json.loads(result.stdout)['error']['code']=='operation_already_verified'
+    assert store.load(duplicate.id).status=='proposed'
+    assert not store.load(duplicate.id).journal
+    assert len(api.writes)==1
+
+
 @pytest.mark.parametrize('command',[['comments'],['content','youtube-community']])
 @pytest.mark.parametrize('operation',['apply','reconcile','status'])
 def test_json_missing_workspace_is_structured_before_remote_calls(tmp_path,command,operation):

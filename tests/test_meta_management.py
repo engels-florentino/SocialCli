@@ -94,7 +94,8 @@ class Graph:
                 {"name": "views", "period": "day", "values": [{"value": 11, "end_time": "2026-09-13T00:00:00+0000"}]},
             ]})
         if path == "123_789/likes":
-            return httpx.Response(200, json={"data": [{"id": "123"}] if self.liked else []})
+            return httpx.Response(200, json={"data": [], "summary": {
+                "has_liked": self.liked, "can_like": True, "total_count": int(self.liked)}})
         if path == "789":
             if self.platform == "facebook":
                 fields = str(request.url.params.get("fields", ""))
@@ -163,6 +164,135 @@ def test_ig_only_documented_comment_enabled_patch(tmp_path, patch):
     with pytest.raises(ValueError):
         mod.prepare_meta(client, store, {"action": "media-update", "target_id": "789", "patch": patch})
     assert not graph.writes
+
+
+@pytest.mark.parametrize('initial', [True, False, None, 'false'])
+def test_instagram_comment_setting_uses_read_field_and_write_parameter(tmp_path, initial):
+    mod, brand, graph, client, store = service(tmp_path, 'instagram')
+    state = {'id':'789', 'owner':{'id':'456'}}
+    if initial is not None:state['is_comment_enabled'] = initial
+    writes = []
+    def transport(request):
+        path = request.url.path.removeprefix('/v26.0/')
+        if path == '789':
+            if request.method == 'GET':
+                fields = request.url.params['fields'].split(',')
+                if 'comment_enabled' in fields:
+                    return httpx.Response(400,json={'error':{'code':100,'message':'Tried accessing nonexisting field (comment_enabled)'}})
+                return httpx.Response(200,json={k:v for k,v in state.items() if k in fields})
+            values = parse_qs(request.content.decode())
+            writes.append(values)
+            assert values == {'comment_enabled':['false' if initial is True else 'true']}
+            state['is_comment_enabled'] = values['comment_enabled'][0] == 'true'
+            return httpx.Response(200,json={'success':True})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(transport))
+    edit = {'action':'media-update','target_id':'789','patch':{'comment_enabled':not initial}}
+    if type(initial) is not bool:
+        with pytest.raises(ValueError,match='comment setting.*unavailable'):
+            mod.prepare_meta(client,store,edit)
+        assert not writes
+        return
+    change = mod.prepare_meta(client,store,edit)
+    assert change.before == {'id':'789','comment_enabled':initial}
+    result = mod.apply_meta(client,store,change.id,change.fingerprint)
+    assert result.status == 'verified' and len(writes) == 1
+    assert state['is_comment_enabled'] is (not initial)
+
+
+def test_instagram_insights_do_not_request_write_only_comment_parameter(tmp_path):
+    _, _, graph, client, _ = service(tmp_path, 'instagram')
+    def transport(request):
+        if request.method == 'GET' and request.url.path.endswith('/789'):
+            if 'comment_enabled' in request.url.params.get('fields','').split(','):
+                return httpx.Response(400,json={'error':{'code':100,'message':'nonexisting field'}})
+            return httpx.Response(200,json={'id':'789','owner':{'id':'456'},'is_comment_enabled':True})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(transport))
+    result = client.insights('789',['views'],period='day')
+    assert result['complete'] and result['data'][0]['values'][0]['value'] == 11
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('platform,target,metric', [('instagram','789','views'),('facebook','123_789','post_video_views')])
+def test_content_insight_metric_ids_are_not_treated_as_object_ids(tmp_path, platform, target, metric):
+    _, _, graph, client, _ = service(tmp_path, platform)
+    metric_id = target+'/insights/'+metric+'/lifetime'
+    def transport(request):
+        if request.url.path.endswith('/insights'):
+            return httpx.Response(200,json={'data':[{'id':metric_id,'name':metric,'period':'lifetime','values':[{'value':7}]}]})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(transport))
+    result = client.insights(target,[metric],period='lifetime')
+    assert result['complete'] and result['data'][0]['id'] == metric_id
+    assert result['data'][0]['values'] == [{'value':7}]
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('bad_id', ['999/insights/views/lifetime','789/insights/reach/lifetime',
+    '789/insights/views/day','https://evil.example/789/insights/views/lifetime',{'invalid':'shape'}])
+def test_insight_ids_must_bind_to_the_requested_resource_metric_and_period(tmp_path, bad_id):
+    _, _, graph, client, _ = service(tmp_path,'instagram')
+    def transport(request):
+        if request.url.path.endswith('/insights'):
+            return httpx.Response(200,json={'data':[{'id':bad_id,'name':'views','period':'lifetime','values':[{'value':7}]}]})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(transport))
+    with pytest.raises(ValueError):client.insights('789',['views'],period='lifetime')
+    assert not graph.writes
+
+
+def test_insight_response_cannot_substitute_a_different_requested_period(tmp_path):
+    _, _, graph, client, _ = service(tmp_path,'instagram')
+    def transport(request):
+        if request.url.path.endswith('/insights'):
+            return httpx.Response(200,json={'data':[{'id':'789/insights/views/day',
+                'name':'views','period':'day','values':[{'value':7}]}]})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(transport))
+    with pytest.raises(ValueError,match='unrequested period'):
+        client.insights('789',['views'],period='lifetime')
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('returned,website,want', [
+    ('+12129205486','https://example.test','verified'),
+    ('+12129205487','https://example.test','uncertain'),
+    ('12129205486','https://example.test','uncertain'),
+    ('+12129205486 ext 1','https://example.test','uncertain'),
+    ('+12129205486','https://other.example.test','uncertain'),
+])
+def test_profile_phone_format_readback_preserves_digits_and_other_fields(tmp_path, returned, website, want):
+    mod, _, graph, client, store = service(tmp_path)
+    graph.profile_state.update(phone='+12129205486',website='http://example.test')
+    def transport(request):
+        response = graph(request)
+        if request.method == 'POST':
+            graph.profile_state.update(phone=returned,website=website)
+        return response
+    client.client = httpx.Client(transport=httpx.MockTransport(transport))
+    change = mod.prepare_meta(client,store,{'action':'profile-update','target_id':'123',
+        'patch':{'phone':'+1 212-920-5486','website':'https://example.test'}})
+    result = mod.apply_meta(client,store,change.id,change.fingerprint)
+    assert result.status == want
+    assert result.fingerprint == change.fingerprint
+    if want == 'verified':
+        assert result.journal[-1]['normalized_fields'] == {'phone':'+12129205486'}
+    mod.reconcile_meta(client,store,change.id)
+    assert len(graph.writes) == 1
+
+
+def test_phone_format_equivalence_does_not_resolve_a_lost_write_receipt(tmp_path):
+    mod, _, graph, client, store = service(tmp_path)
+    graph.profile_state.update(phone='+12129205486',website='http://example.test')
+    change = mod.prepare_meta(client,store,{'action':'profile-update','target_id':'123',
+        'patch':{'phone':'+1 212-920-5486','website':'https://example.test'}})
+    graph.failure = 'timeout'
+    graph.on_write = lambda: graph.profile_state.update(website='https://example.test')
+    result = mod.apply_meta(client,store,change.id,change.fingerprint)
+    assert result.status == 'uncertain' and result.receipt is None
+    assert mod.reconcile_meta(client,store,change.id).status == 'uncertain'
+    assert len(graph.writes) == 1
 
 
 def test_ig_delete_requires_facebook_user_token_and_actual_linked_asset(tmp_path):
@@ -238,6 +368,100 @@ def test_facebook_profile_update_can_be_prepared_and_verified(tmp_path):
     assert graph.writes[-1] == ("POST", "123", {"about": ["Acerca"]})
 
 
+def test_profile_update_requires_observable_fields_before_preparing(tmp_path):
+    mod, _, graph, client, store = service(tmp_path)
+    # A missing field is not proof that it is unset, nor a verifiable preview.
+    with pytest.raises(ValueError, match="did not return.*bio"):
+        mod.prepare_meta(client, store, {
+            "action": "profile-update", "target_id": "123", "patch": {"bio": "After"},
+        })
+    assert not graph.writes
+    assert not list(store.root.glob("*.json"))
+
+
+@pytest.mark.parametrize(
+    "failure,status,stage,http_status",
+    [
+        ("reject", "rejected", "http", 400),
+        ("server", "uncertain", "http", 503),
+        ("timeout", "uncertain", "transport", None),
+        ("invalid_json", "uncertain", "decode", 200),
+        ("non_object", "uncertain", "response_shape", 200),
+        ("embedded_error", "uncertain", "provider_error", 200),
+        ("no_ack", "uncertain", "acknowledgement", 200),
+    ],
+)
+def test_meta_write_diagnostics_survive_reload_without_replay_or_secrets(
+    tmp_path, failure, status, stage, http_status,
+):
+    mod, _, graph, client, store = service(tmp_path)
+    writes = []
+
+    def transport(request):
+        if request.method == "GET":
+            return graph(request)
+        writes.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("SECRET access_token=hidden", request=request)
+        if failure == "invalid_json":
+            return httpx.Response(200, text="SECRET not JSON")
+        if failure == "non_object":
+            return httpx.Response(200, json=["SECRET"])
+        if failure == "no_ack":
+            return httpx.Response(200, json={"success": False, "private": "SECRET"})
+        return httpx.Response(http_status, json={"error": {
+            "code": 200, "error_subcode": 9, "fbtrace_id": "safe-ref",
+            "message": "SECRET access_token=hidden permission failure",
+        }})
+
+    client.client = httpx.Client(transport=httpx.MockTransport(transport))
+    change = mod.prepare_meta(client, store, {
+        "action": "profile-update", "target_id": "123", "patch": {"about": "After"},
+    })
+    mod.apply_meta(client, store, change.id, change.fingerprint)
+    saved = store.load(change.id)
+    assert saved.status == status
+    failure_event = next(row for row in saved.journal if row["event"].startswith("write_")
+                         and row["event"] != "write_intent")
+    assert failure_event["error"]
+    assert failure_event["error_detail"]["retryable"] is False
+    assert failure_event["diagnostic"]["stage"] == stage
+    assert failure_event["diagnostic"].get("http_status") == http_status
+    assert failure_event["diagnostic"]["method"] == "POST"
+    if failure in {"reject", "server", "embedded_error"}:
+        assert "code=200" in failure_event["error"]
+        assert "subcode=9" in failure_event["error"]
+        assert "safe-ref" in failure_event["error"]
+    serialized = store.path_for(change.id).read_text()
+    assert "SECRET" not in serialized and "hidden" not in serialized
+    assert saved.receipt is None and saved.result_id is None
+    mod.reconcile_meta(client, store, change.id)
+    mod.apply_meta(client, store, change.id, change.fingerprint)
+    assert len(writes) == 1
+
+
+def test_profile_readback_missing_field_records_unavailable_not_unset(tmp_path):
+    mod, _, graph, client, store = service(tmp_path)
+    graph.profile_state["bio"] = "Before"
+    change = mod.prepare_meta(client, store, {
+        "action": "profile-update", "target_id": "123", "patch": {"bio": "After"},
+    })
+    # Simulate a receipt followed by a provider that omits the requested field.
+    def transport(request):
+        if request.method == "POST":
+            graph.profile_state.pop("bio")
+            return httpx.Response(200, json={"success": True})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(transport))
+    mod.apply_meta(client, store, change.id, change.fingerprint)
+    saved = store.load(change.id)
+    assert saved.status == "uncertain"
+    assert saved.receipt["success"] is True
+    assert saved.journal[-1]["event"] == "readback_unavailable"
+    assert "bio" in saved.journal[-1]["error"]
+    assert not any(e["event"] == "readback_mismatch_no_retry" for e in saved.journal)
+
+
 def test_facebook_reactions_list_is_readonly_and_owner_scoped(tmp_path):
     mod, _, graph, client, store = service(tmp_path)
     result = client.reactions("123_789")
@@ -279,6 +503,54 @@ def test_page_like_unlike_separate_approved_changes(tmp_path):
         result = mod.apply_meta(client, store, change.id, change.fingerprint)
         assert result.status == "verified"
         assert graph.writes[-1][:2] == (method, "123_789/likes")
+
+
+def test_page_like_verification_uses_viewer_summary_when_profiles_are_hidden(tmp_path):
+    mod, _, graph, client, store = service(tmp_path)
+    def provider(request):
+        if request.method == 'GET' and request.url.path.endswith('/123_789/likes'):
+            return httpx.Response(200, json={'data': [], 'summary': {
+                'has_liked': graph.liked, 'can_like': True, 'total_count': int(graph.liked)}})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    change = mod.prepare_meta(client, store, {'action':'like', 'target_id':'123_789'})
+    result = mod.apply_meta(client, store, change.id, change.fingerprint)
+    assert result.status == 'verified'
+    assert len(graph.writes) == 1
+    assert mod.reconcile_meta(client, store, change.id).status == 'verified'
+    assert len(graph.writes) == 1
+
+
+@pytest.mark.parametrize('summary', [{}, {'has_liked':'false','can_like':True},
+    {'has_liked':False,'can_like':False}])
+def test_page_like_requires_explicit_viewer_state_and_eligibility(tmp_path, summary):
+    mod, _, graph, client, store = service(tmp_path)
+    def provider(request):
+        if request.method == 'GET' and request.url.path.endswith('/123_789/likes'):
+            return httpx.Response(200,json={'data':[], 'summary':summary})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    with pytest.raises(ValueError):
+        mod.prepare_meta(client, store, {'action':'like','target_id':'123_789'})
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('failure,expected_status',[('timeout','uncertain'),('reject','rejected')])
+def test_meta_apply_cli_nonverified_write_returns_failure_exit(tmp_path,monkeypatch,failure,expected_status):
+    from typer.testing import CliRunner
+    from socialctl.cli import app
+    import socialctl.management.meta_cli as cli
+    mod,brand,graph,client,store=service(tmp_path)
+    (brand.raiz/'accounts.yml').write_text("facebook:\n  page_id: '123'\n")
+    change=mod.prepare_meta(client,store,{'action':'post-update','target_id':'123_789','patch':{'message':'After'}})
+    graph.failure=failure
+    monkeypatch.setattr(cli,'make_http_client',lambda:httpx.Client(transport=httpx.MockTransport(graph)))
+    result=CliRunner().invoke(app,['meta','apply',change.id,'--brand',brand.nombre,'--root',str(tmp_path),
+        '--approval-fingerprint',change.fingerprint])
+    assert result.exit_code==1
+    assert store.load(change.id).status==expected_status
+    assert len(graph.writes)==1
+    assert change.id in result.output
 
 
 def test_comment_like_unlike_binds_owned_media_and_reads_viewer_state(tmp_path):

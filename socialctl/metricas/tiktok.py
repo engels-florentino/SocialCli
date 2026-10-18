@@ -27,7 +27,7 @@ from socialctl.models import Platform
 USER_INFO = "https://open.tiktokapis.com/v2/user/info/"
 VIDEO_LIST = "https://open.tiktokapis.com/v2/video/list/"
 
-CAMPOS_USUARIO = "follower_count,likes_count,video_count"
+CAMPOS_USUARIO = "open_id,follower_count,likes_count,video_count"
 CAMPOS_VIDEO = (
     "id,title,video_description,create_time,share_url,"
     "view_count,like_count,comment_count,share_count"

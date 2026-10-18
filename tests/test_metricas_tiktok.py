@@ -73,6 +73,25 @@ def test_lee_la_cuenta_y_los_videos(brand):
 
 
 @respx.mock
+def test_metrics_requests_provider_account_id_for_provenance(brand):
+    def user_info(request):
+        requested = request.url.params['fields'].split(',')
+        user = {'follower_count': 3}
+        if 'open_id' in requested:
+            user['open_id'] = 'fictional-tiktok-account'
+        return httpx.Response(200, json={'data': {'user': user}, 'error': {'code': 'ok'}})
+
+    respx.get(USER_INFO).mock(side_effect=user_info)
+    respx.post(VIDEO_LIST).mock(return_value=httpx.Response(200, json={
+        'data': {'videos': [], 'has_more': False}, 'error': {'code': 'ok'},
+    }))
+    with httpx.Client() as client:
+        observation = TikTokLector().leer(brand, client, None)
+    assert observation.account_id == 'fictional-tiktok-account'
+    assert observation.cuenta.seguidores == 3
+
+
+@respx.mock
 def test_pagina_hasta_agotar_has_more(brand):
     respx.get(USER_INFO).mock(return_value=httpx.Response(200, json={
         "data": {"user": {"follower_count": 210, "likes_count": 1, "video_count": 2}},

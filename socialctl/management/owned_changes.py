@@ -60,6 +60,32 @@ class OwnedStore(ResourceStore):
     def __init__(self, brand_root):
         self.root = Path(brand_root) / ".socialctl" / "youtube-owned"
 
+    def completed_history(self, change_id):
+        """A verified retention tombstone has no unresolved owned-resource write.
+
+        This is only a replay-scan predicate, never a way to load/apply an
+        expired proposal. Unknown/partial outcomes still fail closed in load().
+        """
+        try:
+            raw = json.loads(self.path_for(change_id).read_text(encoding='utf-8'))
+            if not isinstance(raw, dict) or set(raw) != {
+                'data_lifecycle', 'replay_blocked', 'id', 'platform',
+                'prior_state', 'fingerprint', 'user_input',
+            }:
+                return False
+            if (raw['data_lifecycle'] != 'purged' or raw['replay_blocked'] is not True
+                    or raw['id'] != change_id or raw['platform'] != 'youtube'
+                    or raw['prior_state'] != 'verified'
+                    or not isinstance(raw['fingerprint'], str)
+                    or not re.fullmatch(r'[0-9a-f]{64}', raw['fingerprint'])
+                    or not isinstance(raw['user_input'], dict)
+                    or set(raw['user_input']) != {'edit'}):
+                return False
+            validate_edit(raw['user_input']['edit'])
+            return True
+        except (OSError, ValueError, TypeError):
+            return False
+
 
 def complete(report):
     if not report["complete"]:
@@ -352,6 +378,8 @@ def apply_owned(client, store, change_id, approval_digest):
                 return readback(client, store, change)
             return change
         for path in store.root.glob("*.json"):
+            if path.stem != change.id and store.completed_history(path.stem):
+                continue
             other = store.load(path.stem)
             unresolved_steps = any(s.get("status") in {"applying", "uncertain"} for s in other.steps)
             if other.id != change.id and operation_key(other) == key and (other.status in {"applying", "uncertain"} or unresolved_steps):

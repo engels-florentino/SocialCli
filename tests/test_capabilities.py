@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 from socialctl.capabilities import capability_report, load_capabilities
@@ -14,7 +15,10 @@ def test_registry_has_exact_discovery_counts_and_versioned_sources():
         rows = [r for r in methods if r["api"] == platform]
         assert len(rows) == expected
     assert len({r["id"] for r in methods}) == len(methods)
-    assert all(r["source"]["url"].startswith("https://") and r["source"]["observed_at"] in {"2026-09-12", "2026-09-13"} for r in methods)
+    for row in methods:
+        source = row["source"]
+        assert source["url"].startswith("https://")
+        assert date.fromisoformat(source["observed_at"]).isoformat() == source["observed_at"]
 
 
 def test_each_normal_method_has_concrete_owner_and_implementation_evidence():

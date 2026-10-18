@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import uuid
 from contextlib import ExitStack
 from datetime import datetime
@@ -15,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from socialctl.management.changes import now_utc
 from socialctl.management.resource_changes import ResourceStore
 from socialctl.management.meta_schema import MetaError, MetaRejected, MetaUncertain, validate_edit
+from socialctl.management.meta_errors import failure_details
 
 
 class MetaChange(BaseModel):
@@ -84,6 +86,23 @@ def operation_key(change):
     return json.dumps([change.brand_root, change.platform, change.identity["account_id"], change.edit["target_id"]])
 
 
+def normalized_readback_fields(edit, current, expected):
+    """Recognize phone display separators, never infer a country code or digits."""
+    if edit.action != "profile-update" or "phone" not in (edit.patch or {}):
+        return {}
+    if {k:v for k,v in current.items() if k != "phone"} != {k:v for k,v in expected.items() if k != "phone"}:
+        return {}
+    values=[]
+    for value in (current.get("phone"), expected.get("phone")):
+        if not isinstance(value,str) or not re.fullmatch(r"\+[0-9][0-9 ().-]*",value):
+            return {}
+        number=re.sub(r"[ ().-]","",value)
+        if not re.fullmatch(r"\+[1-9][0-9]{6,14}",number):
+            return {}
+        values.append(number)
+    return {"phone":current["phone"]} if values[0] == values[1] and current != expected else {}
+
+
 def readback(client, store, change):
     edit = bound(client, change)
     if change.status in {"verified", "rejected", "conflict", "proposed"}:
@@ -98,13 +117,14 @@ def readback(client, store, change):
         else:
             current = client.snapshot(edit)
             expected = client.expected(edit, change.before)
-            if current == expected and (change.receipt or current != change.before):
+            normalized = normalized_readback_fields(edit,current,expected) if change.receipt else {}
+            if (current == expected or normalized) and (change.receipt or current != change.before):
                 change.status = "verified"
-                event(change, "readback_verified")
+                event(change, "readback_verified", **({"normalized_fields":normalized} if normalized else {}))
             else:
                 event(change, "readback_mismatch_no_retry")
-    except MetaError:
-        event(change, "readback_unavailable")
+    except MetaError as exc:
+        event(change, "readback_unavailable", **failure_details(exc, token=client._token, read_only=True))
     store.save(change)
     return change
 
@@ -144,12 +164,12 @@ def apply_meta(client, store, change_id, approval_digest):
         store.save(change)
         try:
             change.receipt = client.mutate(edit)
-        except MetaRejected:
+        except MetaRejected as exc:
             change.status = "rejected"
-            event(change, "write_rejected")
-        except Exception:
+            event(change, "write_rejected", **failure_details(exc, token=client._token, read_only=False))
+        except Exception as exc:
             change.status = "uncertain"
-            event(change, "write_uncertain_no_retry")
+            event(change, "write_uncertain_no_retry", **failure_details(exc, token=client._token, read_only=False))
         else:
             change.status = "uncertain"
             if edit.action in {"schedule-reprogram", "schedule-cancel"}:

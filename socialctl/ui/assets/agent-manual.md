@@ -639,6 +639,20 @@ Other management commands are not all converted to this taxonomy; inspect
 their exit code, stderr and durable result as well. No action hint grants approval
 to reconnect, publish, delete or replay a write.
 
+Meta management journals preserve sanitized errors, typed guidance, and request
+stage/HTTP status when available. `write_intent` does not prove a request reached
+Meta or a response arrived. Older journals cannot recover a discarded response.
+Report `uncertain` as attempted and unconfirmed, never as applied. Reconcile the
+existing ChangeSet with reads only; a fresh UUID cannot bypass an unresolved
+operation on the same target.
+
+Before a Meta Page profile update, every patch field must appear in the profile
+read. Missing does not mean "currently not set". If Meta omits the field, the
+change cannot be previewed or verified and is blocked before writing. Do not
+silently map `bio` to `about` or another field; a different field needs its own
+explicit preview and approval. A field missing during readback is unavailable
+evidence, not proof of failure or success.
+
 Revoking an installation is supported. Fine-grained, server-enforced permissions
 such as “publish but never delete” are not implemented: the current client receives
 provider tokens. Do not advertise local agent instructions as an access-control boundary.
@@ -818,3 +832,17 @@ replies:
 ```
 
 The source and mapped parent must both be observed for the same account/media/thread. The parent must be top-level and satisfy the existing eligibility rules. Source membership/text/author are read again during preparation and immediately before the write. The full preview binds `before.reply_context` and the actual write parent. This is supported through the existing YouTube, Facebook and Instagram reply edges; it does not invent a deeper provider nesting relationship or imply a mention. Multiple selections mapping to the same parent are rejected. Existing replied/uncertain parent protections remain in effect. Inbox review links the resulting journal to both the parent and selected source observation.
+## Add another social platform without signing out
+
+If `connect` reports `platform_not_allowed`, run
+`socialcli account permissions --brand MyBrand --no-browser --json`.
+Give its `browser_url` directly to the owner; never open or approve it for them.
+The owner adds platforms to this installation in their SocialCli browser account.
+The command only reads status and provides the link; it does not grant access.
+After confirmation, check `socialcli account status --brand MyBrand --json`
+and run `socialcli connect PLATFORM --brand MyBrand --no-browser`.
+Existing YouTube and other connections remain active. Do not log out, revoke the
+assistant or disconnect existing accounts just to add a network. If the service
+does not support expansion yet, keep the connections and report the required
+service update. Platform access does not replace provider consent or publication
+approval.

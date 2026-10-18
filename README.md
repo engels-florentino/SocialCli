@@ -77,7 +77,7 @@ Create `MyBrand/posts/my-video/post.yml` and place your produced file in `MyBran
 
 ```yaml
 slug: my-video
-campaign: vertical-clip
+campaign: clip-vertical
 platforms:
   tiktok:
     body: "A story worth telling."
