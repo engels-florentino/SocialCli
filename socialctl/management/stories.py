@@ -162,7 +162,9 @@ def _probe_story(path: Path, kind: MediaKind, extension: str) -> tuple[int, int,
     format_name = str((probe.get("format") or {}).get("format_name") or "")
     codec = str(video_stream.get("codec_name") or "").lower()
     if kind is MediaKind.IMAGE:
-        if codec != "mjpeg" or "jpeg" not in format_name:
+        # ffprobe may select the generic image2 demuxer for a valid JPEG.
+        # Retain the byte signature and codec checks above/below.
+        if codec != "mjpeg" or not ("jpeg" in format_name or format_name == "image2"):
             raise StoryError("unsupported actual image format: readable JPEG required")
         return width, height, None
 

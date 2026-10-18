@@ -185,3 +185,19 @@ def test_every_destructive_or_job_preview_discloses_conditional_guard_limit(tmp_
     change = prepare(client, store, edit)
     assert "no documented conditional version guard" in preview(change)
     assert any("generation" in effect or "Group deletion" in effect for effect in change.effects)
+
+
+@pytest.mark.parametrize('granted', [
+    'https://www.googleapis.com/auth/yt-analytics.readonly',
+    'https://www.googleapis.com/auth/yt-analytics-monetary.readonly',
+])
+def test_group_create_uses_documented_analytics_grant_without_broader_youtube_scope(tmp_path, granted):
+    from socialctl.metricas.analytics_changes import prepare, apply
+    brand, client, store, api, _ = setup_service(tmp_path)
+    brand.guardar_secreto(Platform.YOUTUBE, {'access_token': 'synthetic', 'granted_scopes': [granted]})
+    edit = {'version': 1, 'action': 'group-create', 'title': 'Scoped group', 'item_type': 'youtube#video'}
+    change = prepare(client, store, edit)
+    assert not api.writes
+    result = apply(client, store, change.id, change.fingerprint)
+    assert result.verified
+    assert len(api.writes) == 1

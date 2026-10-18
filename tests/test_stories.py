@@ -604,3 +604,24 @@ def test_story_status_is_local_and_does_not_require_credentials(brand, tmp_path)
     assert result.exit_code == 0
     assert change.id in result.output
     assert "prepared_local_no_remote_write" in result.output
+
+
+def test_jpeg_story_accepts_image2_probe_format(monkeypatch, tmp_path):
+    from socialctl.management import stories
+    monkeypatch.setattr(stories, '_read_edges', lambda path: (b'\xff\xd8\xff', b'\xff\xd9'))
+    monkeypatch.setattr(stories, '_ffprobe', lambda path: {
+        'streams': [{'codec_type': 'video', 'codec_name': 'mjpeg', 'width': 720, 'height': 1280}],
+        'format': {'format_name': 'image2'},
+    })
+    assert stories._probe_story(tmp_path/'existing.jpg', MediaKind.IMAGE, '.jpg') == (720, 1280, None)
+
+
+def test_image2_story_still_requires_jpeg_codec(monkeypatch, tmp_path):
+    from socialctl.management import stories
+    monkeypatch.setattr(stories, '_read_edges', lambda path: (b'\xff\xd8\xff', b'\xff\xd9'))
+    monkeypatch.setattr(stories, '_ffprobe', lambda path: {
+        'streams': [{'codec_type': 'video', 'codec_name': 'png', 'width': 720, 'height': 1280}],
+        'format': {'format_name': 'image2'},
+    })
+    with pytest.raises(StoryError, match='readable JPEG'):
+        stories._probe_story(tmp_path/'existing.jpg', MediaKind.IMAGE, '.jpg')

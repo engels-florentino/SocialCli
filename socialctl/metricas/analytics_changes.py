@@ -74,7 +74,10 @@ class AnalyticsStore(ResourceStore):
 
 
 def scopes(client, edit):
-    client.require_scope(ANALYTICS_SCOPES if edit["action"].startswith("job-") else {"https://www.googleapis.com/auth/youtube"})
+    # Analytics group mutations explicitly accept the analytics grants too;
+    # do not demand a broader account grant when one is already sufficient.
+    client.require_scope(ANALYTICS_SCOPES if edit["action"].startswith("job-") else
+                         ANALYTICS_SCOPES | {"https://www.googleapis.com/auth/youtube"})
 
 
 def baseline(client, edit):

@@ -3177,19 +3177,17 @@
       "required_scopes": {
         "alternatives": [
           "https://www.googleapis.com/auth/youtube",
-          "https://www.googleapis.com/auth/youtube.readonly",
           "https://www.googleapis.com/auth/youtubepartner",
           "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
           "https://www.googleapis.com/auth/yt-analytics.readonly"
         ],
-        "evidence": "discovery_authorization_alternatives_not_granted_scopes"
+        "evidence": "official_method_authorization_alternatives_not_granted_scopes"
       },
       "eligibility": "Configured/authenticated channel match and method-specific resource ownership/eligibility; not proved by refresh",
       "source": {
-        "url": "https://www.googleapis.com/discovery/v1/apis/youtubeAnalytics/v2/rest",
-        "observed_at": "2026-09-12",
-        "revision": "20260909",
-        "evidence": "Official discovery plus recorded method inventory; field mutability requires method-specific docs"
+        "url": "https://developers.google.com/youtube/analytics/reference/groups/update",
+        "observed_at": "2026-10-18",
+        "evidence": "Official method authorization table; provider acceptance still required"
       },
       "implemented_scopes": [
         {
@@ -3204,7 +3202,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Stored actual youtube grant required; youtube.force-ssl not listed. itemType is immutable creation identity. No documented conditional version guard; remote race disclosed."
+      "limitation": "Stored actual youtube or analytics readonly/monetary grant required; youtube.force-ssl alone is insufficient. itemType is immutable creation identity. No documented conditional version guard; remote race disclosed."
     },
     {
       "id": "youtubeAnalytics.groups.list",
@@ -3262,19 +3260,17 @@
       "required_scopes": {
         "alternatives": [
           "https://www.googleapis.com/auth/youtube",
-          "https://www.googleapis.com/auth/youtube.readonly",
           "https://www.googleapis.com/auth/youtubepartner",
           "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
           "https://www.googleapis.com/auth/yt-analytics.readonly"
         ],
-        "evidence": "discovery_authorization_alternatives_not_granted_scopes"
+        "evidence": "official_method_authorization_alternatives_not_granted_scopes"
       },
       "eligibility": "Configured/authenticated channel match and method-specific resource ownership/eligibility; not proved by refresh",
       "source": {
-        "url": "https://www.googleapis.com/discovery/v1/apis/youtubeAnalytics/v2/rest",
-        "observed_at": "2026-09-12",
-        "revision": "20260909",
-        "evidence": "Official discovery plus recorded method inventory; field mutability requires method-specific docs"
+        "url": "https://developers.google.com/youtube/analytics/reference/groups/insert",
+        "observed_at": "2026-10-18",
+        "evidence": "Official method authorization table; provider acceptance still required"
       },
       "implemented_scopes": [
         {
@@ -3289,7 +3285,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Stored actual youtube grant required; youtube.force-ssl not listed for channel group management. No CMS assets, blind retry or documented conditional version guard."
+      "limitation": "Stored actual youtube or analytics readonly/monetary grant required; youtube.force-ssl alone is insufficient. No CMS assets, blind retry or documented conditional version guard."
     },
     {
       "id": "youtubeAnalytics.groups.delete",
@@ -3305,19 +3301,17 @@
       "required_scopes": {
         "alternatives": [
           "https://www.googleapis.com/auth/youtube",
-          "https://www.googleapis.com/auth/youtube.readonly",
           "https://www.googleapis.com/auth/youtubepartner",
           "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
           "https://www.googleapis.com/auth/yt-analytics.readonly"
         ],
-        "evidence": "discovery_authorization_alternatives_not_granted_scopes"
+        "evidence": "official_method_authorization_alternatives_not_granted_scopes"
       },
       "eligibility": "Configured/authenticated channel match and method-specific resource ownership/eligibility; not proved by refresh",
       "source": {
-        "url": "https://www.googleapis.com/discovery/v1/apis/youtubeAnalytics/v2/rest",
-        "observed_at": "2026-09-12",
-        "revision": "20260909",
-        "evidence": "Official discovery plus recorded method inventory; field mutability requires method-specific docs"
+        "url": "https://developers.google.com/youtube/analytics/reference/groups/delete",
+        "observed_at": "2026-10-18",
+        "evidence": "Official method authorization table; provider acceptance still required"
       },
       "implemented_scopes": [
         {
@@ -3332,7 +3326,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Stored actual youtube grant required; youtube.force-ssl not listed. Removes group/membership not original videos/playlists. Partial pages cannot prove deletion."
+      "limitation": "Stored actual youtube or analytics readonly/monetary grant required; youtube.force-ssl alone is insufficient. Removes group/membership not original videos/playlists. Partial pages cannot prove deletion."
     },
     {
       "id": "youtubeAnalytics.groupItems.list",
@@ -3390,19 +3384,17 @@
       "required_scopes": {
         "alternatives": [
           "https://www.googleapis.com/auth/youtube",
-          "https://www.googleapis.com/auth/youtube.readonly",
           "https://www.googleapis.com/auth/youtubepartner",
           "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
           "https://www.googleapis.com/auth/yt-analytics.readonly"
         ],
-        "evidence": "discovery_authorization_alternatives_not_granted_scopes"
+        "evidence": "official_method_authorization_alternatives_not_granted_scopes"
       },
       "eligibility": "Configured/authenticated channel match and method-specific resource ownership/eligibility; not proved by refresh",
       "source": {
-        "url": "https://www.googleapis.com/discovery/v1/apis/youtubeAnalytics/v2/rest",
-        "observed_at": "2026-09-12",
-        "revision": "20260909",
-        "evidence": "Official discovery plus recorded method inventory; field mutability requires method-specific docs"
+        "url": "https://developers.google.com/youtube/analytics/reference/groupItems/insert",
+        "observed_at": "2026-10-18",
+        "evidence": "Official method authorization table; provider acceptance still required"
       },
       "implemented_scopes": [
         {
@@ -3417,7 +3409,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Stored actual youtube grant required; youtube.force-ssl not listed. Duplicate204 reconciles existing membership without invented response/new ID."
+      "limitation": "Stored actual youtube or analytics readonly/monetary grant required; youtube.force-ssl alone is insufficient. Duplicate204 reconciles existing membership without invented response/new ID."
     },
     {
       "id": "youtubeAnalytics.groupItems.delete",
@@ -3433,19 +3425,17 @@
       "required_scopes": {
         "alternatives": [
           "https://www.googleapis.com/auth/youtube",
-          "https://www.googleapis.com/auth/youtube.readonly",
           "https://www.googleapis.com/auth/youtubepartner",
           "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
           "https://www.googleapis.com/auth/yt-analytics.readonly"
         ],
-        "evidence": "discovery_authorization_alternatives_not_granted_scopes"
+        "evidence": "official_method_authorization_alternatives_not_granted_scopes"
       },
       "eligibility": "Configured/authenticated channel match and method-specific resource ownership/eligibility; not proved by refresh",
       "source": {
-        "url": "https://www.googleapis.com/discovery/v1/apis/youtubeAnalytics/v2/rest",
-        "observed_at": "2026-09-12",
-        "revision": "20260909",
-        "evidence": "Official discovery plus recorded method inventory; field mutability requires method-specific docs"
+        "url": "https://developers.google.com/youtube/analytics/reference/groupItems/delete",
+        "observed_at": "2026-10-18",
+        "evidence": "Official method authorization table; provider acceptance still required"
       },
       "implemented_scopes": [
         {
@@ -3460,7 +3450,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Stored actual youtube grant required; youtube.force-ssl not listed. Partial membership cannot prove absence; no automatic retry."
+      "limitation": "Stored actual youtube or analytics readonly/monetary grant required; youtube.force-ssl alone is insufficient. Partial membership cannot prove absence; no automatic retry."
     },
     {
       "id": "youtubeAnalytics.reports.query",
