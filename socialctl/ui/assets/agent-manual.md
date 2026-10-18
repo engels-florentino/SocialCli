@@ -1,4 +1,4 @@
-# SocialCli for AI agents — Candidate 0.3.0rc15
+# SocialCli for AI agents — Candidate 0.3.0rc16
 
 Candidate setup instructions. Require published metadata before installing;
 do not replace an existing 0.2.6 installation or migrate its credentials silently.
@@ -13,16 +13,16 @@ availability depends on account eligibility; Google sensitive-scope verification
 ## Install the reviewed candidate
 
 Use the official TestPyPI release metadata:
-https://test.pypi.org/pypi/socialcli/0.3.0rc15/json
+https://test.pypi.org/pypi/socialcli/0.3.0rc16/json
 
-1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc15`. If this
+1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc16`. If this
    release is unavailable, stop and report it; do not install a similarly named package.
-2. Select exactly `socialcli-0.3.0rc15-py3-none-any.whl` from `urls`. Download its
+2. Select exactly `socialcli-0.3.0rc16-py3-none-any.whl` from `urls`. Download its
    HTTPS `url` and verify the file against that entry's `digests.sha256`.
 3. Install that verified local wheel into an isolated environment. Resolve
    dependencies from normal PyPI, not TestPyPI. For example:
 
-       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc15-py3-none-any.whl[headless-credentials]'
+       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc16-py3-none-any.whl[headless-credentials]'
        socialcli --version
        socialcli agent-guide
 
@@ -31,7 +31,7 @@ https://test.pypi.org/pypi/socialcli/0.3.0rc15/json
    If an existing SocialCli tool is installed, use a separate virtual environment
    for this pilot and its absolute executable; do not upgrade it automatically.
 
-Verify the installed version is exactly 0.3.0rc15 before continuing. The stable
+Verify the installed version is exactly 0.3.0rc16 before continuing. The stable
 `uv tool install socialcli` command is not the installation path for this pilot.
 
 For headless agents, configure encrypted-file storage with an external0600 key in

@@ -1,4 +1,12 @@
-# Current public candidate: 0.3.0rc15
+# Current public client candidate: 0.3.0rc16
+
+The playlist verification fix is published to TestPyPI. Both downloaded archives
+match the reviewed CI artifacts, and Linux/macOS installation checks passed.
+The existing rc15 service is compatible; this correction runs in the client.
+See [playlist verification](qa-playlist-localizations-2026-10-18.md) for scope.
+Muse adoption is being verified separately.
+
+# Previous public candidate: 0.3.0rc15
 
 Owner-approved TestPyPI publication completed. Downloaded wheel and sdist match
 the reviewed CI artifacts; fresh installed-wheel smoke passed. The hosted rc15
