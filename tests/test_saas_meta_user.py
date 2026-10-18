@@ -47,7 +47,7 @@ class MetaProvider:
             return httpx.Response(200, json={'id': '111'})
         if path == '789':
             return httpx.Response(200, json={'id': '789', 'owner': {'id': self.media_owner},
-                'caption': 'Disposable fixture', 'media_type': 'IMAGE'})
+                'caption': 'Disposable fixture', 'media_type': 'IMAGE', 'media_product_type': 'FEED'})
         if path == '456':
             return httpx.Response(200, json={'id': '456', 'mentioned_comment': {
                 'id': '800', 'text': 'Consenting test mention', 'media': {'id': '789'}}})
@@ -443,3 +443,21 @@ def test_mention_reply_checks_documented_page_permissions_before_writing(tmp_pat
     response = call(client, connection, 'mutate', edit=edit, **approved)
     assert response.status_code == 409 and 'provider_permissions_changed' in response.text
     assert not graph.writes
+
+
+def test_hosted_story_inspect_and_approved_delete(tmp_path):
+    class StoryProvider(MetaProvider):
+        def __call__(self, request):
+            if request.method == 'GET' and request.url.path.endswith('/789'):
+                fields = set(request.url.params['fields'].split(','))
+                if fields - {'id', 'owner', 'media_type', 'media_product_type', 'timestamp', 'permalink'}:
+                    return httpx.Response(400, json={'error': {'code': 10, 'message': 'Comments cannot be made on story media.'}})
+                return httpx.Response(200, json={'id': '789', 'owner': {'id': '456'},
+                    'media_type': 'VIDEO', 'media_product_type': 'STORY'})
+            return super().__call__(request)
+    client, _, graph, connection = connected(tmp_path, StoryProvider())
+    approved = proposal(client, connection)
+    assert approved['expected_before']['media_product_type'] == 'STORY'
+    response = call(client, connection, 'mutate', **approved)
+    assert response.status_code == 200, response.text
+    assert graph.writes == [('DELETE', '789')]

@@ -19,6 +19,8 @@ class Graph:
                       "from" if platform == "facebook" else "owner": {"id": self.owner},
                       "message": "Before", "description": "Before", "title": "Title",
                       "comment_enabled": True, "is_published": True}
+        if platform == "instagram":
+            self.state.update(media_type="IMAGE", media_product_type="FEED")
         self.video_state = dict(self.state)
         if platform == "facebook":
             self.video_state["id"] = "789"
@@ -738,3 +740,63 @@ def test_user_token_cannot_substitute_page_for_like(tmp_path):
     with pytest.raises(ValueError,match='Page token'):
         mod.prepare_meta(client,store,{'action':'like','target_id':'123_789'})
     assert not graph.writes
+
+
+def test_story_delete_preparation_uses_only_story_fields(tmp_path):
+    mod, _, graph, client, store = service(tmp_path, 'instagram', user=True)
+    story = {'id': '789', 'owner': {'id': '456'}, 'media_type': 'VIDEO',
+             'media_product_type': 'STORY', 'timestamp': '2026-10-18T12:00:00+0000'}
+    def provider(request):
+        if request.method == 'GET' and request.url.path.endswith('/789'):
+            fields = set(request.url.params['fields'].split(','))
+            if fields - {'id', 'owner', 'media_type', 'media_product_type', 'timestamp', 'permalink'}:
+                return httpx.Response(400, json={'error': {'code': 10, 'message': 'Comments cannot be made on story media.'}})
+            return httpx.Response(200, json=story)
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    change = mod.prepare_meta(client, store, {'action': 'media-delete', 'target_id': '789'})
+    assert mod.apply_meta(client, store, change.id, change.fingerprint).status == 'accepted_unverifiable'
+    assert graph.writes == [('DELETE', '789', {})]
+
+
+@pytest.mark.parametrize('patch', [
+    {'id': '790'}, {'owner': {'id': '999'}}, {'owner': None},
+    {'media_type': None}, {'media_product_type': None},
+    {'media_type': 'CAROUSEL_ALBUM'}, {'media_product_type': 'UNKNOWN'},
+])
+def test_story_delete_requires_exact_identity_and_classification(tmp_path, patch):
+    mod, _, graph, client, store = service(tmp_path, 'instagram', user=True)
+    story = {'id': '789', 'owner': {'id': '456'}, 'media_type': 'VIDEO', 'media_product_type': 'STORY', **patch}
+    def provider(request):
+        if request.method == 'GET' and request.url.path.endswith('/789'):
+            return httpx.Response(200, json=story)
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    with pytest.raises(ValueError):
+        mod.prepare_meta(client, store, {'action': 'media-delete', 'target_id': '789'})
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('product,media_type', [('FEED', 'IMAGE'), ('REELS', 'VIDEO')])
+def test_non_story_delete_preserves_full_baseline_and_stale_check(tmp_path, product, media_type):
+    mod, _, graph, client, store = service(tmp_path, 'instagram', user=True)
+    graph.video_state.update(media_product_type=product, media_type=media_type, caption='Before')
+    change = mod.prepare_meta(client, store, {'action': 'media-delete', 'target_id': '789'})
+    graph.video_state['caption'] = 'Changed after preview'
+    with pytest.raises(ValueError, match='changed'):
+        mod.apply_meta(client, store, change.id, change.fingerprint)
+    assert not graph.writes
+
+
+def test_story_delete_permission_failure_is_not_retried(tmp_path):
+    mod, _, graph, client, store = service(tmp_path, 'instagram', user=True)
+    reads = []
+    def provider(request):
+        if request.method == 'GET' and request.url.path.endswith('/789'):
+            reads.append(request)
+            return httpx.Response(403, json={'error': {'code': 200, 'message': 'Permission denied'}})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    with pytest.raises(ValueError):
+        mod.prepare_meta(client, store, {'action': 'media-delete', 'target_id': '789'})
+    assert len(reads) == 1 and not graph.writes

@@ -259,6 +259,30 @@ class MetaClient:
             raise MetaError("exact content owner was not verified")
         return {k: result[k] for k in CONTENT_FIELDS[kind].split(",") if k in result}
 
+    def deletion_content(self, target_id):
+        """Classify owned IG media before requesting product-specific fields."""
+        self.identity()
+        meta_id(target_id)
+        fields = "id,owner,media_type,media_product_type,timestamp,permalink"
+        result = self.request("GET", target_id, params={"fields": fields})
+        owner = result.get("owner")
+        if (result.get("id") != target_id or not isinstance(owner, dict)
+                or owner.get("id") != self.account_id):
+            raise MetaError("exact content owner was not verified")
+        media_type, product = result.get("media_type"), result.get("media_product_type")
+        allowed = {"STORY": {"IMAGE", "VIDEO"}, "REELS": {"VIDEO"},
+                   "FEED": {"IMAGE", "VIDEO", "CAROUSEL_ALBUM"}}
+        if (not isinstance(product, str) or product not in allowed
+                or not isinstance(media_type, str) or media_type not in allowed[product]):
+            raise MetaError("Instagram media classification was not verified")
+        if product == "STORY":
+            return {k: result[k] for k in fields.split(",") if k in result}
+        # Preserve the full existing feed/Reel baseline, including editable fields.
+        content = self.content(target_id)
+        if any(content.get(k) != result[k] for k in ("media_type", "media_product_type")):
+            raise MetaError("Instagram media classification changed during inspection")
+        return content
+
     def content_list(self, edge=None, max_pages=10, *, for_comments=False):
         self.identity()
         edge = edge or ("media" if self.platform is Platform.INSTAGRAM else "posts")
@@ -459,7 +483,8 @@ class MetaClient:
                                 "; missing does not mean unset. Cannot preview or verify this change.")
             return profile
         kind = "video" if edit.action.startswith("video-") else None
-        content = self.content(edit.target_id, kind)
+        content = (self.deletion_content(edit.target_id) if edit.action == "media-delete"
+                   else self.content(edit.target_id, kind))
         if edit.action == "media-update":
             # IG reads is_comment_enabled but accepts comment_enabled on POST.
             # Keep the durable proposal's existing write-parameter schema; never
