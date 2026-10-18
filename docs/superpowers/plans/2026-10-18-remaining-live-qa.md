@@ -1,6 +1,6 @@
 # Remaining Live QA Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Execution method is proposed, not yet selected by the owner.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. The owner authorized execution on October 18. Unchecked live gates remain pending even when local implementation tests pass.
 
 **Goal:** Resolve every failed, inconclusive or unexercised existing function with a permission audit and scoped live evidence, without repeating passed live tests.
 
@@ -95,9 +95,9 @@ produce one row per remaining method/field/variant with explicit AND/OR scope ch
 - [x] Reproduce missing `instagram_manage_contents` in the management authorization URL and service redirect; verify declining it blocks completion.
 - [x] Add the permission only to Instagram management consent; preserve ordinary/analytics-only consent and other platforms.
 - [x] Check the Meta console: permission already exists with Ready for testing. Do not add a duplicate or claim production approval.
-- [ ] Audit the full credential route: confirm the server retains the appropriate user grant and the deletion handler can consume it without exporting tokens or replacing Page credentials globally.
+- [x] Audit the full credential route: confirm the server retains the appropriate user grant and the deletion handler can consume it without exporting tokens or replacing Page credentials globally.
   Source inspection already shows the selection path substitutes the Page token and the client defaults to Page mode. Design an operation-specific user-token route with ownership enforcement; do not simply relabel a Page token as a User token.
-- [ ] If routing fails, add a fictional integration test at that boundary first; assert the delete uses the user actor, fails before DELETE when scope/token is missing, and existing publishing still selects its intended actor.
+- [x] If routing fails, add a fictional integration test at that boundary first; assert the delete uses the user actor, fails before DELETE when scope/token is missing, and existing publishing still selects its intended actor. Implemented in local commit `6242a67`; independent review and deployment remain separate gates.
 - [ ] Package/deploy through the existing release path; verify actual server and Muse versions. Never overwrite an existing immutable release or approve an owner's protected deployment.
 - [ ] Hand any renewed-consent link to the owner without opening it. Verify the returned grant explicitly includes the new permission; preserve existing connections.
 - [ ] Use a disposable Instagram fixture from Task 4 to verify API deletion and cleanup. UI deletion is fallback cleanup, not an API pass.
@@ -237,7 +237,7 @@ produce one row per remaining method/field/variant with explicit AND/OR scope ch
 **Interfaces:** Administrative read tools supplement SocialCli; they do not replace its publishing/token/approval contracts.
 
 - [x] Read the official documentation (updated October 7, 2026) through the authenticated browser when web retrieval failed.
-- [ ] Decide whether to connect a read-only pilot scoped only to SocialCli. Installing/authenticating it is separate from evaluating it; the owner performs any new OAuth authorization.
+- [x] Decide whether to connect a read-only pilot scoped only to SocialCli. The owner completed OAuth with the explicit read scope. The local eight-tool allowlist is configured; app-level grants still require verification after Codex loads the new tools.
 - [ ] If authorized, compare app settings, review privileges/requirements, API health and webhook subscriptions with the console. Never transmit support messages.
 - [ ] Keep Manage scope unnecessary for the initial audit. The documented write tools concern webhooks; app-lifecycle tools are still described as coming soon and must not be assumed callable.
 
@@ -276,4 +276,4 @@ and handles delayed reporting and unrecoverable actions explicitly. Unknown caus
 are diagnostic tasks, not invented fixes. Recommended execution is sequential in
 this session with independent review of code changes, because all live tasks share
 account state and restoration records. The newly requested Instagram scope fix is
-already authorized separately; the rest remains a plan for review.
+already authorized separately; execution of the remaining plan was authorized on October 18.

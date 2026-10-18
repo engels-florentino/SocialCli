@@ -2,7 +2,28 @@
 
 Source: https://developers.facebook.com/documentation/mcp/devtools-mcp
 Official page updated October 7, 2026; read in authenticated Safari on October 18.
-Web text retrieval failed. No MCP installation or OAuth authorization was performed.
+Web text retrieval failed; the official page was read in authenticated Safari.
+
+## Pilot preparation
+
+Execution on October 18 added `meta_social_technologies` to the operator's local
+Codex configuration with the official endpoint, an eight-tool read allowlist,
+and explicit `developer_tools_mcp_app_read` OAuth scope. The owner completed the
+browser authorization and `codex mcp login` reported success. App selection and
+returned app-level privileges still need verification through `devtools_app_list`;
+OAuth success alone does not prove which app is accessible. No MCP app data has
+been read yet: the current conversation has not loaded the new server tools.
+
+The client's default OAuth discovery included management and business scopes;
+that unapproved flow was cancelled before use. The replacement explicitly requests
+only the read scope, also persisted for future logins. No credentials, authorization
+URLs or callback codes are stored in this document.
+
+The initial manual callback flow expired. A new login using the CLI's automatic
+local callback completed successfully, without requiring the owner to copy a URL.
+The configured tool allowlist was verified with `codex mcp get`. The automation
+tool cannot control the Codex application, so activation in this conversation
+requires an owner-initiated reload/new session. No restart was forced.
 
 ## Recommendation
 
