@@ -46,6 +46,10 @@ class MetaClient:
         self.account_id = self.page_id if platform is Platform.FACEBOOK else meta_id((brand.cuentas.get("instagram") or {}).get("ig_user_id"))
         try:
             secret = brand.leer_secreto(platform)
+            self._remote_user = None
+            if platform is Platform.INSTAGRAM and secret.get('auth_mode') == 'broker' and secret.get('protocol') == 'saas-v1':
+                from socialctl.connections.meta_user import RemoteMetaUser
+                self._remote_user = RemoteMetaUser(brand, platform, client)
             if secret.get("auth_mode") == "broker":
                 from socialctl.connections.client import broker_access_token
                 self._token = broker_access_token(brand, platform, client, refresh=False)
@@ -357,6 +361,19 @@ class MetaClient:
             raise MetaError("exact mention of selected account was not verified")
         return {"id": comment_id, "media_id": media_id, "text": mention["text"]}
 
+    def _uses_remote_user(self, edit):
+        return self._remote_user is not None and edit.action in {'media-delete', 'mention-reply'}
+
+    def operation_identity(self, edit):
+        if self._uses_remote_user(edit):
+            return self._remote_user.request('identity', edit)['identity']
+        return self.identity(user_required=edit.action == 'media-delete')
+
+    def recover_receipt(self, edit, change):
+        if self._uses_remote_user(edit):
+            return self._remote_user.request('status', edit, change=change)['receipt']
+        return None
+
     def validate_action(self, edit):
         edit = validate_edit(edit)
         ig = self.platform is Platform.INSTAGRAM
@@ -364,7 +381,7 @@ class MetaClient:
             raise MetaError("Instagram-only action")
         if ig and edit.action in {"profile-update", "post-update", "video-update", "post-delete", "video-delete", "like", "unlike", "schedule-reprogram", "schedule-cancel"}:
             raise MetaError("action undocumented for Instagram; content is not deleted/recreated for editing")
-        self.identity(user_required=edit.action == "media-delete")
+        self.operation_identity(edit)
         if edit.action.startswith("subscription-"):
             if ig or self.token_mode != "facebook_page" or edit.target_id != self.page_id:
                 raise MetaError("subscription requires selected Page and its Page token")
@@ -373,6 +390,9 @@ class MetaClient:
         return edit
 
     def snapshot(self, edit):
+        edit = validate_edit(edit)
+        if self._uses_remote_user(edit):
+            return self._remote_user.request('inspect', edit)['before']
         edit = self.validate_action(edit)
         if edit.action.startswith("subscription-"):
             return self.subscriptions()
@@ -464,7 +484,10 @@ class MetaClient:
             return {**before, "subscribed_fields": sorted(edit.subscribed_fields or [])}
         return {**before, **(edit.patch or {})}
 
-    def mutate(self, edit):
+    def mutate(self, edit, *, change=None):
+        edit = validate_edit(edit)
+        if self._uses_remote_user(edit):
+            return self._remote_user.request('mutate', edit, change=change)['receipt']
         edit = self.validate_action(edit)
         if edit.action in {"profile-update", "post-update", "video-update", "media-update"}:
             data = {k: (str(v).lower() if type(v) is bool else v) for k, v in edit.patch.items()}

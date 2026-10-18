@@ -22,6 +22,10 @@ _ACTIONS = {
     'connection_unavailable': 'user_action',
     'connection_replaced': 'user_action',
     'connection_changed': 'user_action',
+    'user_authorization_required': 'user_action',
+    'operation_conflict': 'user_action',
+    'operation_rejected': 'inspect',
+    'operation_uncertain': 'reconcile',
 }
 
 

@@ -13,6 +13,33 @@ No scope alone proves that a feature works or authorizes a content change.
 
 ## Product boundaries
 
+### Instagram User-token management route (October 18 source update)
+
+New Instagram connections retain their Facebook User grant encrypted on the
+server, separately from the selected Page token. Ordinary publishing continues
+to use the Page token. Media deletion and exact mention replies use a narrow
+server-side operation route; clients never receive the broader User credential.
+
+- Media deletion requires `instagram_basic` and `instagram_manage_contents`.
+- Mention replies require `instagram_basic`, `instagram_manage_comments`,
+  `pages_read_engagement` and `pages_show_list`. Meta additionally documents
+  `ads_management` **or** `ads_read` when the person's Page role was granted
+  through Business Manager. That eligibility condition must be checked; do not
+  request ad permissions for every connection by default.
+- The route checks fresh grants, User identity, Page tasks, the linked Instagram
+  account, resource ownership and the exact approved baseline before dispatch.
+- Durable operation records prevent uncertain writes from being sent again.
+  Reconciliation can recover an accepted receipt without a second provider write;
+  acceptance remains distinct from independently verified deletion or reply visibility.
+- Existing connections do not acquire a retained User grant automatically.
+  Hosted deployment, owner-completed renewed consent, client adoption and live
+  fixture verification remain required. Local automated tests do not satisfy those gates.
+
+References: [media deletion](https://developers.facebook.com/documentation/instagram-platform/reference/instagram-media)
+and [mention replies](https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/mentions).
+
+### General limits
+
 - No YouTube comment likes/hearts/pinning, cards/end screens or community polls
   through this CLI. See exact disabled rows in capabilities.yml.
 - No TikTok comment management or automatic native future-time API publication.

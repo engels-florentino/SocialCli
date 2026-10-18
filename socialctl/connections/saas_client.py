@@ -38,6 +38,10 @@ MESSAGES={
     'installation_revoked':'This installation was revoked. Run socialcli account login.',
     'installation_expired':'This installation expired. Run socialcli account login.',
     'subscription_required':'Your SocialCli subscription is required. Open your SocialCli account to manage access.',
+    'user_authorization_required':'Instagram User authorization is unavailable. Ask the owner to reconnect Instagram with management consent; keep existing connections until replacement is confirmed.',
+    'operation_uncertain':'The operation outcome is uncertain. Reconcile the saved operation; do not repeat its write.',
+    'operation_conflict':'The approved account or resource changed. Review the saved operation before preparing another change.',
+    'operation_rejected':'The provider operation was rejected or its ownership could not be verified. No automatic retry.',
 }
 
 
@@ -50,7 +54,7 @@ class SaaSClient:
         from socialctl.read_budget import ReadDeadlineExceeded,ReadResponseTooLarge
         if path.startswith('/v1/connections'):
             path='/api/saas'+path
-        if not re.fullmatch(r'/api/saas/v1/(?:capabilities|installations(?:/[A-Za-z0-9_-]{1,256}(?:/(?:authorizations|attach|migrations|rotations/[A-Za-z0-9_-]{16,64}))?)?|rotations/[A-Za-z0-9_-]{16,64}/commit|migrations/[A-Za-z0-9_-]{1,256}/poll|pairings/[A-Za-z0-9_-]{1,256}/(?:poll|ack)|authorizations/[A-Za-z0-9_-]{1,256}(?:/poll)?|connections/[A-Za-z0-9_-]{1,256}(?:/(?:activate|token|media(?:/[A-Za-z0-9_-]{32})?))?)(?:\?refresh=false)?',path):
+        if not re.fullmatch(r'/api/saas/v1/(?:capabilities|installations(?:/[A-Za-z0-9_-]{1,256}(?:/(?:authorizations|attach|migrations|rotations/[A-Za-z0-9_-]{16,64}))?)?|rotations/[A-Za-z0-9_-]{16,64}/commit|migrations/[A-Za-z0-9_-]{1,256}/poll|pairings/[A-Za-z0-9_-]{1,256}/(?:poll|ack)|authorizations/[A-Za-z0-9_-]{1,256}(?:/poll)?|connections/[A-Za-z0-9_-]{1,256}(?:/(?:activate|token|instagram-management|media(?:/[A-Za-z0-9_-]{32})?))?)(?:\?refresh=false)?',path):
             raise ValueError('Invalid SocialCli account endpoint.')
         headers={'Authorization':'Bearer '+secret} if secret else {}
         if legacy_secret is not None:

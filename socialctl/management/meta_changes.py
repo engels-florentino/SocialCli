@@ -65,7 +65,7 @@ def prepare_meta(client, store, raw):
     moment = now_utc()
     change = MetaChange(id=str(uuid.uuid4()), brand=client.brand.nombre,
         brand_root=str(client.brand.raiz.resolve()), platform=client.platform.value,
-        identity=client.identity(user_required=edit.action == "media-delete"),
+        identity=client.operation_identity(edit),
         edit=edit.model_dump(exclude_none=True), before=before, created_at=moment, updated_at=moment)
     change.fingerprint = fingerprint(change)
     event(change, "prepared")
@@ -77,7 +77,7 @@ def bound(client, change):
     if (change.brand, change.brand_root, change.platform) != (client.brand.nombre, str(client.brand.raiz.resolve()), client.platform.value):
         raise MetaError("brand/account does not match proposal")
     edit = validate_edit(change.edit)
-    if client.identity(user_required=edit.action == "media-delete") != change.identity:
+    if client.operation_identity(edit) != change.identity:
         raise MetaError("token actor/account changed since proposal")
     return edit
 
@@ -108,6 +108,12 @@ def readback(client, store, change):
     if change.status in {"verified", "rejected", "conflict", "proposed"}:
         return change
     try:
+        if change.receipt is None:
+            receipt = client.recover_receipt(edit, change)
+            if receipt is not None:
+                change.receipt = receipt
+                change.result_id = receipt.get('id', receipt.get('target_id', edit.target_id))
+                event(change, 'server_receipt_recovered_no_write')
         if edit.action.endswith("-delete") or edit.action == "mention-reply" or edit.action == "schedule-cancel":
             # A DELETE receipt confirms acceptance; an inaccessible node cannot
             # independently prove absence. Preserve that distinction indefinitely.
@@ -163,7 +169,7 @@ def apply_meta(client, store, change_id, approval_digest):
         event(change, "write_intent", approval_digest=approval_digest)
         store.save(change)
         try:
-            change.receipt = client.mutate(edit)
+            change.receipt = client.mutate(edit, change=change)
         except MetaRejected as exc:
             change.status = "rejected"
             event(change, "write_rejected", **failure_details(exc, token=client._token, read_only=False))

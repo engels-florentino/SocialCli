@@ -182,6 +182,8 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
     vault=metadata.vault
     connections=Connections(metadata,app.state.saas_installations,providers,clock)
     app.state.saas_connections=connections
+    from socialctl.saas.meta_user import install_meta_user_route
+    install_meta_user_route(app, connections, clock)
     csrf,valid_form=app.state.saas_csrf,app.state.saas_valid_form
 
     @app.post('/api/saas/v1/installations/{installation_id}/authorizations',status_code=201)
@@ -251,6 +253,10 @@ def install_connection_routes(app,settings,metadata,sessions,providers,clock):
                 account=next((a for a in data['result']['accounts'] if a['id']==form.get('account_id')),None)
                 if account is None: raise HTTPException(400,'Choose an account authorized by the provider.')
                 grant=json.loads(json.dumps(data['result']['grant']))
+                if data['platform']=='instagram' and account.get('access_token'):
+                    # Broader User credentials remain encrypted server-side.
+                    # Ordinary publishing still receives the selected Page token.
+                    grant['meta_user_grant']=json.loads(json.dumps(data['result']['grant']))
                 if account.get('access_token'): grant['access_token']=account['access_token']
                 owner=data['saas']
                 result=connections.candidate(db,owner['installation_id'],user.id,data['platform'],owner['brand'],account,
