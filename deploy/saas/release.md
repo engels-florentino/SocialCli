@@ -17,6 +17,16 @@ until their own review, release and deployment checks pass. See
 [billing cutover](billing-cutover.md). Changing test billing configuration alone
 does not migrate customer pointers or paid access to live mode.
 
+Current source checkpoint (October 18): runtime commit `fcb3385` passed the full
+suite with **3,733 tests passed** and one existing Starlette deprecation warning.
+The subsequent documentation-only checkpoint `3df3ef8` passed the seven existing
+agent-product tests and packaged-guide rendering checks; runtime code is unchanged.
+These post-rc16 source changes remain unpublished, despite retaining the source
+version `0.3.0rc16`. They are absent from the published rc16 archives and the hosted
+rc15 runtime. Refresh and review the final artifacts under a new candidate version;
+never overwrite published rc16. Final candidate publication, stable PyPI publication
+and hosted deployment each retain their separate approval and validation gates.
+
 # Previous public candidate: 0.3.0rc15
 
 Owner-approved TestPyPI publication completed. Downloaded wheel and sdist match

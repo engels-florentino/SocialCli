@@ -34,8 +34,8 @@ https://test.pypi.org/pypi/socialcli/0.3.0rc16/json
 Verify the installed version is exactly 0.3.0rc16 before continuing. The stable
 `uv tool install socialcli` command is not the installation path for this pilot.
 
-For headless agents, configure encrypted-file storage with an external0600 key in
-a0700 directory before login. Keep the key outside the workspace and preserve both
+For headless agents, configure encrypted-file storage with an external key file with mode `0600` in
+a directory with mode `0700` before login. Keep the key outside the workspace and preserve both
 across conversations. Never fall back to plaintext storage. Follow the protected
 storage procedure at:
 https://socialcli.app/connections.html#headless-encrypted-capability-storage.
