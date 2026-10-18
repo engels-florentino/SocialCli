@@ -23,6 +23,11 @@ found no critical or important issues. A dedicated synthetic persisted recovery
 case remains a minor test-coverage follow-up; live recovery was verified.
 
 This establishes localized private creation only. Updates, playlist images,
-item reordering and podcast variants retain their separate QA status. The fix
-is currently in source; published rc15 and Muse still require the next client
-release. No server or schema change is required for this client comparison.
+item reordering and podcast variants retain their separate QA status. The fix is published in TestPyPI rc16. Downloaded wheel/sdist hashes match the
+reviewed CI artifacts; the actual published wheel passed clean-install smoke.
+Muse confirmed rc16 installed in its existing environment, intact dependencies
+and connections, and both positive/negative fictional comparison checks. This
+adoption evidence is Muse-reported execution observed in its authenticated UI.
+No live publication was repeated. Public guides now serve rc16; the compatible
+rc15 service remains healthy with configuration/database invariants preserved.
+No server code or schema change was required for this client comparison.

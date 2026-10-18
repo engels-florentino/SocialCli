@@ -4,7 +4,9 @@ The playlist verification fix is published to TestPyPI. Both downloaded archives
 match the reviewed CI artifacts, and Linux/macOS installation checks passed.
 The existing rc15 service is compatible; this correction runs in the client.
 See [playlist verification](qa-playlist-localizations-2026-10-18.md) for scope.
-Muse adoption is being verified separately.
+Muse confirmed rc16 adoption, dependency integrity, the corrected comparison and
+healthy existing Facebook/Instagram connections. Public installation guides now
+serve rc16. This closes the playlist fix, not the remaining live QA plan.
 
 # Previous public candidate: 0.3.0rc15
 
