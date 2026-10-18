@@ -4943,7 +4943,7 @@
       "availability": "api",
       "delivery": "normal",
       "enabled": true,
-      "field_scope": "documented mutable Page video fields, including title/description where eligible",
+      "field_scope": "description only; title editing is not exposed by the current command schema",
       "required_scopes": {
         "all_of": null,
         "evidence": "method_specific_permission_review_required"
@@ -5181,7 +5181,7 @@
       "availability": "api",
       "delivery": "normal",
       "enabled": true,
-      "field_scope": "supplied video_url, media_type=REELS, caption and supported publish settings",
+      "field_scope": "supplied REELS video_url or single IMAGE image_url and caption; other formats use separate routes or remain gated",
       "required_scopes": {
         "all_of": [
           "instagram_basic",
