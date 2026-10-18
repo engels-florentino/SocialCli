@@ -177,7 +177,7 @@ def test_mention_reply_keeps_user_token_on_server_and_checks_exact_mention(tmp_p
 
 
 @pytest.mark.parametrize('mention', [False, True])
-@pytest.mark.parametrize('lose_response', [False, True])
+@pytest.mark.parametrize('lose_response', [False, True, 'http408', 'redirect', 'unknown403', 'permissions_revoked', 'token_unavailable'])
 def test_public_meta_changes_use_remote_user_route_without_exporting_user_token(tmp_path, monkeypatch, mention, lose_response):
     from socialctl.brands import crear_brand
     from socialctl.models import Platform
@@ -193,9 +193,15 @@ def test_public_meta_changes_use_remote_user_route_without_exporting_user_token(
     responses = []
     def transport(request):
         assert request.url.host == 'social.example', 'User operations must not contact Graph from the client'
+        if lose_response == 'token_unavailable' and request.url.path.endswith('/token'):
+            return httpx.Response(409, json={'detail': 'provider_authorization_expired: Expired'})
         response = server.request(request.method, str(request.url), headers=dict(request.headers), content=request.content)
         responses.append(response.text)
         if lose_response and json.loads(request.content or b'{}').get('phase') == 'mutate':
+            if lose_response in {'http408', 'redirect', 'unknown403'}:
+                return httpx.Response({'http408': 408, 'redirect': 302, 'unknown403': 403}[lose_response], content=b'Intermediary response')
+            if lose_response == 'permissions_revoked':
+                graph.scopes.remove('instagram_manage_comments' if mention else 'instagram_manage_contents')
             raise httpx.ReadTimeout('Lost response after acceptance', request=request)
         return httpx.Response(response.status_code, content=response.content, headers=response.headers)
     http = httpx.Client(transport=httpx.MockTransport(transport))
@@ -212,6 +218,62 @@ def test_public_meta_changes_use_remote_user_route_without_exporting_user_token(
     assert len(graph.writes) == 1
     assert 'USER-PRIVATE' not in ''.join(responses)
     assert 'PRIVATE' not in store.load(change.id).model_dump_json()
+
+
+def replace_grant(client, connection):
+    connections = client.app.state.saas_connections
+    vault = client.app.state.saas.vault
+    with vault.transaction() as db:
+        cap = vault.get(db, 'saas-capability', connection['connection_id'])['payload']
+        grant = vault.get(db, 'saas-grant', cap['grant_id'])['payload']['grant']
+        candidate = connections.candidate(db, cap['installation_id'], cap['user_id'],
+            'instagram', 'MyBrand', cap['account'], grant=grant, expected=cap['grant_id'])
+    assert activate(client, candidate).status_code == 200
+    return candidate
+
+
+@pytest.mark.parametrize('new_operation', [False, True])
+def test_uncertain_reply_guard_survives_replacement_grant(tmp_path, new_operation):
+    client, _, graph, connection = connected(tmp_path)
+    edit = {'action': 'mention-reply', 'target_id': '456', 'media_id': '789',
+            'comment_id': '800', 'message': 'Approved reply'}
+    approved = proposal(client, connection, edit)
+    graph.timeout = True
+    assert call(client, connection, 'mutate', edit=edit, **approved).status_code == 409
+    replacement = replace_grant(client, connection)
+    assert call(client, replacement, 'status', edit=edit, **approved).status_code == 409
+    graph.timeout = False
+    if new_operation:
+        approved['operation_id'] = str(uuid.uuid4())
+    response = call(client, replacement, 'mutate', edit=edit, **approved)
+    assert response.status_code == 409 and 'operation_uncertain' in response.text
+    assert graph.writes == [('POST', '456/mentions')]
+
+
+def test_accepted_receipt_is_available_after_replacement_without_provider_access(tmp_path):
+    client, _, graph, connection = connected(tmp_path)
+    approved = proposal(client, connection)
+    accepted = call(client, connection, 'mutate', **approved)
+    assert accepted.status_code == 200
+    replacement = replace_grant(client, connection)
+    graph.scopes.clear()
+    result = call(client, replacement, 'status', **approved)
+    assert result.status_code == 200
+    assert result.json() == accepted.json()
+    assert graph.writes == [('DELETE', '789')]
+
+
+def test_explicit_disconnect_removes_history_from_replaced_grants(tmp_path):
+    client, _, graph, connection = connected(tmp_path)
+    approved = proposal(client, connection)
+    assert call(client, connection, 'mutate', **approved).status_code == 200
+    replacement = replace_grant(client, connection)
+    vault = client.app.state.saas.vault
+    with vault.transaction() as db:
+        cap = vault.get(db, 'saas-capability', replacement['connection_id'])['payload']
+        client.app.state.saas_lifecycle.disconnect_grant(db, cap['user_id'], 'instagram', cap['grant_id'])
+        assert db.execute("SELECT count(*) FROM records WHERE kind LIKE 'saas-meta-%'").fetchone()[0] == 0
+    assert graph.writes == [('DELETE', '789')]
 
 
 def test_account_deleted_during_provider_write_does_not_resurrect_operation_data(tmp_path):

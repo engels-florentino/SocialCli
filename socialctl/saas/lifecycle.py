@@ -81,6 +81,7 @@ class AccountLifecycle:
         else:
             revocation.tombstone(db,'grant',grant_id,self.clock())
         current=db.execute('SELECT grant_id FROM saas_slots WHERE user_id=? AND platform=?',(user_id,platform)).fetchone()
+        disconnected_account = (record['payload'].get('account') or {}).get('id') if record else None
         for kind,record_id,entry in self.owned_records(db,user_id):
             data=entry['payload']
             # A pre-disconnect OAuth result cannot reinstall an authorization we
@@ -97,7 +98,11 @@ class AccountLifecycle:
                 if kind=='authorization':payload['grant']=data.get('result',{}).get('grant')
                 if payload.get('grant'):
                     revocation.enqueue(self.metadata,db,record_id,payload,self.clock())
-            if pending or data.get('grant_id')==grant_id or kind=='saas-grant' and record_id==grant_id:
+            operation_history = (current is not None and current['grant_id']==grant_id
+                and disconnected_account is not None
+                and kind in {'saas-meta-operation','saas-meta-target'}
+                and data.get('platform')==platform and data.get('account_id')==disconnected_account)
+            if pending or operation_history or data.get('grant_id')==grant_id or kind=='saas-grant' and record_id==grant_id:
                 self.vault.delete(db,kind,record_id)
         db.execute('DELETE FROM saas_slots WHERE user_id=? AND platform=? AND grant_id=?',(user_id,platform,grant_id))
         self.release_empty_brand(db,user_id)

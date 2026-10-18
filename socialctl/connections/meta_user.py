@@ -4,6 +4,15 @@ from socialctl.connections import keychain
 from socialctl.connections.saas_client import ServiceRejected
 from socialctl.management.meta_schema import MetaError, MetaRejected, MetaUncertain, meta_id
 
+NO_WRITE_CODES = {
+    'operation_rejected', 'operation_conflict', 'user_authorization_required',
+    'provider_authorization_expired', 'provider_permissions_changed',
+    'connection_inactive', 'connection_unavailable', 'connection_replaced',
+    'connection_changed', 'platform_not_allowed', 'installation_revoked',
+    'installation_expired', 'privacy_acceptance_required',
+    'assistant_consent_required', 'subscription_required', 'activation_required',
+}
+
 
 class RemoteMetaUser:
     def __init__(self, brand, platform, client):
@@ -41,6 +50,8 @@ class RemoteMetaUser:
             if phase == 'inspect' and not isinstance(result.get('before'), dict):
                 raise ValueError('Missing observation')
             if phase in {'mutate', 'status'}:
+                if identity != change.identity:
+                    raise ValueError('Receipt identity does not match the approved operation')
                 receipt = result.get('receipt')
                 if edit.action == 'media-delete':
                     if receipt != {'success': True, 'target_id': edit.target_id}:
@@ -53,7 +64,8 @@ class RemoteMetaUser:
         except MetaError:
             raise
         except ServiceRejected as exc:
-            error = MetaUncertain if writing and (exc.status >= 500 or exc.status == 429 or exc.code == 'operation_uncertain') else MetaRejected if writing else MetaError
+            definitive = exc.status in {400, 401, 402, 403, 404, 409, 422} and exc.code in NO_WRITE_CODES
+            error = (MetaRejected if definitive else MetaUncertain) if writing else MetaError
             failure = error(str(exc))
             failure._socialcli_error_code = exc.code
             raise failure from None

@@ -101,8 +101,10 @@ def install_meta_user_route(app, connections, clock):
         digest = _digest({**body.model_dump(mode='json'), 'phase': 'mutate'})
         with vault.transaction() as db:
             cap, grant = authorized(db, connection_id, request)
-            key = _digest([cap['grant_id'], body.operation_id])
-            target_key = _digest([cap['grant_id'], body.edit.target_id])
+            # A replacement grant must not erase the same owner's account history.
+            owner = [cap['user_id'], cap['platform'], cap['account']['id']]
+            key = _digest([*owner, body.operation_id])
+            target_key = _digest([*owner, body.edit.target_id])
             if body.phase in {'mutate', 'status'}:
                 previous = existing(db, key, digest)
                 if previous is not None:
@@ -139,10 +141,12 @@ def install_meta_user_route(app, connections, clock):
                 prior = vault.get(db, 'saas-meta-operation', target['payload']['operation_key'])
                 if prior is None or prior['payload']['status'] in {'intent', 'uncertain'}:
                     raise HTTPException(409, 'operation_uncertain: An earlier write on this resource needs review.')
-            saved = {'user_id': cap['user_id'], 'grant_id': cap['grant_id'], 'digest': digest, 'status': 'intent'}
+            ownership = {'user_id': cap['user_id'], 'grant_id': cap['grant_id'],
+                         'platform': cap['platform'], 'account_id': cap['account']['id']}
+            saved = {**ownership, 'digest': digest, 'status': 'intent'}
             vault.put(db, 'saas-meta-operation', key, saved, expires=clock() + RETAIN_SECONDS)
             vault.put(db, 'saas-meta-target', target_key,
-                {'user_id': cap['user_id'], 'grant_id': cap['grant_id'], 'operation_key': key}, expires=clock() + RETAIN_SECONDS)
+                {**ownership, 'operation_key': key}, expires=clock() + RETAIN_SECONDS)
         try:
             receipt = client.mutate(body.edit)
             response = {**result, 'receipt': receipt}

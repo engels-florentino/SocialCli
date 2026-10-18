@@ -29,8 +29,14 @@ server-side operation route; clients never receive the broader User credential.
 - The route checks fresh grants, User identity, Page tasks, the linked Instagram
   account, resource ownership and the exact approved baseline before dispatch.
 - Durable operation records prevent uncertain writes from being sent again.
+  They are bound to the SocialCli owner and Instagram account, so replacing a
+  provider grant does not bypass an unresolved operation. Server records have a
+  90-day retention window and are removed on explicit account disconnection or
+  account deletion; their absence is never proof that a write did not happen.
   Reconciliation can recover an accepted receipt without a second provider write;
-  acceptance remains distinct from independently verified deletion or reply visibility.
+  this lookup authenticates the current SocialCli connection without requiring
+  a still-valid provider permission for a new mutation.
+  Acceptance remains distinct from independently verified deletion or reply visibility.
 - Existing connections do not acquire a retained User grant automatically.
   Hosted deployment, owner-completed renewed consent, client adoption and live
   fixture verification remain required. Local automated tests do not satisfy those gates.

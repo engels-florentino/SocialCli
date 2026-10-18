@@ -50,7 +50,11 @@ class MetaClient:
             if platform is Platform.INSTAGRAM and secret.get('auth_mode') == 'broker' and secret.get('protocol') == 'saas-v1':
                 from socialctl.connections.meta_user import RemoteMetaUser
                 self._remote_user = RemoteMetaUser(brand, platform, client)
-            if secret.get("auth_mode") == "broker":
+            if self._remote_user is not None:
+                # Receipt lookup and server-side User operations do not need a
+                # client-side Page credential. Fetch it only for a Graph call.
+                self._token = None
+            elif secret.get("auth_mode") == "broker":
                 from socialctl.connections.client import broker_access_token
                 self._token = broker_access_token(brand, platform, client, refresh=False)
             else:
@@ -60,7 +64,7 @@ class MetaClient:
             expired = credential_metadata(secret)["expiry"]["expired"]
         except Exception as exc:
             raise with_error_code(MetaError("Meta credentials unavailable"), exc, read_only=False, fallback="authorization_unavailable") from None
-        if not isinstance(self._token, str) or not self._token or expired:
+        if self._remote_user is None and (not isinstance(self._token, str) or not self._token or expired):
             raise MetaError("Meta credentials missing/expired; not refreshed automatically")
         if self.token_mode not in {"facebook_page", "facebook_user"}:
             raise MetaError("unsupported token mode; Facebook Login required")
@@ -69,6 +73,12 @@ class MetaClient:
         # Paths are built only by resource methods. No redirect/remote next URL.
         if method not in {"GET", "POST", "DELETE"} or not re.fullmatch(r"(?:me|[0-9]+(?:_[0-9]+)?)(?:/[a-z_]+)?", path):
             raise MetaError("endpoint/method not allowed")
+        if self._token is None:
+            try:
+                from socialctl.connections.client import broker_access_token
+                self._token = broker_access_token(self.brand, self.platform, self.client, refresh=False)
+            except Exception as exc:
+                raise with_error_code(MetaError('Meta credentials unavailable'), exc, read_only=method == 'GET', fallback='authorization_unavailable') from None
         writing = method != "GET"
         diagnostic = {"method": method, "path": path, "stage": "transport"}
         try:

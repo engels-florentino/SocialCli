@@ -73,10 +73,16 @@ def prepare_meta(client, store, raw):
     return change
 
 
-def bound(client, change):
+def bound(client, change, *, read_only=False):
     if (change.brand, change.brand_root, change.platform) != (client.brand.nombre, str(client.brand.raiz.resolve()), client.platform.value):
         raise MetaError("brand/account does not match proposal")
     edit = validate_edit(change.edit)
+    if read_only and client._uses_remote_user(edit):
+        if (client.account_id != change.identity['account_id'] or client.page_id != change.identity['page_id']):
+            raise MetaError('account changed since proposal')
+        # The status route authenticates the current connection and binds the
+        # exact approved identity. A historical receipt needs no new Graph grant.
+        return edit
     if client.operation_identity(edit) != change.identity:
         raise MetaError("token actor/account changed since proposal")
     return edit
@@ -104,11 +110,11 @@ def normalized_readback_fields(edit, current, expected):
 
 
 def readback(client, store, change):
-    edit = bound(client, change)
+    edit = bound(client, change, read_only=True)
     if change.status in {"verified", "rejected", "conflict", "proposed"}:
         return change
     try:
-        if change.receipt is None:
+        if change.receipt is None or client._uses_remote_user(edit):
             receipt = client.recover_receipt(edit, change)
             if receipt is not None:
                 change.receipt = receipt
@@ -149,7 +155,7 @@ def apply_meta(client, store, change_id, approval_digest):
         change = store.load(change_id)
         if not hmac.compare_digest(change.fingerprint, approval_digest):
             raise MetaError("approval does not match exact fingerprint")
-        edit = bound(client, change)
+        edit = bound(client, change, read_only=change.status != 'proposed')
         key = operation_key(change)
         locks.enter_context(store.apply_lock(str(uuid.uuid5(uuid.NAMESPACE_URL, key))))
         if change.status != "proposed":
