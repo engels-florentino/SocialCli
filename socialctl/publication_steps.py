@@ -230,6 +230,13 @@ def _first_comment(brand, http, store, data, *, retry_rejected=False, reconcile_
     if (change.text, change.media_id, change.action, change.brand, change.brand_root) != (
             data["text"], result.platform_id, "add", data["brand"], data["brand_root"]):
         raise CommentError("comment differs from the approved first comment")
+    # A persisted proposed reference can survive a restart before write intent.
+    # Recheck current complete enumeration before every new native Meta add,
+    # including an explicitly approved retry after definitive rejection. Existing
+    # write intents/receipts only reconcile; a list can never authorize replay.
+    if data['provenance'].startswith('native-schedule:') and change.status == 'proposed':
+        if _native_existing_comment(brand, http, store, data, result):
+            return result
     # Approval is inherited only from this immutable, approved publication;
     # callers cannot pass unrelated ChangeSets or silently adopt legacy comments.
     change = apply_comment(client, comments, change.id, change.fingerprint)
@@ -271,6 +278,7 @@ def _native_existing_comment(brand, http, store, data, result):
     if not matches:
         return False
     result.first_comment_status = 'observed_existing'
+    result.first_comment_change_id = data['comment_change_id']
     result.warnings.append('An existing own exact comment was observed; creation by this occurrence is unproven. No new comment attempted.')
     data['media'] = result.model_dump(mode='json')
     store.write_json(data['id'], data)

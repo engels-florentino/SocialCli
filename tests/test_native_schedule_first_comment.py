@@ -320,3 +320,81 @@ def test_made_for_kids_comment_combination_stops_native_submission_before_networ
     result = schedule_youtube(job,payload,client=client,**context)
     assert result.state == 'ui_required' and 'made for kids' in result.reason
     assert context['store'].get_attempts(job.id) == []
+
+
+@pytest.mark.parametrize('existing,partial', [(True,False),(False,True),(True,True),(False,False)])
+def test_meta_restart_before_write_intent_rechecks_current_complete_comments(tmp_path, monkeypatch, existing, partial):
+    from socialctl import publication_steps
+    from socialctl.management.meta_comments import CommentStore
+    brand, store, moment, uploads = setup_job(tmp_path, monkeypatch)
+    meta = Meta(); meta.public = True; install(monkeypatch, meta)
+    apply = publication_steps.apply_comment
+    def interrupted(*args, **kwargs):
+        raise RuntimeError('fictional interruption before durable comment write intent')
+    monkeypatch.setattr(publication_steps, 'apply_comment', interrupted)
+    invoke(tmp_path, 'deliver')
+    reference = journal(brand,store)['change_id']
+    assert reference and CommentStore(brand.raiz).load(reference).status == 'proposed'
+    assert not meta.writes
+    monkeypatch.setattr(publication_steps, 'apply_comment', apply)
+    meta.existing = existing; meta.partial = partial
+    invoke(tmp_path, 'deliver')
+    assert len(meta.writes) == (0 if existing or partial else 1)
+    assert journal(brand,store)['change_id'] == reference
+    if partial:
+        assert CommentStore(brand.raiz).load(reference).status == 'proposed'
+    elif existing:
+        assert journal(brand,store)['status'] == 'observed_existing'
+    else:
+        assert journal(brand,store)['status'] == 'verified'
+
+
+@pytest.mark.parametrize('existing,partial', [(True,False),(False,True),(True,True),(False,False)])
+def test_meta_explicit_rejected_retry_rechecks_current_complete_comments(tmp_path, monkeypatch, existing, partial):
+    from socialctl.publication_steps import retry_first_comment
+    from socialctl.management.meta_comments import CommentError, CommentStore
+    brand, store, moment, uploads = setup_job(tmp_path, monkeypatch)
+    class RejectOnce(Meta):
+        reject = True
+        def send(self, client, request, **kwargs):
+            if request.method == 'POST' and self.reject:
+                self.writes.append(dict(httpx.QueryParams(request.read().decode())))
+                return httpx.Response(403,json={'error':{'code':200,'message':'fictional definitive denial'}},request=request)
+            return super().send(client,request,**kwargs)
+    meta = RejectOnce(); meta.public = True; install(monkeypatch,meta)
+    invoke(tmp_path,'deliver')
+    reference = journal(brand,store)['change_id']
+    assert len(meta.writes) == 1 and CommentStore(brand.raiz).load(reference).status == 'rejected'
+    meta.reject = False; meta.existing = existing; meta.partial = partial
+    attempt = journal(brand,store)['publication_id']
+    if partial:
+        with pytest.raises(CommentError,match='comment read incomplete'):
+            retry_first_comment(brand,httpx.Client(),attempt)
+    else:
+        result = retry_first_comment(brand,httpx.Client(),attempt)
+        assert result.first_comment_change_id == journal(brand,store)['change_id']
+    assert len(meta.writes) == (1 if existing or partial else 2)
+    assert CommentStore(brand.raiz).load(reference).status == 'rejected'
+    if existing and not partial:
+        assert journal(brand,store)['status'] == 'observed_existing'
+    elif not partial:
+        assert journal(brand,store)['status'] == 'verified'
+
+
+@pytest.mark.parametrize('status', ['applying','uncertain','verified'])
+def test_meta_existing_write_intent_or_receipt_never_replays_for_empty_partial_list(tmp_path, monkeypatch, status):
+    from socialctl.publication_steps import retry_first_comment
+    from socialctl.management.meta_comments import CommentStore
+    brand,store,moment,uploads = setup_job(tmp_path,monkeypatch)
+    meta = Meta(); meta.public = True; meta.lost = status != 'verified'; install(monkeypatch,meta)
+    invoke(tmp_path,'deliver')
+    reference = journal(brand,store)['change_id']
+    comments = CommentStore(brand.raiz)
+    change = comments.load(reference)
+    change.status = status
+    comments.save(change)
+    meta.existing = False; meta.partial = True
+    retry_first_comment(brand,httpx.Client(),journal(brand,store)['publication_id'])
+    assert len(meta.writes) == 1
+    assert journal(brand,store)['change_id'] == reference
+    assert comments.load(reference).status == ('verified' if status == 'verified' else 'uncertain')
