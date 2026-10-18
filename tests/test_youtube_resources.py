@@ -610,3 +610,130 @@ def test_complete_unique_channel_identity_without_continuation_is_accepted(env, 
     change = insert(env)
     result = apply_resource(client, store, change.id, change.fingerprint)
     assert result.status == "verified" and len(api.writes) == 1
+
+
+def signed_thumbnail(env, tmp_path):
+    api, client, store, _ = env
+    api.thumbnails = {'default': {'url': 'https://i9.ytimg.com/vi/video-1/default.jpg?sqp=old&rs=old',
+        'width': 120, 'height': 90}}
+    file = tmp_path / 'supplied.png'
+    file.write_bytes(PNG)
+    change = prepare_resource(client, store, action='thumbnail-set', video_id='video-1', file=file)
+    return change, file
+
+
+def renewed_video(env, *, edit=None):
+    api, client, _, _ = env
+    original = api.handler
+    def handler(request):
+        response = original(request)
+        if request.url.path == '/youtube/v3/videos':
+            payload = response.json()
+            video = payload['items'][0]
+            video['etag'] = 'renewed-etag'
+            video['snippet']['thumbnails']['default']['url'] = 'https://i9.ytimg.com/vi/video-1/default.jpg?sqp=new&rs=new'
+            if edit:
+                edit(video)
+            return httpx.Response(200, json=payload)
+        return response
+    client.client = httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_thumbnail_signature_renewal_uses_validated_etag_without_changing_approval(env, tmp_path):
+    api, client, store, _ = env
+    change, _ = signed_thumbnail(env, tmp_path)
+    approved_before = json.loads(json.dumps(change.before))
+    renewed_video(env)
+    result = apply_resource(client, store, change.id, change.fingerprint)
+    assert result.status == 'accepted_unverifiable' and not result.verified
+    assert result.before == approved_before and result.fingerprint == change.fingerprint
+    assert api.writes[0].headers['If-Match'] == 'renewed-etag'
+    assert api.writes[0].content == PNG
+    apply_resource(client, store, change.id, change.fingerprint)
+    assert len(api.writes) == 1
+
+
+@pytest.mark.parametrize('drift', ['etag-only', 'title', 'description', 'owner', 'path', 'host', 'width', 'height', 'set', 'query'])
+def test_thumbnail_signature_renewal_does_not_hide_real_drift(env, tmp_path, drift):
+    api, client, store, _ = env
+    change, _ = signed_thumbnail(env, tmp_path)
+    def edit(video):
+        thumb = video['snippet']['thumbnails']['default']
+        if drift == 'etag-only':
+            thumb['url'] = change.before['thumbnails']['default']['url']
+        elif drift in {'title', 'description', 'owner'}:
+            video['snippet']['channelId' if drift == 'owner' else drift] = 'changed'
+        elif drift in {'width', 'height'}:
+            thumb[drift] += 1
+        elif drift == 'set':
+            video['snippet']['thumbnails']['extra'] = dict(thumb)
+        else:
+            thumb['url'] = thumb['url'].replace('/default.jpg', '/other.jpg') if drift == 'path' else (
+                thumb['url'].replace('i9.ytimg.com', 'example.invalid') if drift == 'host' else thumb['url'] + '&unknown=new')
+    renewed_video(env, edit=edit)
+    with pytest.raises(ChangeError):
+        apply_resource(client, store, change.id, change.fingerprint)
+    assert not api.writes
+
+
+def test_legacy_thumbnail_proposal_cannot_accept_signature_renewal(env, tmp_path):
+    from socialctl.management.resource_changes import fingerprint
+    api, client, store, _ = env
+    change, _ = signed_thumbnail(env, tmp_path)
+    change.before = {k: change.before[k] for k in ('etag', 'thumbnails')}
+    change.fingerprint = fingerprint(change)
+    store.save(change)
+    renewed_video(env)
+    with pytest.raises(ChangeError):
+        apply_resource(client, store, change.id, change.fingerprint)
+    assert not api.writes
+
+
+def test_signature_renewal_does_not_allow_changed_local_thumbnail(env, tmp_path):
+    api, client, store, _ = env
+    change, file = signed_thumbnail(env, tmp_path)
+    renewed_video(env)
+    file.write_bytes(PNG + b'changed')
+    with pytest.raises(ChangeError):
+        apply_resource(client, store, change.id, change.fingerprint)
+    assert not api.writes
+
+
+@pytest.mark.parametrize('mode', ['timeout', 'server', 'bad-json', '412', 'readback'])
+def test_renewed_thumbnail_preserves_uncertainty_and_never_replays(env, tmp_path, mode):
+    api, client, store, _ = env
+    change, _ = signed_thumbnail(env, tmp_path)
+    renewed_video(env)
+    def write(request):
+        assert request.headers['If-Match'] == 'renewed-etag'
+        if mode == 'timeout':
+            raise httpx.ReadTimeout('synthetic interruption')
+        if mode == 'readback':
+            client.inspect = lambda video_id: (_ for _ in ()).throw(ResourceError('read unavailable'))
+            return httpx.Response(200, json={'etag': 'accepted', 'items': [{}]})
+        return httpx.Response(412 if mode == '412' else 503 if mode == 'server' else 200,
+            content=b'invalid')
+    api.on_write = write
+    result = apply_resource(client, store, change.id, change.fingerprint)
+    assert result.status == ('conflict' if mode == '412' else 'uncertain')
+    assert not result.verified
+    if mode == 'readback':
+        from socialctl.management.youtube_resources import YouTubeResourcesClient
+        client.inspect = YouTubeResourcesClient.inspect.__get__(client)
+    apply_resource(client, store, change.id, change.fingerprint)
+    assert len(api.writes) == 1
+
+
+@pytest.mark.parametrize('mode', ['missing', 'title', 'etag-only'])
+def test_thumbnail_transport_requires_matching_validated_state(env, tmp_path, mode):
+    from dataclasses import replace
+    api, client, store, _ = env
+    change, _ = signed_thumbnail(env, tmp_path)
+    video = client.inspect(change.video_id)
+    if mode == 'title':
+        video = replace(video, snippet={**video.snippet, 'title': 'later drift'})
+    elif mode == 'etag-only':
+        video = replace(video, etag='unexplained')
+    with pytest.raises(ChangeError):
+        client.mutate(change, PNG, validated_video=None if mode == 'missing' else video)
+    assert not api.writes

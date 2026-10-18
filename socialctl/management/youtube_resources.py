@@ -12,6 +12,7 @@ from socialctl.read_budget import ReadDeadlineExceeded, transport_label
 from socialctl.agent_errors import with_error_code
 from socialctl.auth import obtener_token
 from socialctl.management.changes import ChangeError
+from socialctl.management.youtube_metadata import same_metadata_snapshot
 from socialctl.management.youtube import YouTubeManagementClient, YouTubeManagementError
 from socialctl.models import Platform
 
@@ -71,6 +72,28 @@ def resource_id(value):
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_=-]{1,512}", value):
         raise ResourceError("Invalid YouTube ID; URLs and paths are not accepted")
     return value
+
+
+def thumbnail_snapshot(video):
+    """Complete state observed by the owned-video snippet read."""
+    return {"id": video.video_id, "channel_id": video.channel_id,
+            "etag": video.etag, "snippet": video.snippet}
+
+
+def validate_thumbnail_snapshot(change, video):
+    current = thumbnail_snapshot(video)
+    approved = change.before.get("video_snapshot")
+    if approved is None:
+        matches = {"etag": video.etag, "thumbnails": video.snippet.get("thumbnails", {})} == change.before
+    else:
+        matches = (approved.get("id") == change.video_id
+            and approved.get("channel_id") == change.target_account
+            and approved.get("etag") == change.before.get("etag")
+            and approved.get("snippet", {}).get("thumbnails", {}) == change.before.get("thumbnails")
+            and same_metadata_snapshot(approved, current))
+    if not matches:
+        raise ResourceConflict("conflict: thumbnail or video changed since preview")
+    return video.etag
 
 
 class _FixedOAuth:
@@ -240,10 +263,13 @@ class YouTubeResourcesClient(YouTubeManagementClient):
             raise ResourceError("caption download is empty or exceeds 100MB")
         return data
 
-    def mutate(self, change, data):
+    def mutate(self, change, data, *, validated_video=None):
         """Exactly one request; caller has persisted intent before entering."""
         headers = {"If-Match": change.before["etag"]}
         if change.action == "thumbnail-set":
+            if validated_video is None:
+                raise ResourceConflict("thumbnail write requires validated owned-video state")
+            headers = {"If-Match": validate_thumbnail_snapshot(change, validated_video)}
             response = self._request("POST", f"{UPLOAD}/thumbnails/set", headers={
                 **headers, "Content-Type": change.asset["mime"]},
                 params={"videoId": change.video_id, "uploadType": "media"}, content=data)

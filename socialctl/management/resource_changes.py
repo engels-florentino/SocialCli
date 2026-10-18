@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from socialctl.management.changes import ApprovalMismatch, ChangeError, ChangeStore, now_utc
 from socialctl.management.youtube_resources import (
     MAX_CAPTION, ResourceError, ResourceRejected, ResourceConflict, ResourceUncertain, resource_id,
+    thumbnail_snapshot, validate_thumbnail_snapshot,
 )
 
 
@@ -225,7 +226,8 @@ def prepare_resource(client, store, *, action, video_id, file=None, track_id=Non
     draft_changed = draft is not None
     backup = {"fidelity": "not_applicable"}
     if action == "thumbnail-set":
-        before = {"etag": inspected.etag, "thumbnails": inspected.snippet.get("thumbnails", {})}
+        before = {"etag": inspected.etag, "thumbnails": inspected.snippet.get("thumbnails", {}),
+                  "video_snapshot": thumbnail_snapshot(inspected)}
         backup = {"fidelity": "metadata_only_no_original_bytes",
                   "limitation": "API does not expose original thumbnail; public URLs do not guarantee original bytes or faithful restoration."}
     elif action == "caption-insert":
@@ -261,8 +263,7 @@ def prepare_resource(client, store, *, action, video_id, file=None, track_id=Non
 def _preflight(client, change):
     video = _identity(client, change)
     if change.action == "thumbnail-set":
-        if {"etag": video.etag, "thumbnails": video.snippet.get("thumbnails", {})} != change.before:
-            raise ResourceConflict("conflict: thumbnail or video changed since preview")
+        validate_thumbnail_snapshot(change, video)
     elif change.action == "caption-insert":
         rows = client.list_captions(change.video_id)
         if any(t["snippet"]["language"] == change.language and t["snippet"]["name"] == change.name for t in rows):
@@ -273,6 +274,8 @@ def _preflight(client, change):
         if change.backup["fidelity"] == "api_original_response_bytes":
             if digest(client.download_caption(change.video_id, change.track_id)) != change.backup["sha256"]:
                 raise ResourceConflict("conflict: remote caption bytes changed")
+
+    return video
 
 
 def _readback(client, store, change):
@@ -349,7 +352,7 @@ def apply_resource(client, store, change_id, approval_digest):
             if other.id != change.id and _operation_key(other) == key and other.status in {"applying", "uncertain"}:
                 raise ResourceError(f"uncertain outcome pending in {other.id}; write will not be repeated with another proposal")
         try:
-            _preflight(client, change)
+            validated_video = _preflight(client, change)
         except ResourceConflict:
             change.status = "conflict"
             _event(change, "pre_write_conflict")
@@ -370,7 +373,8 @@ def apply_resource(client, store, change_id, approval_digest):
         _event(change, "write_intent", approval_digest=approval_digest)
         store.save(change)
         try:
-            response = client.mutate(change, data)
+            response = (client.mutate(change, data, validated_video=validated_video)
+                        if change.action == "thumbnail-set" else client.mutate(change, data))
         except ResourceRejected as exc:
             change.status = "conflict" if isinstance(exc, ResourceConflict) else "failed"
             _event(change, "write_rejected", error=str(exc))
