@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 import socialctl.cli as cli
+import socialctl.scheduler_launchd as launchd
 from socialctl.brands import crear_brand
 from socialctl.executor import heartbeat
 from socialctl.scheduler import ScheduleStore
@@ -20,8 +21,8 @@ def test_install_does_not_claim_success_without_loaded_service(tmp_path, monkeyp
     crear_brand(tmp_path, 'Example')
     home = tmp_path / 'home'
     monkeypatch.setattr(cli.Path, 'home', lambda: home)
-    monkeypatch.setattr(cli.shutil, 'which', lambda _: launchctl)
-    monkeypatch.setattr(cli.subprocess, 'run', lambda *a, **kw: subprocess.CompletedProcess(a[0], returncode))
+    monkeypatch.setattr(launchd.shutil, 'which', lambda _: launchctl)
+    monkeypatch.setattr(launchd.subprocess, 'run', lambda *a, **kw: subprocess.CompletedProcess(a[0], returncode))
     result = runner.invoke(cli.app, ['schedule-install', '--brand', 'Example', '--root', str(tmp_path)])
     assert result.exit_code == 1, result.output
     assert 'Agent installed:' not in result.stdout

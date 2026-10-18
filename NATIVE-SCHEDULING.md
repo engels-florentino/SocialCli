@@ -91,6 +91,12 @@ does not enable linger automatically; follow its operator instruction if necessa
 `schedule-uninstall --brand BRAND --root WORKSPACE` disables future timer runs and
 preserves queue/media. None of this makes an ephemeral AI conversation persistent.
 
+On macOS, a workspace-specific launchd agent runs while the user remains logged
+in. Doctor requires matching saved and registered configuration, explicit enabled
+state, a successful last exit and fresh executor evidence. Legacy brand-only
+agents are preserved and require explicit migration before installation. See
+[local supervision and safe legacy migration](docs/local-scheduler.md).
+
 Complete offline input examples (manifest, required calendar inventory, eligibility
 and reconciliation observation) ship in `socialcli agent-guide`; the canonical source
 is [the packaged guide](socialctl/ui/assets/agents.md#native-scheduling-input-examples-offline).

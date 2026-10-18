@@ -7,9 +7,6 @@ import hashlib
 import hmac
 import json
 import os
-import plistlib
-import shutil
-import subprocess
 import sys
 import urllib.parse
 import warnings
@@ -1206,36 +1203,13 @@ def schedule_install(
         if supervisor['survives_logout'] is not True:
             typer.echo(f'Logout persistence is unverified. The operator can enable it with loginctl enable-linger {os.getuid()}; then run schedule-doctor.')
         return
-    launchctl = shutil.which("launchctl")
-    if not launchctl:
-        _fallar('No launchd supervisor is available. Nothing was installed. On Linux, configure a persistent '
-                'executor for run-due and check schedule-doctor; an ephemeral agent cannot guarantee delivery.')
-    agent_dir = Path.home() / "Library" / "LaunchAgents"
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    label = f"com.socialctl.{brand.nombre.lower()}.run-due"
-    plist_path = agent_dir / f"{label}.plist"
-    log_dir = brand.raiz / ".socialctl"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    program = [sys.executable, "-m", "socialctl"]
-    payload = {
-        "Label": label,
-        "ProgramArguments": program + ["run-due", "--brand", brand.nombre, "--root", str(root.resolve())],
-        "WorkingDirectory": str(root.resolve()),
-        "StartInterval": 60,
-        "RunAtLoad": True,
-        "StandardOutPath": str(log_dir / "run-due.log"),
-        "StandardErrorPath": str(log_dir / "run-due.error.log"),
-        "ProcessType": "Background",
-    }
-    plist_path.write_bytes(plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=False))
-    if launchctl:
-        domain = f"gui/{os.getuid()}"
-        subprocess.run([launchctl, "bootout", f"{domain}/{label}"], check=False, capture_output=True)
-        result = subprocess.run([launchctl, "bootstrap", domain, str(plist_path)], check=False, capture_output=True)
-        if result.returncode != 0:
-            _fallar('The plist was saved, but launchd could not load it. The scheduler is not installed; check the system log.')
-    typer.echo(f"Agent installed: {plist_path}")
-    typer.echo("launchd will run it every 60 seconds; the Mac must be powered on and awake.")
+    from socialctl.scheduler_launchd import install, SupervisorError
+    try:
+        supervisor = install(brand.nombre, root)
+    except (SupervisorError, OSError) as exc:
+        _fallar(str(exc) if isinstance(exc, SupervisorError) else 'Could not save macOS scheduler configuration.')
+    typer.echo(f"Agent installed and verified: {supervisor['unit']}")
+    typer.echo('launchd runs the queue every 60 seconds while this user is logged in; keep the Mac powered on, awake and connected.')
 
 
 @app.command('schedule-doctor')
@@ -1292,6 +1266,25 @@ def schedule_doctor(
                 else:
                     code,message = 'supervision_unverified','An enabled active Linux user timer with matching configuration was not verified.'
                 result['error'] = {'code':code,'message':message,'action':'user_action'}
+        elif sys.platform == 'darwin':
+            from socialctl.scheduler_launchd import inspect
+            supervisor = inspect(brand.nombre, root)
+            result['supervisor'] = supervisor
+            supervised = all(supervisor[key] is True for key in
+                             ('configuration_matches', 'registered', 'enabled', 'active')) and supervisor['service_failed'] is False
+            if supervised:
+                result['persistent_supervision'] = 'verified_now'
+                if not observation['stale'] and observation.get('state') == 'finished':
+                    result['status'] = 'ready'
+                    result['error'] = None
+            elif observation.get('state') != 'error' and not observation['stale']:
+                failed = supervisor['service_failed'] is True
+                result['error'] = {
+                    'code': 'supervisor_service_failed' if failed else 'supervision_unverified',
+                    'message': ('The macOS scheduler last execution failed; inspect its logs and launchctl before relying on the queue.'
+                                if failed else 'A matching registered and enabled macOS scheduler with successful execution was not verified.'),
+                    'action': 'user_action'}
+
     if json_output:
         typer.echo(json.dumps(result, indent=2))
     else:
@@ -1314,16 +1307,13 @@ def schedule_uninstall(
             _fallar(str(exc) if isinstance(exc,SupervisorError) else 'Could not remove Linux scheduler units')
         typer.echo('Linux timer removed. An already running approved operation may finish; queue and media are preserved.' if removed else 'No Linux scheduler units found for this workspace and brand.')
         return
-    label = f"com.socialctl.{brand_nombre.lower()}.run-due"
-    plist_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
-    if not plist_path.exists():
-        typer.echo(f"Agent does not exist: {plist_path}")
-        return
-    launchctl = shutil.which("launchctl")
-    if launchctl:
-        subprocess.run([launchctl, "bootout", f"gui/{os.getuid()}/{label}"], check=False, capture_output=True)
-    plist_path.unlink()
-    typer.echo(f"Agent removed: {plist_path}")
+    from socialctl.scheduler_launchd import uninstall, SupervisorError
+    try:
+        removed = uninstall(brand_nombre, root)
+    except (SupervisorError, OSError) as exc:
+        _fallar(str(exc) if isinstance(exc, SupervisorError) else 'Could not remove macOS scheduler configuration.')
+    typer.echo('macOS scheduler removed; queue, media and credentials are preserved. Review any interrupted operation before retrying.'
+               if removed else 'No macOS scheduler found for this workspace and brand. Legacy and unrelated jobs were preserved.')
 
 
 @app.command()
