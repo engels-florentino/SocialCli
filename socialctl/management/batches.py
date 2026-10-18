@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-from collections import Counter
 import hashlib
 import hmac
 import json
@@ -19,6 +18,7 @@ from socialctl.management.metadata_parts import KINDS, MetadataEdit, editable_pa
 from socialctl.management.youtube import (YouTubeManagementError, YouTubeUpdateConflict,
     YouTubeUpdateRejected)
 from socialctl.management.youtube_metadata import same_metadata_snapshot
+from socialctl.management.snippet_readback import snippet_mismatch_fields
 
 
 class BatchFile(BaseModel):
@@ -193,19 +193,8 @@ def _mismatch_paths(current, expected):
             except (AttributeError, TypeError, ValueError):
                 pass
         if part == "snippet":
-            # The API may omit cleared tags/description. Only these two
-            # explicitly supported empty-value resets have this equivalence.
-            for field, empty in (("tags", []), ("description", "")):
-                actual.setdefault(field, empty)
-                wanted.setdefault(field, empty)
-        if part == "snippet":
-            # Only keyword readback ignores order; preserve exact duplicates.
-            left, right = actual["tags"], wanted["tags"]
-            if (isinstance(left, list) and isinstance(right, list)
-                    and all(isinstance(tag, str) for tag in [*left, *right])):
-                actual["tags"], wanted["tags"] = Counter(left), Counter(right)
-            else:
-                mismatches.append("snippet.tags")
+            mismatches.extend(f"snippet.{field}" for field in snippet_mismatch_fields(actual, wanted))
+            continue
         for field in sorted(set(actual) | set(wanted)):
             if field not in actual or field not in wanted or actual[field] != wanted[field]:
                 path = f"{part}.{field}" if part in {"snippet", "status"} else part

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from socialctl.management.snippet_readback import same_snippet_readback
+
 import fcntl
 import hashlib
 import hmac
@@ -436,7 +438,7 @@ def apply_youtube_change(
             raise ChangeError(
                 "uncertain outcome: YouTube accepted PUT but verification failed"
             ) from None
-        if not _same_snippet(youtube.editable_snippet(verified), change.after):
+        if not same_snippet_readback(youtube.editable_snippet(verified), change.after):
             change.status = "uncertain"
             _append(change, "verification_mismatch")
             store.save(change)
@@ -465,7 +467,7 @@ def _reconcile(
         ) from None
 
     snippet = youtube.editable_snippet(current)
-    if _same_snippet(snippet, change.after):
+    if same_snippet_readback(snippet, change.after):
         change.status = "applied"
         change.verified = True
         _append(change, "reconciled_applied", etag=current.etag)

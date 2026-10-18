@@ -379,6 +379,23 @@ def reconcile_owned(client, store, change_id):
         return change
 
 
+def _same_owned_baseline(resource, expected, current):
+    if resource != "videos":
+        return current == expected
+    from socialctl.management.youtube_metadata import same_metadata_snapshot
+    if set(expected) != set(current) or "resource" not in expected:
+        return False
+    before, after = expected["resource"], current["resource"]
+    for row in (before, after):
+        if (not isinstance(row, dict) or not isinstance(row.get("etag"), str)
+                or not row["etag"] or not isinstance(row.get("snippet"), dict)
+                or not row.get("id") or not row.get("kind")
+                or not row["snippet"].get("channelId")):
+            return False
+    return (all(current[k] == expected[k] for k in expected if k != "resource")
+            and same_metadata_snapshot(before, after))
+
+
 def apply_owned(client, store, change_id, approval_digest):
     with ExitStack() as locks:
         locks.enter_context(store.apply_lock(change_id))
@@ -407,7 +424,7 @@ def apply_owned(client, store, change_id, approval_digest):
         try:
             current = baseline(client, edit)
             expected = {k: v for k, v in change.before.items() if k != "upload_receipt"}
-            if current != expected:
+            if not _same_owned_baseline(change.resource, expected, current):
                 raise ResourceConflict("conflict: resource/listing changed since preview")
             if edit.action == "banner-apply":
                 uploaded = store.load(edit.upload_change_id)
@@ -436,7 +453,7 @@ def apply_owned(client, store, change_id, approval_digest):
         store.save(change)
         try:
             response = client.effect(edit, change.resource, change.target_id, change.after,
-                etag=None if change.target_id is None else change.before["resource"].get("etag"), asset=change.asset, data=data)
+                etag=None if change.target_id is None else current["resource"].get("etag"), asset=change.asset, data=data)
         except ResourceRejected as exc:
             change.status = "conflict" if isinstance(exc, ResourceConflict) else "failed"
             _event(change, "write_rejected", error=str(exc))

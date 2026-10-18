@@ -1034,3 +1034,77 @@ def test_watermark_unknown_state_retains_channel_preflight(env, failure):
     with pytest.raises(ChangeError):
         apply(env, change)
     assert not env[0].writes
+
+@pytest.mark.parametrize('action', ['video-delete', 'video-recording-date'])
+def test_video_signature_renewal_uses_fresh_etag_without_changing_approval(env, action):
+    api, _, store, _ = env
+    row = api.rows['videos'][0]
+    row['snippet']['thumbnails'] = {'default': {'url': 'https://i1.ytimg.com/vi/video-1/default.jpg?sqp=old&rs=old', 'width': 120}}
+    kwargs = {'recording_date': '2021-01-01T00:00:00Z'} if action == 'video-recording-date' else {}
+    change = prepare(env, action, video_id='video-1', **kwargs)
+    before, fingerprint = copy.deepcopy(change.before), change.fingerprint
+    row['etag'] = 'fresh-video-etag'
+    row['snippet']['thumbnails']['default']['url'] = 'https://i1.ytimg.com/vi/video-1/default.jpg?sqp=new&rs=new'
+    result = apply(env, change)
+    assert result.status == 'verified'
+    assert len(api.writes) == 1
+    assert api.writes[0].headers['if-match'] == 'fresh-video-etag'
+    assert store.load(change.id).before == before
+    assert store.load(change.id).fingerprint == fingerprint
+
+@pytest.mark.parametrize('drift', ['title', 'owner', 'path', 'host', 'width', 'set', 'recording', 'query', 'etag', 'kind'])
+def test_video_signature_normalization_never_hides_other_drift(env, drift):
+    from socialctl.management.youtube_resources import ResourceError
+    api, _, _, _ = env
+    row = api.rows['videos'][0]
+    row['snippet']['thumbnails'] = {'default': {'url': 'https://i1.ytimg.com/vi/video-1/default.jpg?sqp=old&rs=old', 'width': 120}}
+    change = prepare(env, 'video-delete', video_id='video-1')
+    row['etag'] = 'fresh'
+    thumb = row['snippet']['thumbnails']['default']
+    if drift != 'etag':
+        thumb['url'] = 'https://i1.ytimg.com/vi/video-1/default.jpg?sqp=new&rs=new'
+    if drift == 'title': row['snippet']['title'] = 'Changed'
+    if drift == 'owner': row['snippet']['channelId'] = 'other-channel'
+    if drift == 'path': thumb['url'] = thumb['url'].replace('default.jpg', 'other.jpg')
+    if drift == 'host': thumb['url'] = thumb['url'].replace('i1.ytimg.com', 'i2.ytimg.com')
+    if drift == 'width': thumb['width'] = 121
+    if drift == 'set': row['snippet']['thumbnails']['extra'] = copy.deepcopy(thumb)
+    if drift == 'recording': row['recordingDetails']['recordingDate'] = '2022-01-01T00:00:00Z'
+    if drift == 'query': thumb['url'] += '&unknown=new'
+    if drift == 'kind': row['kind'] = 'other-kind'
+    with pytest.raises(ResourceError):
+        apply(env, change)
+    assert not api.writes
+
+
+def test_video_baseline_extra_sibling_and_malformed_data_fail_closed():
+    from socialctl.management.owned_changes import _same_owned_baseline
+    row = {'id': 'v', 'kind': 'youtube#video', 'etag': 'old', 'snippet': {'channelId': 'c', 'thumbnails': {}}}
+    assert not _same_owned_baseline('videos', {'resource': row, 'extra': 1}, {'resource': row})
+    for malformed in ({}, {'resource': {}}, {'resource': {**row, 'snippet': None}}):
+        assert not _same_owned_baseline('videos', malformed, malformed)
+    assert not _same_owned_baseline('playlists', {'resource': row}, {'resource': {**row, 'etag': 'new'}})
+
+
+def test_signature_renewal_later_412_is_conflict_and_never_replayed(env):
+    api, _, store, _ = env
+    row = api.rows['videos'][0]
+    row['snippet']['thumbnails'] = {'default': {'url': 'https://i1.ytimg.com/x?sqp=old&rs=old'}}
+    change = prepare(env, 'video-delete', video_id='video-1')
+    row['etag'] = 'fresh'
+    row['snippet']['thumbnails']['default']['url'] = 'https://i1.ytimg.com/x?sqp=new&rs=new'
+    api.on_write = lambda request: httpx.Response(412, json={'error': {'message': 'Conflict'}})
+    assert apply(env, change).status == 'conflict'
+    assert apply(env, change).status == 'conflict'
+    assert len(api.writes) == 1
+    assert store.load(change.id).before['resource']['etag'] == 'video-etag'
+
+
+@pytest.mark.parametrize('state', ['uncertain', 'accepted_unverifiable'])
+def test_historical_owned_video_outcomes_never_resend(env, state):
+    api, _, store, _ = env
+    change = prepare(env, 'video-delete', video_id='video-1')
+    change.status = state
+    store.save(change)
+    apply(env, change)
+    assert not api.writes

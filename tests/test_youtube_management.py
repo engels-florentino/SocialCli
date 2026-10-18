@@ -723,3 +723,58 @@ def test_cli_show_edit_status_and_apply_requires_typed_digest_even_with_yes(tmp_
     assert applied.exit_code == 0
     assert "applied and verified" in applied.stdout
     assert [r.method for r in api.requests].count("PUT") == 1
+
+@pytest.mark.parametrize('tags', [['mapas', 'historia', 'mapas'], []])
+def test_v1_readback_accepts_exact_keyword_multiset_and_empty_omission(tmp_path, tags):
+    brand = _brand(tmp_path, name='Example')
+    api = YouTubeAPI()
+    client = YouTubeManagementClient(brand, api.client())
+    store = ChangeStore(brand.raiz)
+    change = prepare_youtube_change(client, store, _spec(tmp_path, {'tags': tags}))
+    def normalize(request):
+        body = json.loads(request.content)
+        api.snippet.update(body['snippet'])
+        if tags:
+            api.snippet['tags'] = ['historia', 'mapas', 'mapas']
+        else:
+            api.snippet.pop('tags', None)
+        return httpx.Response(200, json={'id': 'video-1', 'etag': 'etag-2', 'snippet': api.snippet})
+    api.on_put = normalize
+    result = apply_youtube_change(client, store, change.id, change.fingerprint)
+    assert result.status == 'applied'
+    assert len([r for r in api.requests if r.method == 'PUT']) == 1
+    assert store.load(change.id).after['tags'] == tags
+
+
+def test_v1_preflight_keyword_reorder_remains_conflict(tmp_path):
+    brand = _brand(tmp_path, name='Example')
+    api = YouTubeAPI()
+    client = YouTubeManagementClient(brand, api.client())
+    store = ChangeStore(brand.raiz)
+    change = prepare_youtube_change(client, store, _spec(tmp_path))
+    api.snippet['tags'].reverse()
+    with pytest.raises(ChangeConflict):
+        apply_youtube_change(client, store, change.id, change.fingerprint)
+    assert not [r for r in api.requests if r.method == 'PUT']
+
+
+@pytest.mark.parametrize('audio_drift', [False, True])
+def test_v1_uncertain_keyword_reconcile_is_read_only_and_preserves_audio_guard(tmp_path, audio_drift):
+    brand = _brand(tmp_path, name='Example')
+    api = YouTubeAPI()
+    client = YouTubeManagementClient(brand, api.client())
+    store = ChangeStore(brand.raiz)
+    change = prepare_youtube_change(client, store, _spec(tmp_path, {'tags': ['one', 'two', 'one']}))
+    change.status = 'uncertain'
+    store.save(change)
+    api.snippet.update(change.after)
+    api.snippet['tags'] = ['two', 'one', 'one']
+    if audio_drift:
+        api.snippet['defaultAudioLanguage'] = 'en'
+    if audio_drift:
+        with pytest.raises(ChangeError, match='manual review'):
+            apply_youtube_change(client, store, change.id, change.fingerprint)
+        assert store.load(change.id).status == 'manual_review'
+    else:
+        assert apply_youtube_change(client, store, change.id, change.fingerprint).status == 'applied'
+    assert not [r for r in api.requests if r.method == 'PUT']
