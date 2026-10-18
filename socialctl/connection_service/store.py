@@ -35,6 +35,11 @@ class Store:
             db.execute('CREATE TABLE IF NOT EXISTS saas_record_emails (kind TEXT NOT NULL,id TEXT NOT NULL,email_hash TEXT NOT NULL,PRIMARY KEY(kind,id,email_hash))')
             db.execute('CREATE INDEX IF NOT EXISTS saas_record_emails_hash ON saas_record_emails(email_hash,kind,id)')
             db.execute('CREATE TRIGGER IF NOT EXISTS records_links_delete AFTER DELETE ON records BEGIN DELETE FROM saas_record_links WHERE kind=OLD.kind AND id=OLD.id; DELETE FROM saas_record_emails WHERE kind=OLD.kind AND id=OLD.id; END')
+            db.execute("""CREATE TRIGGER IF NOT EXISTS records_meta_webhook_grant_delete AFTER DELETE ON records
+                WHEN OLD.kind='saas-grant' BEGIN
+                DELETE FROM records WHERE kind IN ('saas-meta-webhook-binding','saas-meta-webhook-event')
+                AND (kind,id) IN (SELECT kind,id FROM saas_record_links WHERE grant_id=OLD.id); END""")
+            db.execute('CREATE INDEX IF NOT EXISTS saas_record_links_grant ON saas_record_links(grant_id,kind,id)')
             db.execute('CREATE TABLE IF NOT EXISTS rates (identity TEXT PRIMARY KEY, bucket INTEGER NOT NULL, count INTEGER NOT NULL)')
 
     @contextmanager
@@ -68,7 +73,7 @@ class Store:
         if isinstance(owner, str) and owner:
             db.execute('INSERT INTO saas_record_owners VALUES(?,?,?)', (owner, kind, record_id))
         db.execute('DELETE FROM saas_record_links WHERE kind=? AND id=?',(kind,record_id))
-        if kind in {'saas-capability','saas-pair'}:
+        if kind in {'saas-capability','saas-pair','saas-meta-webhook-binding','saas-meta-webhook-event'}:
             db.execute('INSERT INTO saas_record_links VALUES(?,?,?,?)',
                        (kind,record_id,payload.get('installation_id'),payload.get('grant_id')))
         db.execute('DELETE FROM saas_record_emails WHERE kind=? AND id=?',(kind,record_id))

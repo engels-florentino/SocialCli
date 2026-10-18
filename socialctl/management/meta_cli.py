@@ -129,11 +129,11 @@ def reconcile(
 @meta_app.command("webhook-verify")
 def webhook_verify(
     mode: str = typer.Option(..., "--mode", help="hub.mode received from verification service"),
-    challenge: str = typer.Option(..., "--challenge", help="hub.challenge recibido"),
+    challenge: str = typer.Option(..., "--challenge", help="hub.challenge from a saved verification request"),
     expected_token: str = typer.Option(..., "--expected-token", help="expected token configured in Meta"),
     provided_token: str = typer.Option(..., "--provided-token", help="token received during verification"),
 ) -> None:
-    """Verify challenge and return same value if valid."""
+    """Offline helper: verify a saved challenge; does not configure delivery."""
     try:
         result = verify_challenge(mode=mode, provided_token=provided_token, challenge=challenge,
                                  expected_token=expected_token)
@@ -151,7 +151,7 @@ def webhook_ingest(
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
 ) -> None:
-    """Ingest HMAC-validated webhook payload without writing to Meta."""
+    """Offline helper: ingest a saved signed payload; no automatic delivery."""
     selected = _brand(root, brand)
     try:
         raw = body_path.read_bytes()
@@ -169,7 +169,7 @@ def webhook_events(
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
     limit: int = typer.Option(100, "--limit"),
 ) -> None:
-    """List locally persisted webhook events."""
+    """Offline helper: list locally persisted events; no hosted queue access."""
     selected = _brand(root, brand)
     try:
         store = WebhookStore(selected, platform.value)
@@ -186,7 +186,7 @@ def webhook_reconcile(
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),
 ) -> None:
-    """Reconcile an event using remote GET only; never write."""
+    """Offline helper: reconcile a saved event with remote GET only."""
     selected = _brand(root, brand)
     try:
         store = WebhookStore(selected, platform.value)

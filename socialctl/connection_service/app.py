@@ -135,7 +135,7 @@ def create_app(settings: Settings, *, store: Store | None = None,
     async def secure_headers(request: Request, call_next):
         try:
             upload=(request.method=='PUT' and hasattr(app.state,'temporary_media') and re.fullmatch(r'/api/saas/v1/connections/[A-Za-z0-9_-]{1,256}/media/[A-Za-z0-9_-]{32}',request.url.path))
-            limit=512*1024*1024 if upload else (1048576 if request.url.path=='/api/saas/v1/billing/webhook' else 16384)
+            limit=512*1024*1024 if upload else (1048576 if request.url.path in {'/api/saas/v1/billing/webhook','/api/saas/v1/meta/webhook'} else 16384)
             if int(request.headers.get('content-length', '0')) > limit:
                 response = (HTMLResponse(error_page(413), status_code=413) if is_browser_path(request) else
                             JSONResponse({'detail':'request is too large'}, status_code=413))
@@ -475,6 +475,8 @@ def create_app(settings: Settings, *, store: Store | None = None,
         install_account_routes(app, settings, vault, auth_client, clock)
         from socialctl.saas.connections import install_connection_routes
         install_connection_routes(app,settings,app.state.saas,app.state.saas_sessions,providers,clock)
+        from socialctl.saas.meta_webhooks import install_meta_webhook_routes
+        install_meta_webhook_routes(app,app.state.saas_connections,app.state.saas_sessions,settings,clock)
         from socialctl.saas.rotation import install_rotation_routes
         install_rotation_routes(app,app.state.saas,clock)
         app.state.saas_connections.legacy=legacy

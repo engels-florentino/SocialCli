@@ -66,7 +66,8 @@ def export_manifest(database, *, now):
 
 def _wipe_access(db, *, quarantine):
     kinds=['saas-session','saas-login','saas-pair','saas-installation','saas-capability',
-           'saas-candidate','authorization','connection']
+           'saas-candidate','authorization','connection',
+           'saas-meta-webhook-binding','saas-meta-webhook-event']
     if quarantine:kinds+=['saas-grant','google-revocation']
     db.execute('DELETE FROM records WHERE kind IN ('+','.join('?' for _ in kinds)+')',kinds)
     db.execute('UPDATE saas_users SET session_version=session_version+1')

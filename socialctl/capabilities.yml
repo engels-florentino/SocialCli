@@ -4215,7 +4215,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Only listed handlers/field scopes implemented; no current-token write-grant claim"
+      "limitation": "Offline helper only: saved challenges/payloads; no automatic delivery or subscription configuration. Hosted receiver is a separate opt-in candidate requiring live verification."
     },
     {
       "id": "facebook.webhooks.ingest",
@@ -4251,7 +4251,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Only listed handlers/field scopes implemented; no current-token write-grant claim"
+      "limitation": "Offline helper only: saved challenges/payloads; no automatic delivery or subscription configuration. Hosted receiver is a separate opt-in candidate requiring live verification."
     },
     {
       "id": "instagram.identity.get",
@@ -4661,7 +4661,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Only listed handlers/field scopes implemented; no current-token write-grant claim"
+      "limitation": "Offline helper only: saved challenges/payloads; no automatic delivery or subscription configuration. Hosted receiver is a separate opt-in candidate requiring live verification."
     },
     {
       "id": "instagram.webhooks.ingest",
@@ -4697,7 +4697,7 @@
         }
       ],
       "remaining": [],
-      "limitation": "Only listed handlers/field scopes implemented; no current-token write-grant claim"
+      "limitation": "Offline helper only: saved challenges/payloads; no automatic delivery or subscription configuration. Hosted receiver is a separate opt-in candidate requiring live verification."
     },
     {
       "id": "facebook.videos.insert",
