@@ -176,16 +176,19 @@ def _enabled(domain, name):
     lines = result.stdout.strip().splitlines()
     if not lines or lines[0].strip() != 'disabled services = {' or lines[-1].strip() != '}':
         return None
+    # Current macOS prints enabled/disabled; retain the boolean spelling used
+    # by earlier diagnostic fixtures without treating unknowns as on.
+    states = r'(true|false|enabled|disabled)'
     entries = []
     for line in lines[1:-1]:
-        if not re.fullmatch(r'\s*"[^"\n]+"\s*=>\s*(true|false)\s*', line):
+        if not re.fullmatch(r'\s*"[^"\n]+"\s*=>\s*' + states + r'\s*', line):
             return None
-        match = re.fullmatch(r'\s*"' + re.escape(name) + r'"\s*=>\s*(true|false)\s*', line)
+        match = re.fullmatch(r'\s*"' + re.escape(name) + r'"\s*=>\s*' + states + r'\s*', line)
         if match:
             entries.append(match.group(1))
         elif '"' + name + '"' in line:
             return None
-    return entries[0] == 'false' if len(entries) == 1 else None
+    return entries[0] in {'false', 'enabled'} if len(entries) == 1 else None
 
 
 def _legacy_present(brand, path, domain):

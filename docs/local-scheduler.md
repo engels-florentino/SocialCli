@@ -27,7 +27,10 @@ arguments, working directory, log destinations and 60-second interval, an
 explicit enabled state, a successful last exit, and fresh healthy executor
 evidence before reporting `ready`. Unknown or changed launchctl output stays
 `attention_required`. Apple describes `launchctl print` as diagnostic output
-rather than a stable API; supported fields may change with macOS. An idle
+rather than a stable API; supported fields may change with macOS.
+The enabled-state probe accepts explicit `enabled`/`disabled` entries and the
+boolean `false`/`true` disabled-state spelling; missing, duplicate or unknown
+entries do not establish an enabled job. An idle
 registered interval job need not have a running PID. A newly installed job can
 remain unverified until its first successful execution. Inspect the selected
 brand's `.socialctl/run-due.log` and `.socialctl/run-due.error.log` when needed.

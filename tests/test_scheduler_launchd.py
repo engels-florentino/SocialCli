@@ -386,3 +386,60 @@ def test_configuration_changed_during_probe_is_not_booted_out(tmp_path, monkeypa
     assert len(manager.jobs) == 1
     assert not any(call[0] == 'bootout' for call in manager.calls)
     assert path.exists()
+
+
+def _native_enabled_words(manager, monkeypatch):
+    """macOS observed print-disabled spelling, not a new supervisor operation."""
+    original = manager.run
+    def observed_format(argv, **kwargs):
+        result = original(argv, **kwargs)
+        if argv[1] == 'print-disabled':
+            result.stdout = result.stdout.replace('=> false', '=> enabled').replace('=> true', '=> disabled')
+        return result
+    monkeypatch.setattr(service.subprocess, 'run', observed_format)
+
+
+def test_observed_enabled_spelling_allows_verified_install_and_ready_doctor(tmp_path, monkeypatch):
+    manager = Launchd(monkeypatch, tmp_path)
+    _native_enabled_words(manager, monkeypatch)
+    root = tmp_path / 'workspace'; brand = crear_brand(root, 'Example')
+    result = invoke('schedule-install', root)
+    assert result.exit_code == 0, result.output
+    heartbeat(ScheduleStore(brand.raiz), 'finished', datetime.now(timezone.utc))
+    result = invoke('schedule-doctor', root)
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert report['status'] == 'ready'
+    assert report['supervisor']['enabled'] is True
+    assert report['unattended_delivery_guaranteed'] is False
+
+
+def test_observed_disabled_spelling_reports_disabled_without_certifying_ready(tmp_path, monkeypatch):
+    manager, root, _ = installed(tmp_path, monkeypatch)
+    manager.disabled[next(iter(manager.jobs))] = True
+    _native_enabled_words(manager, monkeypatch)
+    result = invoke('schedule-doctor', root)
+    assert result.exit_code == 1, result.output
+    report = json.loads(result.stdout)
+    assert report['supervisor']['enabled'] is False
+    assert report['persistent_supervision'] == 'unverified'
+
+
+@pytest.mark.parametrize('entries', [
+    ['enabled', 'enabled'], ['enabled', 'disabled'], ['enabled', 'false'],
+    ['unknown'], ['enabled extra'], ['disabled extra'],
+])
+def test_observed_words_do_not_admit_duplicate_or_unknown_states(tmp_path, monkeypatch, entries):
+    manager, root, _ = installed(tmp_path, monkeypatch)
+    name = next(iter(manager.jobs))
+    original = manager.run
+    def ambiguous(argv, **kwargs):
+        result = original(argv, **kwargs)
+        if argv[1] == 'print-disabled':
+            result.stdout = 'disabled services = {\n' + ''.join(
+                '\t"' + name + '" => ' + token + '\n' for token in entries) + '}'
+        return result
+    monkeypatch.setattr(service.subprocess, 'run', ambiguous)
+    result = invoke('schedule-doctor', root)
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)['supervisor']['enabled'] is None
