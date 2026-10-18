@@ -803,8 +803,9 @@ scope grants remain unknown and cannot satisfy `--require-scope`, which requires
 an explicit `--platform`. Identity verification and recorded scopes do not prove
 write permissions or provider approval. No token refresh, reconnection, remote
 mutation, publication, media generation or reencoding is performed. TikTok
-identity checks remain unsupported by this existing doctor integration and are
-reported as unavailable. Without `--media` or `--post`, file integrity is not
+identity checks compare the authenticated provider `open_id` with the configured
+account using a read-only request; they do not verify publishing permission.
+Without `--media` or `--post`, file integrity is not
 checked. A supplied image passing inspection alone does not prove eligibility
 for a particular publishing route; use `--post` for route validation.
 
