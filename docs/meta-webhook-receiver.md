@@ -104,8 +104,11 @@ until explicitly acknowledged. Acknowledgment records consumption of a hint;
 it does not certify a provider GET, successful reply or completed work. Dedupe
 evidence remains until expiry.
 
-Consumers must use existing owned-content/comment readers to verify current
-remote state before preparing any action. A callback and its consumption never
+Instagram media/caption mentions retain a media ID and `comment_id: null`;
+comment mentions also retain the exact comment ID. Consumers must distinguish
+these shapes and perform the corresponding media-mention or comment-mention GET
+with current account/mention authorization before preparing any action. A mention
+can reference another owner's media, so it does not establish ownership. A callback and its consumption never
 publish, reply, moderate, react or otherwise trigger a social write. Existing
 complete-preview and exact approval requirements still apply.
 
@@ -129,8 +132,9 @@ parameters and `/debug_token` request parameters.
 Task 4 stays open until the deployed receiver captures one genuine event for each
 offered subscribed field using an approved disposable fixture, followed by tracing
 receipt, owner-bound durable storage, authenticated consumption and an owned GET.
-Save those genuine events for offline-helper QA. Test mention reading and mention
-reply separately; a comments event cannot certify either. An HTTP 200, a synthetic
+Save those genuine events for offline-helper QA. Capture media/caption mentions
+and comment mentions separately; a comment-mention event cannot certify the
+media-only shape. Test mention reading and mention reply separately; a comments event cannot certify either. An HTTP 200, a synthetic
 signed fixture or a subscription dashboard alone cannot close delivery.
 
 Current Meta documentation was retrieved through Context7 on 2026-10-18:
@@ -138,5 +142,6 @@ Current Meta documentation was retrieved through Context7 on 2026-10-18:
 [app subscriptions](https://developers.facebook.com/docs/graph-api/webhooks/subscriptions-edge),
 [Instagram with Facebook Login webhooks](https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-instagram),
 [Instagram event fields](https://developers.facebook.com/docs/graph-api/webhooks/reference/instagram),
+[media and comment mention examples](https://developers.facebook.com/documentation/instagram-platform/webhooks/examples),
 [Page webhook setup](https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-pages)
 and [token inspection](https://developers.facebook.com/docs/graph-api/reference/debug_token).

@@ -407,3 +407,33 @@ def test_whole_batch_rolls_back_when_global_capacity_is_exhausted(receiver, monk
     value=json.loads(body()); value['entry'].extend(json.loads(body(media='790'))['entry'])
     assert send(client,json.dumps(value).encode()).status_code == 503
     assert client.get(event_path(),headers=headers).json()['events'] == []
+
+
+def test_signed_media_only_mention_is_minimized_owned_consumable_and_deduplicated(receiver):
+    client, now, graph, cap, headers = receiver
+    assert enable(client).status_code == 303
+    baseline = len(graph.calls)
+    raw = json.dumps({'object': 'instagram', 'entry': [{'id': '456', 'time': int(now[0]),
+        'changes': [{'field': 'mentions', 'value': {'media_id': '789',
+            'text': 'PRIVATE CAPTION', 'from': {'username': 'PRIVATE AUTHOR'}}}]}]}).encode()
+    result = send(client, raw)
+    assert result.status_code == 200 and result.json()['accepted'] == 1
+    assert send(client, raw).json()['duplicates'] == 1
+    events = client.get(event_path(), headers=headers).json()['events']
+    assert len(events) == 1
+    event = events[0]
+    assert (event['field'], event['target_id'], event['comment_id']) == ('mentions', '789', None)
+    assert client.get(event_path()).status_code in {401, 403, 404}
+    vault = client.app.state.saas.vault
+    with vault.read_transaction() as db:
+        saved = vault.get(db, 'saas-meta-webhook-event', event['id'])['payload']
+        assert saved['user_id'] == cap['user_id'] and saved['grant_id'] == cap['grant_id']
+        assert 'PRIVATE' not in json.dumps(saved)
+    consumed = client.post(event_path()+'/'+event['id']+'/ack', headers=headers)
+    assert consumed.status_code == 200 and consumed.json()['remote_writes'] == 0
+    assert client.get(event_path(), headers=headers).json()['events'] == []
+    assert send(client, raw).json()['duplicates'] == 1
+    assert len(graph.calls) == baseline
+    malformed = json.loads(raw)
+    malformed['entry'][0]['changes'][0]['value']['comment_id'] = 'invalid'
+    assert send(client, json.dumps(malformed).encode()).json()['accepted'] == 0

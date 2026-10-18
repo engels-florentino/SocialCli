@@ -251,7 +251,9 @@ class MetaWebhooks:
         if not _id(target, composite=field == 'feed'): return None
         comment = value.get('comment_id') if field in {'feed', 'mentions'} else value.get('id')
         if comment is not None and not _id(comment, composite=field == 'feed'): return None
-        if field in {'comments', 'mentions'} and comment is None: return None
+        # Caption/media mentions carry only media_id; comment mentions also
+        # carry comment_id. Keep the distinction for the subsequent owned GET.
+        if field == 'comments' and comment is None: return None
         return {'field': field, 'target_id': target, 'comment_id': comment}
 
     def authorized(self, db, connection_id, request):
