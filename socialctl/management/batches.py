@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from collections import Counter
 import hashlib
 import hmac
 import json
@@ -171,7 +172,9 @@ def _event(op, event, **details):
     op.journal.append({"at": now_utc().isoformat(), "event": event, **details})
 
 
-def _matches(current, expected):
+def _mismatch_paths(current, expected):
+    """Return bounded field names without raw bodies or values."""
+    mismatches = []
     parts = editable_parts(current.resource)
     for part, values in expected.items():
         actual, wanted = copy.deepcopy(parts[part]), copy.deepcopy(values)
@@ -195,9 +198,24 @@ def _matches(current, expected):
             for field, empty in (("tags", []), ("description", "")):
                 actual.setdefault(field, empty)
                 wanted.setdefault(field, empty)
-        if actual != wanted:
-            return False
-    return True
+        if part == "snippet":
+            # Only keyword readback ignores order; preserve exact duplicates.
+            left, right = actual["tags"], wanted["tags"]
+            if (isinstance(left, list) and isinstance(right, list)
+                    and all(isinstance(tag, str) for tag in [*left, *right])):
+                actual["tags"], wanted["tags"] = Counter(left), Counter(right)
+            else:
+                mismatches.append("snippet.tags")
+        for field in sorted(set(actual) | set(wanted)):
+            if field not in actual or field not in wanted or actual[field] != wanted[field]:
+                path = f"{part}.{field}" if part in {"snippet", "status"} else part
+                if path not in mismatches:
+                    mismatches.append(path)
+    return mismatches[:16]
+
+
+def _matches(current, expected):
+    return not _mismatch_paths(current, expected)
 
 
 def _apply_operation(client, store, batch, op):
@@ -210,8 +228,9 @@ def _apply_operation(client, store, batch, op):
         store.save(batch)
         return
     if op.status in {"applying", "uncertain"}:
-        op.status = "applied" if _matches(current, op.after) else "manual_review"
-        _event(op, "reconciled_read_only")
+        mismatches = _mismatch_paths(current, op.after)
+        op.status = "manual_review" if mismatches else "applied"
+        _event(op, "reconciled_read_only", mismatch_paths=", ".join(mismatches))
         store.save(batch)
         return
     if not same_metadata_snapshot(op.observed, current.resource):
@@ -247,8 +266,9 @@ def _apply_operation(client, store, batch, op):
     else:
         try:
             verified = client.inspect(op.video_id)
-            op.status = "applied" if _matches(verified, op.after) else "uncertain"
-            _event(op, "read_back_" + op.status)
+            mismatches = _mismatch_paths(verified, op.after)
+            op.status = "uncertain" if mismatches else "applied"
+            _event(op, "read_back_" + op.status, mismatch_paths=", ".join(mismatches))
         except Exception:
             op.status = "uncertain"
             _event(op, "read_back_unavailable")

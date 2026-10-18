@@ -279,3 +279,68 @@ def test_thumbnail_signature_rotation_preserves_only_equivalent_snapshot(tmp_pat
     assert result.operations[0].status == ('applied' if other_change is None else 'conflict')
     assert len(api.writes) == (1 if other_change is None else 0)
     if api.writes: assert api.writes[0][2]['if-match'] == 'rotated-etag'
+
+
+def test_keyword_permutation_readback_keeps_approval_and_payload(tmp_path):
+    module, api, client, store, change, file = proposal(tmp_path, names=("video-1",))
+    raw = yaml.safe_load(file.read_text())
+    raw["operations"][0]["patch"]["tags"] = ["z", "a", "z"]
+    file.write_text(yaml.safe_dump(raw))
+    change = module.prepare_batch(client, store, file)
+    approved = change.model_dump()
+    api.after_write = lambda ident: api.videos[ident]["snippet"]["tags"].sort()
+    result = module.apply_batch(client, store, change.id, change.fingerprint)
+    assert result.operations[0].status == "applied"
+    assert result.fingerprint == approved["fingerprint"]
+    assert result.operations[0].after == approved["operations"][0]["after"]
+    assert len(api.writes) == 1
+    assert api.writes[0][1]["snippet"]["tags"] == ["z", "a", "z"]
+
+
+@pytest.mark.parametrize("tags", [["a"], ["a", "z", "extra"], ["a", "z", "z"], ["A", "z"], ["a ", "z"], "az", [[], "z"]])
+def test_keyword_readback_rejects_exact_multiset_changes(tmp_path, tags):
+    from types import SimpleNamespace
+    module = batches()
+    expected = {"snippet": {"tags": ["a", "z"]}}
+    current = SimpleNamespace(resource={"snippet": {"tags": tags}, "status": {}})
+    assert not module._matches(current, expected)
+
+
+def test_audio_drift_is_diagnosed_and_never_replayed(tmp_path):
+    api = API()
+    del api.videos["video-1"]["snippet"]["defaultAudioLanguage"]
+    module, api, client, store, change, _ = proposal(tmp_path, api=api, names=("video-1",))
+    api.after_write = lambda ident: api.videos[ident]["snippet"].update(defaultAudioLanguage="en-US")
+    result = module.apply_batch(client, store, change.id, change.fingerprint)
+    assert result.operations[0].status == "uncertain"
+    assert result.operations[0].journal[-1]["mismatch_paths"] == "snippet.defaultAudioLanguage"
+    for _ in range(2):
+        result = module.apply_batch(client, store, change.id, change.fingerprint)
+    assert result.operations[0].status == "manual_review"
+    assert len(api.writes) == 1
+    fresh = module.prepare_batch(client, store, tmp_path / (client.brand.nombre + "-batch.yml"))
+    api.after_write = lambda ident: api.videos[ident]["snippet"]["tags"].reverse()
+    assert module.apply_batch(client, store, fresh.id, fresh.fingerprint).operations[0].status == "applied"
+
+
+@pytest.mark.parametrize("part,field,before,after", [
+    ("snippet", "title", "one", "two"),
+    ("snippet", "defaultAudioLanguage", "es", "en-US"),
+    ("status", "embeddable", True, False),
+    ("localizations", "en", ["a", "b"], ["b", "a"]),
+])
+def test_keyword_equivalence_does_not_relax_other_fields(part, field, before, after):
+    from types import SimpleNamespace
+    resource = {"snippet": {}, "status": {}, "localizations": {}}
+    resource[part][field] = after
+    assert not batches()._matches(SimpleNamespace(resource=resource), {part: {field: before}})
+
+
+def test_tag_permutation_before_write_still_invalidates_snapshot(tmp_path):
+    api = API()
+    api.videos["video-1"]["snippet"]["tags"] = ["z", "a"]
+    module, api, client, store, change, _ = proposal(tmp_path, api=api, names=("video-1",))
+    api.videos["video-1"]["snippet"]["tags"].reverse()
+    result = module.apply_batch(client, store, change.id, change.fingerprint)
+    assert result.operations[0].status == "conflict"
+    assert not api.writes
