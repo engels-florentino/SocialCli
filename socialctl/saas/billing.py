@@ -77,6 +77,28 @@ class BillingService:
         self.client,self.clock,self.origin=client,clock,origin
         self.access=AccessControl(metadata)
         self.budget=None
+        self.bind_environment()
+
+    def bind_environment(self):
+        """Never reinterpret persisted sandbox access by changing configuration."""
+        expected={'account_id':self.settings.account_id,'mode':self.settings.mode}
+        error='The billing environment differs from persisted state; keep commercial access closed and use the reviewed cutover procedure.'
+        with self.vault.transaction() as db:
+            bound=self.vault.get(db,'saas-billing-environment','active')
+            if bound:
+                if bound['payload']!=expected:
+                    raise ValueError(error)
+                return
+            # No unbound billing history proves which account created customer
+            # pointers or uncertain intents, even if all recorded events agree.
+            # Legacy enrollment requires a separately reviewed offline procedure.
+            legacy=(db.execute('SELECT 1 FROM saas_billing LIMIT 1').fetchone()
+                or db.execute('SELECT 1 FROM saas_billing_events LIMIT 1').fetchone()
+                or db.execute("SELECT 1 FROM saas_entitlements WHERE paid_until>0 OR subscription_status<>'' LIMIT 1").fetchone()
+                or db.execute("SELECT 1 FROM records WHERE kind IN ('saas-checkout-intent','saas-stripe-event') LIMIT 1").fetchone())
+            if legacy:
+                raise ValueError(error)
+            self.vault.put(db,'saas-billing-environment','active',expected,expires=253402300799)
 
     def api(self,method,path,data=None,key=None):
         headers={'Authorization':'Bearer '+self.settings.secret_key,'Stripe-Version':API_VERSION}
