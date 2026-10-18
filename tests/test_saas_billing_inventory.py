@@ -103,6 +103,57 @@ def test_schema10_spoofs_new_schemas_and_extra_triggers_fail_closed(tmp_path, al
     assert frozen(vault.path) == before
 
 
+def test_schema_token_boundary_spoof_is_rejected_without_artifact(tmp_path):
+    vault, keys = fixture(tmp_path)
+    with sqlite3.connect(vault.path) as db:
+        db.execute('DROP TABLE rates')
+        db.execute('CREATE TABLE rates (identityTEXT PRIMARY KEY, bucketINTEGER NOT NULL, countINTEGER NOT NULL)')
+    before = frozen(vault.path)
+    destination = tmp_path / 'evidence' / 'report.json'; destination.parent.mkdir(mode=0o700)
+    with pytest.raises(api().InventoryError):
+        api().write_inventory(vault.path, keys, destination)
+    assert list(destination.parent.iterdir()) == []
+    assert frozen(vault.path) == before
+
+
+@pytest.mark.parametrize('alter', [
+    'ALTER TABLE rates RENAME COLUMN identity TO identityTEXT',
+    'DROP INDEX saas_reminders_due',
+    'CREATE UNIQUE INDEX extra_index ON rates(bucket)',
+])
+def test_source_metadata_validation_independently_rejects_column_and_index_changes(tmp_path, alter):
+    vault, _ = fixture(tmp_path)
+    with sqlite3.connect(vault.path) as db:
+        db.execute(alter)
+        with pytest.raises(ValueError):
+            api()._validate_schema_metadata(db, ['rates', 'saas_reminders'])
+
+
+@pytest.mark.parametrize('remove', [
+    ('records_meta_webhook_grant_delete', 'saas_record_links_grant'),
+    ('records_meta_webhook_grant_delete',),
+    ('saas_record_links_grant',),
+])
+def test_source_proven_deployed_and_candidate_schema10_variants_require_complete_pairs(tmp_path, remove):
+    vault, keys = fixture(tmp_path)
+    candidate = api().inspect_database(vault.path, keys)
+    assert candidate['schema_variant'] == 'schema10_candidate_receiver'
+    with sqlite3.connect(vault.path) as db:
+        for name in remove:
+            db.execute(('DROP TRIGGER ' if name.startswith('records_') else 'DROP INDEX ')+name)
+    before = frozen(vault.path)
+    if len(remove) == 2:
+        report = api().inspect_database(vault.path, keys)
+        assert report['schema_variant'] == 'schema10_deployed_rc15'
+        assert report['enrollment_authorized'] is False
+        assert report['marker']['state'] == 'absent'
+        assert report['schema_root'] != candidate['schema_root']
+    else:
+        with pytest.raises(api().InventoryError):
+            api().inspect_database(vault.path, keys)
+    assert frozen(vault.path) == before
+
+
 @pytest.mark.parametrize('state', ['unprepared', 'authority_unavailable', 'identity_cleanup_required', 'ready'])
 def test_only_exact_defined_ready_restore_guard_is_accepted(tmp_path, state):
     vault, keys = fixture(tmp_path)
@@ -213,7 +264,7 @@ def test_every_billing_startup_legacy_category_is_inventoried_with_uncertainty(t
             db.execute('INSERT INTO saas_entitlements(user_id,subscription_status,paid_until) VALUES(?,?,?)',
                        ('missing', 'active' if legacy == 'subscription_status' else '', 9 if legacy == 'paid_access' else 0))
         elif legacy == 'same_account_event':
-            db.execute("INSERT INTO saas_billing_events(account_id,mode,event_id,body_hash,type,received) VALUES('acct','test','evt','hash','customer.updated',1)")
+            db.execute("INSERT INTO saas_billing_events(account_id,mode,event_id,body_hash,type,received) VALUES('acct','test','evt_original','hash','customer.updated',1)")
         else:
             db.execute("INSERT INTO saas_billing(user_id,customer_key,customer_started,customer_id,attempt,checkout_id) VALUES('missing','key',1,?,?,?)",
                        (None if legacy == 'customer_intent' else 'cus_original',
@@ -413,3 +464,35 @@ def test_script_initialization_failure_has_no_traceback_or_paths():
     assert result.returncode == 1
     assert result.stdout == '{"status": "failed", "error": "Inventory inspection failed."}\n'
     assert result.stderr == ''
+
+
+@pytest.mark.parametrize('table,column,value', [
+    ('saas_billing_events', 'event_id', 'private@example.test'),
+    ('saas_billing_events', 'event_id', 'sk_test_fictional_private'),
+    ('saas_billing_events', 'mode', 'private@example.test'),
+    ('saas_billing_events', 'mode', 'sk_test_fictional_private'),
+    ('saas_billing_events', 'mode', 'sandbox'),
+    ('saas_entitlements', 'trial_start', 'sk_test_fictional_private'),
+    ('saas_entitlements', 'trial_end', 'private@example.test'),
+    ('saas_entitlements', 'paid_until', 'sk_test_fictional_private'),
+    ('saas_billing', 'customer_started', 'private@example.test'),
+    ('saas_billing', 'attempt_started', 'sk_test_fictional_private'),
+    ('saas_billing', 'lease_until', 'private@example.test'),
+    ('saas_billing', 'sync_due', 'sk_test_fictional_private'),
+    ('saas_billing', 'cancel_at_period_end', 'sk_test_fictional_private'),
+    ('saas_billing', 'cancel_at_period_end', 2),
+    ('saas_entitlements', 'trial_start', b'private-bytes'),
+])
+def test_private_report_contract_rejects_unsafe_event_and_numeric_fields(tmp_path, table, column, value):
+    vault, keys = fixture(tmp_path)
+    with vault.transaction() as db:
+        db.execute("INSERT INTO saas_billing_events(account_id,mode,event_id,body_hash,type,received) VALUES('acct','test','evt_original','hash','customer.updated',1)")
+        db.execute("INSERT INTO saas_entitlements(user_id) VALUES('owner')")
+        db.execute("INSERT INTO saas_billing(user_id,customer_key,customer_started) VALUES('owner','key',1)")
+        db.execute('UPDATE '+table+' SET '+column+'=?', (value,))
+    before = frozen(vault.path)
+    destination = tmp_path / 'evidence' / 'report.json'; destination.parent.mkdir(mode=0o700)
+    with pytest.raises(api().InventoryError, match=r'^Inventory inspection failed\.$'):
+        api().write_inventory(vault.path, keys, destination)
+    assert list(destination.parent.iterdir()) == []
+    assert frozen(vault.path) == before

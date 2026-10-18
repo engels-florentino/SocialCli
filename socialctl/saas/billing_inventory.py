@@ -205,6 +205,34 @@ _LEGACY_SCHEMA = (
     ('index', 'sqlite_autoindex_legacy_allowance_1', 'legacy_allowance', None),
 )
 _RESTORE_SCHEMA = ('table', 'saas_restore_guard', 'saas_restore_guard', 'CREATE TABLE saas_restore_guard (singleton INTEGER PRIMARY KEY CHECK(singleton=1),state TEXT NOT NULL,prepared REAL NOT NULL,snapshot_created REAL NOT NULL)')
+# Source commits 14da67a and 7f13e7c establish these two exact schema10 variants.
+# The receiver introduced both objects without a schema-version bump. Neither
+# half-pairs nor other extensions are supported, and inspection creates nothing.
+_RECEIVER_OBJECTS = frozenset({'records_meta_webhook_grant_delete', 'saas_record_links_grant'})
+# Independent source-fixture metadata roots, never derived from target input.
+_SOURCE_METADATA_ROOTS = {'legacy_allowance': '59ab53a6eae082ecc0ccedb25c6f8b7bc5127b7651df56a96a7326f74c54adaa',
+ 'legacy_cutoff': '566877cf13a088cbec1ed55433a172132c6e9771a55d3db216479af6021f9bab',
+ 'rates': '86e994b9c525b313fbbfdf43e4c690b39cf611d3cc1d1b662017f895a4adbdad',
+ 'records': '77f2bf8b9c4dd1b5e9e5f825f36e84eea488c24880c9e7b9a94629f13bf9e48d',
+ 'saas_billing': '7919da862f9ce0c1f37c0ddd5e725a21229b46e8848802b43e14140571c9c96e',
+ 'saas_billing_events': '70e20cc4f8867aa7db2b459c34e19e6e396a5013fe7bfdb8167e5e0a3f06f1f6',
+ 'saas_brands': '722bccd8a0960da71288accbf54f6f62bf79d089f8d61b53f29926432b191c16',
+ 'saas_deletion_tombstones': '5bc3e8081d4c81809d04f376a47b1d2b3aa19e75a454129bf7ea310362bf8a92',
+ 'saas_deletions': '50941802f8a0ef133123e43a18b4945973a912d03a772acda2f3e3f77fb9f504',
+ 'saas_entitlements': '249e774d9d5c2d216bf57ddb7ac6bc45b4edde539f45bf0f53c44374c4584548',
+ 'saas_google_revocations': '1425730c8fd98e245e04db166d31f0d0ec8cff3e3ed587360eaeebbad184cca2',
+ 'saas_media_allocations': '07132fb53b9485c69462006c4c31b07ec8ee7e5651d885582d80f2c54fb43cac',
+ 'saas_rates': '1008c36c024512f5ac44f8cde89a2baa2b4f170b2802fa286af786ae18b9e521',
+ 'saas_record_emails': 'e31d5faa19c29e5b27eb6fc55d3e92c5000f1acff08d6237723fafaa1a4a3155',
+ 'saas_record_links': 'e03bc340dfcc599b41ce1c1ceba3818506893cad19c1c17ec2fbd47451723cc5',
+ 'saas_record_owners': '46016699fa9a7a3ec60d62c1af6997c90913ceba47691a9de92d16c765db5655',
+ 'saas_reminders': '49cebb5a3429f9f3fd43e88eacf35f389c2bac4af7ee536c4b0214fd201b4c42',
+ 'saas_restore_guard': 'a3e9ff7182c33d09571106aedf24dca9a186fc7ceb4bf7580e184f75cfe4ea40',
+ 'saas_schema': 'e9e0528377a1836dccfd4c52dc5b9901ef174c27b6e486ce1a6edeb82f067bb0',
+ 'saas_slots': '2bc3fc1f82d86f42d4af5cae6e2960854f7a135245f9b4a01e54c679ec75ce50',
+ 'saas_trial_markers': '7c4f22330521358afe5658bbf7491117820a8864b9984357d5d13717f6e0de4e',
+ 'saas_users': '38ef361bdaa1c8a2c9cb788fd5a0b4337ee919376cb22efdefeee9b88cb70796'}
+_DEPLOYED_LINKS_METADATA_ROOT = '52911f911ef345ca7896f556eb319a00bc69ed8f2dd16824df331b412621405d'
 _KNOWN_KINDS = frozenset({
     'authorization', 'connection', 'google-revocation', 'saas-billing-environment',
     'saas-checkout-intent', 'saas-stripe-event', 'saas-user', 'saas-login',
@@ -255,10 +283,44 @@ def _rows_digest(rows) -> str:
 def _sql_shape(sql):
     if sql is None:
         return None
-    # Ignore formatting only outside quoted strings. String literal changes are
-    # schema changes, even when they differ only by whitespace.
-    pieces = re.split(r"('(?:''|[^'])*'|\"(?:\"\"|[^\"])*\")", sql)
-    return ''.join(piece if i % 2 else ''.join(piece.split()) for i, piece in enumerate(pieces))
+    # Compare lexical tokens, never concatenate their spelling: identity TEXT
+    # must remain distinct from the single identifier identityTEXT. Quoted
+    # literals/identifiers retain their exact bytes and punctuation stays ordered.
+    return tuple(re.findall(r"'(?:''|[^'])*'|\"(?:\"\"|[^\"])*\"|[A-Za-z_][A-Za-z0-9_]*|[0-9]+|>=|<=|<>|!=|==|\|\||[^\s]", sql))
+
+
+def _schema_variant(schema):
+    present = {row[1] for row in schema} & _RECEIVER_OBJECTS
+    if not present:
+        return 'schema10_deployed_rc15'
+    if present == _RECEIVER_OBJECTS:
+        return 'schema10_candidate_receiver'
+    raise ValueError()
+
+
+def _metadata_rows(db, table):
+    # Names are accepted source identifiers before interpolation. These rows
+    # cover column ordinals/types/defaults/nullability/PK/hidden status, and all
+    # index names/uniqueness/origin/partial flags, key order/collations/direction.
+    if table not in _SOURCE_METADATA_ROOTS:
+        raise ValueError()
+    rows = [('column', *tuple(row)) for row in db.execute(f'PRAGMA table_xinfo("{table}")')]
+    for _, name, unique, origin, partial in db.execute(f'PRAGMA index_list("{table}")'):
+        if not re.fullmatch(r'[A-Za-z0-9_]+', name):
+            raise ValueError()
+        rows.append(('index', name, unique, origin, partial))
+        rows.extend(('index_column', name, *tuple(row))
+                    for row in db.execute(f'PRAGMA index_xinfo("{name}")'))
+    return rows
+
+
+def _validate_schema_metadata(db, tables, variant='schema10_candidate_receiver'):
+    for table in tables:
+        expected = _SOURCE_METADATA_ROOTS[table]
+        if variant == 'schema10_deployed_rc15' and table == 'saas_record_links':
+            expected = _DEPLOYED_LINKS_METADATA_ROOT
+        if _rows_digest(_metadata_rows(db, table)) != expected:
+            raise ValueError()
 
 
 def _private_path(path) -> Path:
@@ -305,7 +367,10 @@ def _assert_identity(path, expected, fd):
 
 def _schema(db):
     schema = [tuple(row) for row in db.execute('SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name')]
+    variant = _schema_variant(schema)
     expected = list(_BASE_SCHEMA)
+    if variant == 'schema10_deployed_rc15':
+        expected = [row for row in expected if row[1] not in _RECEIVER_OBJECTS]
     names = {row[1] for row in schema}
     if names & {'legacy_cutoff', 'legacy_allowance'}:
         expected.extend(_LEGACY_SCHEMA)
@@ -315,6 +380,7 @@ def _schema(db):
         return sorted((kind, name, table, _sql_shape(sql)) for kind, name, table, sql in rows)
     if shape(schema) != shape(expected):
         raise ValueError()
+    _validate_schema_metadata(db, [row[1] for row in schema if row[0] == 'table'], variant)
     if (db.execute('PRAGMA user_version').fetchone()[0] != 0
             or db.execute('PRAGMA application_id').fetchone()[0] != 0
             or db.execute('SELECT version FROM saas_schema ORDER BY version').fetchall()
@@ -385,24 +451,74 @@ def _jobs(db, table):
             'leased': sum(bool(row['lease']) or row['lease_until'] != 0 for row in rows)}
 
 
-def _check_references(value):
-    """Reject unexpected identities rather than reproduce sensitive strings.
+_REPORT_REFERENCES = frozenset({'user_id', 'account_id', 'customer_id',
+                              'subscription_id', 'checkout_id', 'attempt', 'kind', 'id'})
+_REPORT_NUMBERS = frozenset({'customer_started', 'attempt_started', 'lease_until',
+                           'sync_due', 'trial_start', 'trial_end', 'paid_until'})
+_REPORT_NULLABLE_NUMBERS = frozenset({'attempt_started', 'trial_start', 'trial_end'})
+_REPORT_ENUMS = {
+    'mode': frozenset({'test', 'live'}),
+    'state': _STATES | {'unknown', 'absent', 'present', 'ready'},
+    'subscription_status': _SUBSCRIPTIONS | {'unknown'},
+    'provenance': frozenset({'NOT_ESTABLISHED'}),
+    'owner_reviewer_policy': frozenset({'NOT_ESTABLISHED'}),
+    'customer_outcome': frozenset({'pointer_present', 'uncertain'}),
+    'checkout_outcome': frozenset({'pointer_present', 'uncertain', 'absent'}),
+    'outcome': frozenset({'uncertain', 'terminal'}),
+    'classification': frozenset({'review', 'in_flight', 'uncertain'}),
+    'local_discrepancies': frozenset({'event_id', 'account_id', 'mode', 'customer_id', 'owner'}),
+}
 
-    Billing and vault identifiers are opaque source IDs, never addresses, keys,
-    URLs or free-form diagnostics. Raw payload fields are otherwise omitted.
+
+def _report_identifier(value):
+    if (not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_:-]{1,512}', value)
+            or value.startswith(('sk_', 'rk_', 'whsec_'))):
+        raise ValueError()
+
+
+def _check_report_contract(value, field=None):
+    """Validate every exported scalar before a private artifact can be opened.
+
+    SQLite declared affinities do not constrain stored value types. All dynamic
+    strings must be explicit identifiers or fixed enums; numeric observations
+    must be finite numbers, and counts/booleans never accept arbitrary strings.
+    The two dynamic maps also validate their keys instead of only their values.
     """
-    references = {'user_id', 'account_id', 'customer_id', 'subscription_id',
-                  'checkout_id', 'attempt', 'kind', 'id'}
     if isinstance(value, dict):
         for key, item in value.items():
-            if key in references and item is not None:
-                if (not isinstance(item, str) or not re.fullmatch(r'[A-Za-z0-9_:-]{1,512}', item)
-                        or item.startswith(('sk_', 'rk_', 'whsec_'))):
+            if field in {'kinds', 'states'}:
+                if field == 'kinds':
+                    _report_identifier(key)
+                elif key not in _STATES | {'unknown'}:
                     raise ValueError()
-            _check_references(item)
+                if type(item) is not int or item < 0:
+                    raise ValueError()
+            else:
+                _check_report_contract(item, key)
     elif isinstance(value, list):
         for item in value:
-            _check_references(item)
+            _check_report_contract(item, field)
+    elif field in _REPORT_REFERENCES:
+        if value is not None:
+            _report_identifier(value)
+    elif field == 'event_id':
+        if not isinstance(value, str) or not re.fullmatch(r'evt_[A-Za-z0-9_]{1,200}', value):
+            raise ValueError()
+    elif field in _REPORT_NUMBERS:
+        if value is None and field in _REPORT_NULLABLE_NUMBERS:
+            return
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise ValueError()
+    elif field == 'cancel_at_period_end':
+        if type(value) is not int or value not in (0, 1):
+            raise ValueError()
+    elif field in _REPORT_ENUMS:
+        if not isinstance(value, str) or value not in _REPORT_ENUMS[field]:
+            raise ValueError()
+    elif type(value) is not bool and (type(value) is not int or value < 0):
+        # Remaining scalar fields are builder-produced flags and aggregate counts.
+        # Future raw fields cannot silently export text/blob/float/null values.
+        raise ValueError()
 
 
 def _inventory(db, records, tables):
@@ -542,13 +658,14 @@ def inspect_database(database: Path, keys: list[bytes]) -> dict:
                 tables, schema_root, data_root = _logical_state(db, schema)
                 records = _authenticate(db, keys)
                 report = _inventory(db, records, tables)
-                _check_references(report)
+                _check_report_contract(report)
                 _assert_identity(database, identity, fd)
                 db.rollback()
             _assert_identity(database, identity, fd)
             root = _rows_digest([(schema_root, data_root, json.dumps(identity, sort_keys=True))])
             return {'format': 'socialcli-billing-inventory-v1', 'status': 'inventory_only',
                     'enrollment_authorized': False, 'schema_version': 10,
+                    'schema_variant': _schema_variant(schema),
                     'target': identity, 'schema_root': schema_root, 'state_root': root,
                     'tables': tables, **report,
                     'not_established': dict.fromkeys((

@@ -28,10 +28,17 @@ if an OS error prevents removal of its private partial artifact. Keep failed
 artifacts separate from successful evidence. Fixed diagnostics expose no target
 path, key, user, provider object or exception text.
 
-The accepted structure is the exact source-defined schema10 tables, columns,
-indexes and triggers, including optional paired legacy tables and the defined
-restore guard only in `ready` state. Newer, incomplete, spoofed or extended
-schemas and quarantined restores fail closed. Every encrypted record, including
+The accepted structures are two exact source-proven schema10 variants:
+`schema10_deployed_rc15`, without the receiver trigger/index pair, and
+`schema10_candidate_receiver`, with both exact receiver objects. Source commits
+`14da67a` and `7f13e7c` establish that difference without a schema-version bump.
+Half-pairs are rejected; inspection reports the variant and creates neither
+object. Both variants require the exact source tables, columns, indexes and
+triggers, including optional paired legacy tables and the defined restore guard
+only in `ready` state. SQL tokens retain their boundaries, and observed column
+and index metadata must match independently frozen source-fixture expectations.
+Newer, incomplete, spoofed or extended schemas and quarantined restores fail
+closed. Every encrypted record, including
 expired and unknown kinds, must authenticate under the supplied key set. No
 store, application or billing-service constructor is instantiated.
 
@@ -59,7 +66,13 @@ state root; failures return exit 1 and a fixed error. Private JSON reports retai
 necessary record identifiers, guard categories, orphan/ownership discrepancies,
 uncertain outcomes, access bounds and pending-work counts. They omit emails,
 credentials, free-form diagnostics, customer idempotency keys, lease tokens and
-raw decrypted payloads. Unexpected sensitive reference formats fail closed.
+raw decrypted payloads. Every exported scalar is checked before opening the
+artifact: identifiers have constrained formats, event IDs use the source event
+format, modes are exactly `test` or `live`, timestamps/bounds are finite numeric
+values (null only where defined), and cancellation flags are integers 0 or 1.
+Statuses and classifications come from fixed sets. Unexpected strings/blobs in
+numeric columns, sensitive reference formats and unknown modes fail closed;
+SQLite column affinity is never treated as value validation.
 Every underlying column remains covered by the complete root even when omitted
 from the human inventory. Terminal event state is only a local observation;
 provider outcomes and lineage remain unestablished.
