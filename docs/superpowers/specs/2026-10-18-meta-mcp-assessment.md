@@ -9,10 +9,9 @@ Web text retrieval failed; the official page was read in authenticated Safari.
 Execution on October 18 added `meta_social_technologies` to the operator's local
 Codex configuration with the official endpoint, an eight-tool read allowlist,
 and explicit `developer_tools_mcp_app_read` OAuth scope. The owner completed the
-browser authorization and `codex mcp login` reported success. App selection and
-returned app-level privileges still need verification through `devtools_app_list`;
-OAuth success alone does not prove which app is accessible. No MCP app data has
-been read yet: the current conversation has not loaded the new server tools.
+browser authorization and `codex mcp login` reported success. After the owner
+reloaded Codex, `devtools_app_list` confirmed SocialCli with Read access. The
+initial administrative audit completed through the eight-tool allowlist.
 
 The client's default OAuth discovery included management and business scopes;
 that unapproved flow was cancelled before use. The replacement explicitly requests
@@ -22,8 +21,34 @@ URLs or callback codes are stored in this document.
 The initial manual callback flow expired. A new login using the CLI's automatic
 local callback completed successfully, without requiring the owner to copy a URL.
 The configured tool allowlist was verified with `codex mcp get`. The automation
-tool cannot control the Codex application, so activation in this conversation
-requires an owner-initiated reload/new session. No restart was forced.
+tool cannot control the Codex application; the owner performed the reload.
+No restart was forced.
+
+## Verified pilot findings
+
+The October 18 audit read app settings, App Review status/history/requirements/
+privileges, compliance, rate limits, deprecations and webhook subscriptions.
+SocialCli is in development mode, with no open compliance violations, no webhook
+subscriptions and no reported deprecations. These are administrative observations,
+not production approval or proof that creator operations work.
+
+The official console showed `instagram_manage_contents` Ready for testing but
+absent from the App Review draft. Under the owner's existing request to add it,
+the permission was added to the draft through the console. Both the console and
+MCP now show it among thirteen requested permissions. The review remains
+**Not submitted**; no production permission was granted by this change.
+
+The beta MCP's review fields are inconsistent: it reports an approved boolean
+alongside UNSUBMITTED, rejection flags without review history/reasons, and a
+submission-blocking reason about an earlier review. The console shows Not
+submitted and history reports no previous reviews. Do not interpret those isolated
+flags as approvals or actual rejected submissions. Use console/history evidence
+and retain the discrepancy in the private audit. The MCP is useful for inventory,
+but does not yet replace the console as the sole authority for review outcomes.
+
+Only SocialCli was inspected. OAuth also exposed another app in discovery; no
+other app's settings or data were queried. No Manage scope or support contact
+was used. Sanitized evidence remains in the private operator workspace.
 
 ## Recommendation
 
@@ -55,6 +80,6 @@ It does not grant missing provider scopes or prove a content operation passed li
 | Review webhook configuration | Console plus offline CLI verification | List subscriptions; Manage can change/test delivery |
 | Resolve an ambiguous write | Existing receipt/readback journal | Does not replace reconciliation |
 
-First pilot success would be a read-only report for SocialCli matching the console,
-including `instagram_manage_contents` Ready for testing, without changing any app,
-webhook, credential or creator content.
+Pilot access and administrative reads are verified. The separately authorized
+draft correction was made in the console, not through MCP. No webhook, credential
+or creator content was changed. Review-status parity remains an explicit limitation.

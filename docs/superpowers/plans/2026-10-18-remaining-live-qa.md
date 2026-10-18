@@ -237,9 +237,9 @@ produce one row per remaining method/field/variant with explicit AND/OR scope ch
 **Interfaces:** Administrative read tools supplement SocialCli; they do not replace its publishing/token/approval contracts.
 
 - [x] Read the official documentation (updated October 7, 2026) through the authenticated browser when web retrieval failed.
-- [x] Decide whether to connect a read-only pilot scoped only to SocialCli. The owner completed OAuth with the explicit read scope. The local eight-tool allowlist is configured; app-level grants still require verification after Codex loads the new tools.
-- [ ] If authorized, compare app settings, review privileges/requirements, API health and webhook subscriptions with the console. Never transmit support messages.
-- [ ] Keep Manage scope unnecessary for the initial audit. The documented write tools concern webhooks; app-lifecycle tools are still described as coming soon and must not be assumed callable.
+- [x] Connect the read-only pilot and verify SocialCli Read access after the owner's reload. Only SocialCli was inspected; another app appeared in discovery but was not queried.
+- [x] Compare app settings, review privileges/requirements, API health and webhook subscriptions with the console. Review flags conflict with console/history; the assessment records this limitation. No support message was sent.
+- [x] Keep Manage scope unnecessary for the initial audit. The documented write tools concern webhooks; app-lifecycle tools are still described as coming soon and must not be assumed callable.
 
 ## Task 12: Public workflows omitted by the endpoint matrix
 
