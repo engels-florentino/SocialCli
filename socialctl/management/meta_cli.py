@@ -233,7 +233,7 @@ def profile(
 
 @meta_app.command("content")
 def content(
-    target_id: str = typer.Argument(..., help="ID remoto (post/video/media)."),
+    target_id: str = typer.Argument(..., help="Remote ID (post/video/media)."),
     platform: Platform = typer.Option(..., "--platform"),
     brand: str = typer.Option(..., "--brand"),
     root: Path = typer.Option(DEFAULT_ROOT, "--root"),

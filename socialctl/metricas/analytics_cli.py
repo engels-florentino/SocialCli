@@ -24,7 +24,7 @@ def output(value):
 
 
 def preview(change):
-    return "DRY-RUN — PREVIEW COMPLETO Analytics/Reporting\n" + output(change.model_dump(mode="json")) + "\nExact fingerprint for approval: " + change.fingerprint
+    return "DRY-RUN — COMPLETE PREVIEW Analytics/Reporting\n" + output(change.model_dump(mode="json")) + "\nExact fingerprint for approval: " + change.fingerprint
 
 
 def load_mapping(path):

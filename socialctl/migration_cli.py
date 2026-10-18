@@ -31,8 +31,8 @@ def prepare(brand: str = typer.Option(..., "--brand"), root: Path = typer.Option
         typer.echo(f"{item['source']} -> media/{item['relative_path']} -> {item['public_url']} ({item['size']} bytes, SHA256 {item['sha256']})")
     typer.echo("\n" + proposal["legacy_limitation"])
     for entry in proposal["entries"]:
-        typer.echo(f"{entry['id']} | {entry['status']} | {entry['scheduled_at']} | intentos={entry['attempts']}")
-    typer.echo(f"Propuesta: {proposal['id']}\nDigest: {proposal['digest']}")
+        typer.echo(f"{entry['id']} | {entry['status']} | {entry['scheduled_at']} | attempts={entry['attempts']}")
+    typer.echo(f"Proposal: {proposal['id']}\nDigest: {proposal['digest']}")
     typer.echo("Dry-run: no proposal saved or queue modified." if dry_run else "Proposal saved; queue unchanged and no content published.")
 
 

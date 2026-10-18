@@ -67,8 +67,8 @@ def render_change_preview(change: ChangeSet) -> str:
         difflib.unified_diff(
             before,
             after,
-            fromfile="snippet actual",
-            tofile="snippet propuesto",
+            fromfile="current snippet",
+            tofile="proposed snippet",
             lineterm="",
         )
     ) or "(no differences)"

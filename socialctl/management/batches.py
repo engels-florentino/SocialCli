@@ -236,7 +236,7 @@ def _apply_operation(client, store, batch, op):
         store.save(batch)
         return
     if after != op.after:
-        raise ChangeError("cuerpo propuesto alterado")
+        raise ChangeError("proposed body altered")
     _bound(client, batch)
     op.status = "applying"
     _event(op, "write_intent", approval=batch.fingerprint, if_match=current.etag)

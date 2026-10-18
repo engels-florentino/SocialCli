@@ -1354,7 +1354,7 @@ def _retry_impl(slug, brand_nombre, root, yes, *, report=None):
             report.add_error("operation_uncertain", platform=platform.value)
     for platform, reasons in protected.items():
         for reason in reasons:
-            typer.echo(f"{platform.value}: {reason}. Consulta comments publication-status / retry-first.")
+            typer.echo(f"{platform.value}: {reason}. See comments publication-status / retry-first.")
 
     fichero = brand.dir_posts / post.slug / "resultado.json"
     if not fichero.exists():

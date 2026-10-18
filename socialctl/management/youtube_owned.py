@@ -40,7 +40,7 @@ class YouTubeOwnedClient(YouTubeResourcesClient):
             raise ResourceError("resource lacks verifiable ETag")
         snip = row.get("snippet")
         if not isinstance(snip, dict):
-            raise ResourceError("resource lacks snippet verificable")
+            raise ResourceError("resource lacks verifiable snippet")
         if resource == "channels":
             owned = row["id"] == self.configured_channel_id
         elif resource in {"playlistImages", "playlistItems"}:

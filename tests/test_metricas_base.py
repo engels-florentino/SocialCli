@@ -142,7 +142,7 @@ def test_leer_red_no_arrastra_el_token_de_una_httpstatuserror_real(brand, monkey
 
     assert lectura.estado is EstadoLectura.ERROR
     assert token_secreto not in lectura.error
-    assert '[TOKEN REDACTADO]' in lectura.error
+    assert '[TOKEN REDACTED]' in lectura.error
 
 
 def test_leer_red_sanea_pero_conserva_codigo_de_estado_y_motivo(brand, monkeypatch):

@@ -55,7 +55,7 @@ class YouTubeMetadataClient(YouTubeManagementClient):
         if self._authenticated_channel(token) != configured:
             raise YouTubeManagementError("authenticated channel does not match brand")
         payload = self._get_json(VIDEOS_URL, token,
-            params={"part": "snippet,status,localizations,contentDetails", "id": video_id}, operation="leer metadatos")
+            params={"part": "snippet,status,localizations,contentDetails", "id": video_id}, operation="read metadata")
         items = payload.get("items")
         if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
             raise YouTubeManagementError("YouTube did not return a unique verifiable video")
@@ -77,7 +77,7 @@ class YouTubeMetadataClient(YouTubeManagementClient):
 
     def update_parts(self, video_id: str, parts: dict[str, Any], *, etag: str) -> None:
         if not parts or set(parts) - {"snippet", "status", "localizations"}:
-            raise YouTubeUpdateRejected("parte mutable desconocida")
+            raise YouTubeUpdateRejected("unknown mutable part")
         current = self.inspect(video_id)
         if current.etag != etag:
             raise YouTubeUpdateConflict("ETag changed before PUT; no write performed")

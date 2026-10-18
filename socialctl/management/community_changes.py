@@ -189,7 +189,7 @@ def identity(client, change):
     if (client.brand.nombre, str(client.brand.raiz.resolve()), client.configured_channel_id) != (change.target_brand, change.brand_root, change.target_account):
         raise ResourceError("brand/account differs from proposal")
     if client.identity() != change.target_account:
-        raise ResourceError("actor autenticado distinto")
+        raise ResourceError("authenticated actor mismatch")
 
 
 def operation_keys(change):

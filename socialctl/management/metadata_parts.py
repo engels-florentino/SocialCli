@@ -90,7 +90,7 @@ class MetadataEdit(BaseModel):
             if set(self.patch) != {"publishAt", "privacyStatus"} or self.patch["privacyStatus"] != "private":
                 raise ChangeError("schedule requires explicit publishAt and privacyStatus: private")
         elif self.never_published:
-            raise ChangeError("never_published solo corresponde a schedule")
+            raise ChangeError("never_published applies only to schedule")
         return self
 
 

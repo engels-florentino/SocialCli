@@ -92,7 +92,7 @@ def _inbox_record_for_change(selected, change):
 
 
 def render_draft_preview(record, change):
-    return ("PREVIEW COMPLETO — respuesta a comentario observado\n"
+    return ("COMPLETE PREVIEW — reply to an observed comment\n"
             + _json({"source_comment": record.model_dump(mode="json"),
                      "changeset": change.model_dump(mode="json")})
             + "\nNo reply without exact approval. An uncertain outcome blocks another POST."

@@ -17,7 +17,7 @@ from socialctl.models import Platform
 # así un token censurado se ve igual en un `PostResult.error` (publicación)
 # que en una `LecturaRed.error` (lectura), sin acoplar este módulo a aquel
 # -ver el docstring de cabecera sobre por qué se mantienen separados-.
-_MARCA_REDACCION = "[TOKEN REDACTADO]"
+_MARCA_REDACCION = "[TOKEN REDACTED]"
 
 # Nombres de parámetro que, en el código real de `socialctl/adapters/` y de
 # `socialctl/authflow.py`, viajan como parte de una URL (query string) y

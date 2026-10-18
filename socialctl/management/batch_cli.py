@@ -19,7 +19,7 @@ def render_batch_preview(batch):
     def formatted(value):
         return json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)
     lines = [f"V2 batch: {batch.id}", f"Brand: {batch.brand} ({batch.brand_root})",
-             f"Canal: {batch.account}", f"Exact fingerprint for approval: {batch.fingerprint}",
+             f"Channel: {batch.account}", f"Exact fingerprint for approval: {batch.fingerprint}",
              "Linked files:\n" + formatted(batch.source_files)]
     if batch.restored_from:
         lines.append(f"Proposed restoration of: {batch.restored_from}")
@@ -30,10 +30,10 @@ def render_batch_preview(batch):
                       "Explicit patch:\n" + formatted(op.patch),
                       "Before:\n" + before, "After (complete body per part):\n" + after,
                       "Diff:\n" + ("\n".join(difflib.unified_diff(before.splitlines(), after.splitlines(),
-                            fromfile="actual", tofile="propuesto", lineterm="")) or "(no differences)")])
+                            fromfile="current", tofile="proposed", lineterm="")) or "(no differences)")])
         snippet = op.after.get("snippet", op.observed["snippet"])
         visible = re.findall(r"(?<!\w)#[\w]+", snippet.get("title", "") + "\n" + snippet.get("description", ""))
-        lines.append("Tags internos: " + formatted(snippet.get("tags", [])))
+        lines.append("Internal tags: " + formatted(snippet.get("tags", [])))
         lines.append("Visible hashtags in title/description: " + formatted(visible))
         if op.resets:
             lines.append("Explicit resets: " + formatted(op.resets))

@@ -40,7 +40,7 @@ INSIGHT_PERIODS = frozenset({"day", "week", "days_28", "lifetime"})
 class MetaClient:
     def __init__(self, brand, platform, client, *, user_page_authorizer=None, moderation_authorizer=None):
         if platform not in {Platform.FACEBOOK, Platform.INSTAGRAM}:
-            raise MetaError("plataforma Meta requerida")
+            raise MetaError("Meta platform required")
         self.brand, self.platform, self.client = brand, platform, client
         # Server-only verifier for explicit asset grants when /me/accounts is
         # completely empty. Never supplied from a proposal or remote payload.
@@ -334,7 +334,7 @@ class MetaClient:
     def content_publishing_limit(self):
         """Read business publishing limit (Instagram) without writes."""
         if self.platform is not Platform.INSTAGRAM:
-            raise MetaError("publishing_limit.get solo aplica a Instagram")
+            raise MetaError("publishing_limit.get applies only to Instagram")
         self.identity()
         payload = self.request("GET", f"{self.account_id}/content_publishing_limit")
         if not isinstance(payload, dict):
@@ -359,7 +359,7 @@ class MetaClient:
         app_id = meta_id((self.brand.cuentas.get("facebook") or {}).get("app_id"))
         rows = self.listing(self.page_id, "subscribed_apps", fields="id,subscribed_fields")
         if not rows["complete"]:
-            raise MetaError("suscripciones incompletas")
+            raise MetaError("incomplete subscriptions")
         matches = [r for r in rows["data"] if r.get("id") == app_id]
         if len(matches) > 1:
             raise MetaError("ambiguous subscription")

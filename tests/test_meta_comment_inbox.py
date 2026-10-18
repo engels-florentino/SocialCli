@@ -384,7 +384,7 @@ def test_cli_draft_preview_and_exact_approval(tmp_path, monkeypatch):
         "--text", "Exact supplied text", "--dry-run", *common])
     assert drafted.exit_code == 0, drafted.output
     record = CommentInboxStore(brand.raiz).load().comments[0]
-    for value in ("PREVIEW COMPLETO", "source_comment", "changeset", "Exact supplied text",
+    for value in ("COMPLETE PREVIEW", "source_comment", "changeset", "Exact supplied text",
                   record.fingerprint):
         assert value in drafted.output
     bypass = runner.invoke(app, ["comments", "apply", record.change_id,

@@ -91,7 +91,7 @@ class YouTubeManagementClient:
         if authenticated != configured:
             raise YouTubeManagementError(
                 "authenticated channel does not match brand youtube.channel_id "
-                f"{self.brand.nombre}: autenticado={authenticated}, configurado={configured}"
+                f"{self.brand.nombre}: authenticated={authenticated}, configured={configured}"
             )
 
         payload = self._get_json(
@@ -275,7 +275,7 @@ class YouTubeManagementClient:
             if response.status_code == 403:
                 raise with_http_error_code(YouTubeManagementError(
                     f"YouTube did not allow {operation}; check youtube.readonly. "
-                    f"Detalle: {detail}"), response, read_only=True)
+                    f"Detail: {detail}"), response, read_only=True)
             raise with_http_error_code(YouTubeManagementError(
                 f"YouTube returned {response.status_code} during {operation}: {detail}"), response, read_only=True)
         try:
