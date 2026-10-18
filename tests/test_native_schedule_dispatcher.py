@@ -133,7 +133,7 @@ def test_partial_multiplatform_failure_does_not_abort_other_jobs(tmp_path):
 def test_native_comment_status_is_separate(tmp_path):
     from socialctl.publication_status import describe_native_job
     store,job,payload,_=approved(tmp_path)
-    assert 'pending manual/server' in describe_native_job(job,payload | {'first_comment':'CTA'})
+    assert 'pending durable worker' in describe_native_job(job,payload | {'first_comment':'CTA'})
 
 
 @pytest.mark.parametrize('stamp',['2026-11-01T01:30:00-04:00','2026-11-01T01:30:00-05:00','2026-03-08T02:30:00-05:00'])

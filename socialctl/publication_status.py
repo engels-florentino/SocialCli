@@ -61,12 +61,15 @@ def describe_result_with_observation(result: PostResult) -> str:
     return description
 
 
-def describe_native_job(job, payload: dict) -> str:
+def describe_native_job(job, payload: dict, *, comment_status: dict | None = None) -> str:
     """Keep native lifecycle and dependent follow-up work distinct."""
     stamp = job.observation_watermark.isoformat() if job.observation_watermark else 'never'
     result = f'{job.state}; requested {job.publish_at.isoformat()}; observed {stamp}'
     if payload.get('first_comment'):
-        result += '; first comment: pending manual/server follow-up after public verification'
+        status = (comment_status or {}).get('status', 'pending durable worker follow-up after public verification')
+        result += f'; first comment: {status}'
+        if (comment_status or {}).get('publication_id'):
+            result += f"; recovery: {comment_status['publication_id']}"
     if payload.get('options', {}).get('related_video_id'):
         result += '; related-video link: pending separate verification'
     return result

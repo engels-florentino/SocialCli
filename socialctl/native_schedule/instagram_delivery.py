@@ -141,8 +141,8 @@ class InstagramDelivery:
     def deliver(self, job: NativeJob, payload: dict, checkpoint) -> str:
         if job.platform != 'instagram':
             raise ValueError('Approved Instagram job required')
-        if payload.get('first_comment'):
-            raise ValueError('Instagram first-comment delivery is pending durable follow-up integration')
+        if payload.get('first_comment') and payload.get('options', {}).get('format') == 'story':
+            raise ValueError('Instagram Story first comments are unsupported')
         account = _identifier(job.account_id)
         edge = f'{GRAPH}/{account}/media'
         media = payload.get('media')

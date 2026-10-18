@@ -503,3 +503,32 @@ platform transaction. See [reply evidence and limits](inbox-reply-evidence.md).
 
 `credentials configure --backend encrypted-file` requires both `--store-file` and
 `--key-file`. Missing arguments now name the required flags before opening storage.
+
+### Scheduled first comments
+
+For an approved native API job, `native-schedule dispatch JOB --brand Example`
+and the periodic `native-schedule deliver --brand Example` worker retain the
+exact approved `first_comment` through submission and later public verification.
+Fresh native submissions still require the existing account-specific eligibility
+artifact. Run the worker again after the approved time to execute the comment;
+this implementation does not install an additional timer or promise execution
+while the customer workspace is offline.
+
+A scheduled/private receipt is insufficient. The worker reads the exact media,
+account, approved copy/options, public visibility and processing state first.
+Partial initial comment listings cannot authorize a new comment. The parent job
+may be `published` while its `first_comment` remains `pending`, `uncertain` or
+`observed_existing`; only a verified comment receipt/readback fulfills the effect.
+Status exposes the stable `publication_id` for the existing
+`comments publication-status` and `comments retry-first` recovery commands.
+A matching existing own comment is observed without inventing creation proof.
+
+`native-schedule reconcile JOB --brand Example` updates observations locally and
+performs only provider reads; it cannot start a pending comment. Recovery of an
+uncertain write never reposts, even after a partial or empty comment list.
+`comments retry-first` also rechecks the native approval/account/media and current
+public state. Instagram Story comments and YouTube made-for-kids videos with
+first comments are rejected before media submission. YouTube disables comments
+for videos [set as made for kids](https://support.google.com/youtube/answer/9527654?hl=en).
+Candidate eligibility, provider grants and live account/format evidence remain
+separate requirements; fictional regressions are not live certification.

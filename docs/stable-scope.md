@@ -33,16 +33,24 @@ and every media format require their exact account/permission/public-route tests
 Keep unverified candidate routes explicitly gated; retain their outstanding QA
 cases until verified or explicitly removed from the offered product scope.
 
-Fresh Facebook/YouTube native API schedules and Instagram worker deliveries with
-an approved nonempty `first_comment` are blocked until durable follow-up execution
-is connected to the verified public media ID. This includes source-linked derived
-Reels and first comments on existing private YouTube videos. `submit-api`,
-`dispatch` and `deliver` preserve the approved comment and make no new attempt or
-provider mutation for these variants. A display label, retained payload or manual
-follow-up is not fulfillment of the API obligation; these variants remain pending.
-No-comment native submissions still require their exact candidate pilot evidence;
-this guard does not establish general availability. Historical scheduled/uncertain
-records retain readback and explicit session-resume paths without a new upload.
+Facebook/YouTube native API schedules and Instagram at-time worker deliveries
+retain approved first comments as durable dependent obligations. The ordinary
+`native-schedule dispatch` / `deliver` worker executes the exact comment only
+after authenticated readback confirms the exact owned media is public and fully
+processed. Native scheduled/private/accepted receipts cannot start comments.
+Complete initial comment reads prevent duplicate writes; an observed existing
+own exact comment requires review and is not claimed as this occurrence's creation.
+Lost write responses remain uncertain and are reconciled without automatic repost.
+`native-schedule reconcile` stays read-only; `comments retry-first` revalidates
+native media and approval binding before any eligible next step. Output reports
+parent publication separately from pending/uncertain/verified comment status.
+Instagram Story comments, made-for-kids YouTube videos with first comments,
+and unsupported combinations remain blocked before media publication. Existing account/format pilot and approval gates remain in force;
+these local fictional regressions do not establish provider approval, live
+account/format success, or general availability. Exact native submission,
+post-publication follow-up and cleanup variants still require their outstanding
+live evidence. Historical scheduled/uncertain and no-comment records remain
+readable without a new upload.
 
 TikTok Direct Post is disabled and excluded from the current offer. The supported
 posting mode is creator-reviewed draft upload with `video.upload`. Direct Post is

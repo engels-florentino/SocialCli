@@ -34,8 +34,8 @@ def delivery_context(brand, job, payload, *, path, evidence_path, client, clock)
             or set(payload['options']) - {'format', 'share_to_facebook_story'}
             or payload['options'].get('share_to_facebook_story', False) is not False):
         raise ValueError('Unsupported Instagram delivery mode, visibility or options')
-    if payload.get('first_comment'):
-        raise ValueError('Instagram first-comment delivery is pending durable follow-up integration')
+    if payload.get('first_comment') and payload['options']['format'] == 'story':
+        raise ValueError('Instagram Story first comments are unsupported')
     identity = MetaClient(brand, Platform.INSTAGRAM, client)
     required={'instagram_basic','instagram_content_publish','pages_read_engagement'}
     credential=brand.leer_secreto(Platform.INSTAGRAM)

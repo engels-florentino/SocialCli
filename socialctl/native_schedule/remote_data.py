@@ -25,6 +25,28 @@ def validate_data(rows, *, command, brand, jobs, request_args):
             raise ValueError('Unknown native result target')
         return by_id[identifier]
 
+    def first_comment(value, known):
+        shape(value, ('status',), ('publication_id','change_id','comment_id'))
+        if value['status'] == 'not_requested':
+            if set(value) != {'status'}:
+                raise ValueError('Invalid unrequested first-comment result')
+            return
+        statuses = {'pending','manual_review','observed_existing','proposed','applying','uncertain',
+                    'rejected','verified','failed','conflict','partial','accepted_unverifiable'}
+        if value['status'] not in statuses:
+            raise ValueError('Unknown native first-comment state')
+        from uuid import UUID
+        try:
+            UUID(value['publication_id'])
+        except (KeyError, ValueError, TypeError, AttributeError):
+            raise ValueError('Invalid native publication recovery ID') from None
+        for key in ('change_id', 'comment_id'):
+            if value.get(key) is not None and (not isinstance(value[key],str) or not value[key].strip()):
+                raise ValueError('Invalid native comment identity')
+        if value['status'] == 'verified' and (known['state'] != 'published'
+                or not value.get('change_id') or not value.get('comment_id')):
+            raise ValueError('Verified native comment lacks published media or durable receipt')
+
     def approval(value):
         shape(value, ('schema', 'intent', 'payload', 'media'))
         if value['schema'] != SCHEMA:
@@ -74,8 +96,10 @@ def validate_data(rows, *, command, brand, jobs, request_args):
             approval(row)
         elif command in {'dispatch','reconcile'}:
             required = ('job_id','state','notices') + (('observations','instruction') if command == 'reconcile' else ())
-            shape(row, required)
+            shape(row, required, ('first_comment',))
             known = target(row['job_id'])
+            if 'first_comment' in row:
+                first_comment(row['first_comment'], known)
             if row['state'] != known['state'] or not isinstance(row['notices'], list):
                 raise ValueError('Mismatched native result state')
             for raw in row.get('observations', []):
@@ -117,11 +141,23 @@ def validate_data(rows, *, command, brand, jobs, request_args):
                 if hash_value(row['payload']) != known['content_hash']:
                     raise ValueError('Mismatched handoff payload')
         elif command == 'deliver':
-            shape(row, ('delivered','awaiting_ui','instruction'), ('needs_attention',))
+            shape(row, ('delivered','awaiting_ui','instruction'), ('needs_attention','first_comments'))
+            comments = row.get('first_comments',[])
+            if not isinstance(comments,list):
+                raise ValueError('Invalid native first-comment list')
+            by_comment_job = {}
+            for comment in comments:
+                shape(comment, ('job_id','status'), ('publication_id','change_id','comment_id'))
+                known = target(comment['job_id'])
+                if comment['job_id'] in by_comment_job:
+                    raise ValueError('Duplicate native first-comment result')
+                by_comment_job[comment['job_id']] = comment
+                first_comment({k:v for k,v in comment.items() if k != 'job_id'},known)
             if not isinstance(row['awaiting_ui'], list) or any(target(i)['state'] != 'awaiting_ui' for i in row['awaiting_ui']):
                 raise ValueError('Invalid delivered jobs')
             attention = row.get('needs_attention', [])
-            if not isinstance(attention, list) or any(target(i)['state'] not in {'blocked', 'uncertain'} for i in attention):
+            if not isinstance(attention, list) or any(target(i)['state'] not in {'blocked', 'uncertain'}
+                    and by_comment_job.get(i,{}).get('status') not in {'uncertain','manual_review','observed_existing','rejected','failed','conflict','applying','partial','accepted_unverifiable'} for i in attention):
                 raise ValueError('Invalid jobs requiring attention')
         elif command == 'migration-prepare':
             shape(row, ('version','brand','brand_root','manifest','manifest_hash','inventory','legacy_entries','legacy_results','native_jobs','transfers','excluded','protections','instruction','digest'))

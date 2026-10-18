@@ -205,7 +205,9 @@ def status(brand: str = typer.Option(...,'--brand'),root: Path = typer.Option(DE
         from socialctl.publication_status import describe_native_job
         store=NativeStore(chosen.raiz,brand=brand)
         for job in store.list_jobs():
-            text = f'{job.id} | {job.platform}/{job.account_id} | {describe_native_job(job,store.get_payload(job.id))}'
+            from .first_comment import first_comment_status
+            payload = store.get_payload(job.id)
+            text = f'{job.id} | {job.platform}/{job.account_id} | {describe_native_job(job,payload,comment_status=first_comment_status(chosen,job,payload))}'
             reject_secrets(text)
             typer.echo(text)
     run(operation, json_output=json_output, command='status', brand=brand)
@@ -290,7 +292,8 @@ def submit_api(job_id: str, eligibility: str | None = typer.Option(None, '--elig
         with httpx.Client(timeout=60, follow_redirects=False) as client:
             begin_submission()
             result = submit(job, payload, brand=chosen, store=store, client=client, eligibility=proof)
-        output({'job_id': job.id, 'state': result.state, 'remote_id': result.remote_id,
+        from .first_comment import first_comment_status
+        output({'job_id': job.id, 'first_comment':first_comment_status(chosen,store.get(job.id),payload), 'state': result.state, 'remote_id': result.remote_id,
                 'calendar_visible': result.calendar_visible, 'reason': result.reason,
                 'server_media_storage': False})
         if result.state != 'pending_verification':
@@ -327,8 +330,22 @@ def dispatch_local(chosen, store, *, job_id=None, eligibility=None, eligibility_
             begin_submission()
             handler = schedule_facebook if job.platform == 'facebook' else schedule_youtube
             return handler(job, payload, brand=chosen, store=store, client=client, eligibility=proof)
-        return dispatch_ready(datetime.now(timezone.utc), chosen.nombre, store=store,
+        delivered = dispatch_ready(datetime.now(timezone.utc), chosen.nombre, store=store,
                               job_id=job_id, native_submit=submit, delivery_context=delivery_context)
+        from .first_comment import follow_up, first_comment_status
+        for job in store.list_jobs():
+            if job_id is not None and job.id != job_id:
+                continue
+            payload = store.get_payload(job.id)
+            if (not payload.get('first_comment') or job.route != 'api'
+                    or job.state not in {'dispatching','verifying','uncertain','native_scheduled','published'}
+                    or first_comment_status(chosen, job, payload)['status'] == 'verified'):
+                continue
+            try:
+                follow_up(chosen, client, store, job.id, now=datetime.now(timezone.utc))
+            except Exception:
+                store.notice(job.id, 'First comment pending: exact public media or complete comment readback unavailable; inspect the durable occurrence before recovery')
+        return delivered
 
 
 @native_app.command()
@@ -341,8 +358,10 @@ def dispatch(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path =
         if store.get(job_id) is None or not store.get(job_id).approval_digest: raise ValueError('Explicit approval required; --yes cannot bypass approval')
         verify_approval(store.get(job_id),store.get_payload(job_id))
         dispatch_local(chosen,store,job_id=job_id,eligibility=eligibility)
-        output({'job_id':job_id,'state':store.get(job_id).state,'notices':store.get_notices(job_id)})
-        if store.get(job_id).state in {'blocked', 'uncertain'}:
+        from .first_comment import first_comment_status
+        comment = first_comment_status(chosen,store.get(job_id),store.get_payload(job_id))
+        output({'job_id':job_id,'state':store.get(job_id).state,'notices':store.get_notices(job_id),'first_comment':comment})
+        if store.get(job_id).state in {'blocked', 'uncertain'} or comment['status'] in {'uncertain','manual_review','observed_existing','rejected','failed','conflict','applying','partial','accepted_unverifiable'}:
             raise typer.Exit(1)
     run(operation, json_output=json_output, command='dispatch', brand=brand)
 
@@ -402,7 +421,15 @@ def reconcile(job_id: str, observation: str | None = typer.Option(None,'--observ
             if not Path(obs.evidence_path).resolve().is_relative_to(chosen.raiz.resolve()) or '.secrets' in Path(obs.evidence_path).parts:
                 raise ValueError('Evidence must remain inside brand root outside secrets')
             import_readback(job_id,store=store,observation=obs)
-        output({'job_id':job_id,'state':store.get(job_id).state,'observations':[o.model_dump(mode='json') for o in store.get_observations(job_id)],'notices':store.get_notices(job_id),'instruction':'Fresh official UI attestation required; this command never writes remotely'})
+        from .first_comment import follow_up, first_comment_status
+        if store.get_payload(job_id).get('first_comment') and job.route == 'api':
+            import httpx
+            try:
+                with httpx.Client(timeout=60, follow_redirects=False) as client:
+                    follow_up(chosen,client,store,job_id,now=datetime.now(timezone.utc),read_only=True)
+            except Exception:
+                store.notice(job_id,'First comment readback incomplete; pending obligations preserved, no provider mutation attempted')
+        output({'job_id':job_id,'first_comment':first_comment_status(chosen,store.get(job_id),store.get_payload(job_id)),'state':store.get(job_id).state,'observations':[o.model_dump(mode='json') for o in store.get_observations(job_id)],'notices':store.get_notices(job_id),'instruction':'Reconciliation is read-only; pending comments are executed by the approved worker after exact public readback'})
     run(operation, json_output=json_output, command='reconcile', brand=brand)
 
 
@@ -470,8 +497,12 @@ def deliver(brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(
         if chosen is None: return
         store=NativeStore(chosen.raiz,brand=brand)
         delivered=dispatch_local(chosen,store,eligibility_dir=eligibility_dir)
+        from .first_comment import first_comment_status
+        comments = [{'job_id':j.id, **first_comment_status(chosen,j,store.get_payload(j.id))}
+                    for j in store.list_jobs() if store.get_payload(j.id).get('first_comment')]
         problems=[j.id for j in store.list_jobs() if j.state in {'blocked', 'uncertain'}]
-        output({'delivered':delivered,'awaiting_ui':[j.id for j in store.list_jobs() if j.state=='awaiting_ui'],
+        problems += [c['job_id'] for c in comments if c['status'] in {'uncertain','manual_review','observed_existing','rejected','failed','conflict','applying','partial','accepted_unverifiable'} and c['job_id'] not in problems]
+        output({'delivered':delivered,'first_comments':comments,'awaiting_ui':[j.id for j in store.list_jobs() if j.state=='awaiting_ui'],
                 'needs_attention':problems,
                 'instruction':'Official UI handoffs require an authorized operator session; API routes remain closed unless capability is enabled.'})
         if problems:

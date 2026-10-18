@@ -52,9 +52,11 @@ def _decode_component(value: str) -> str:
 
 
 def native_api_followup_pending(payload: dict) -> str | None:
-    """Fresh native submissions cannot fulfill approved first comments yet."""
-    if payload.get('first_comment'):
-        return 'Native API first-comment delivery pending durable follow-up; no submission attempted'
+    """Deny combinations whose approved follow-up cannot be fulfilled."""
+    if payload.get('first_comment') and payload.get('options', {}).get('selfDeclaredMadeForKids') is True:
+        return 'First comments are unavailable for videos made for kids; no submission attempted'
+    if payload.get('first_comment') and payload.get('visibility') != 'public':
+        return 'Native first comments require eventual public visibility; no submission attempted'
     return None
 
 

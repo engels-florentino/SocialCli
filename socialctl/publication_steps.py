@@ -184,7 +184,7 @@ def _pending_source(brand, data):
         raise CommentError(str(exc)) from None
 
 
-def _first_comment(brand, http, store, data, *, retry_rejected=False):
+def _first_comment(brand, http, store, data, *, retry_rejected=False, reconcile_only=False):
     _bound(brand, data)
     if not data["media"]:
         raise CommentError("media has no durable result; reconcile manually, do not upload again")
@@ -193,12 +193,26 @@ def _first_comment(brand, http, store, data, *, retry_rejected=False):
         raise CommentError("media is unconfirmed; comment requires manual review")
     if not data["text"]:
         return result
+    if data['provenance'].startswith('native-schedule:'):
+        from socialctl.native_schedule.first_comment import validate_native_publication
+        validate_native_publication(brand, http, data)
+        if not data['comment_change_id']:
+            if reconcile_only:
+                return result
+            if result.first_comment_status == 'observed_existing':
+                return result
+            if _native_existing_comment(brand, http, store, data, result):
+                return result
+    if reconcile_only and not data['comment_change_id']:
+        return result
     if result.platform is Platform.YOUTUBE:
-        return _youtube_first_comment(brand, http, store, data, result, retry_rejected=retry_rejected)
+        return _youtube_first_comment(brand, http, store, data, result, retry_rejected=retry_rejected, reconcile_only=reconcile_only)
     comments = CommentStore(brand.raiz)
     client = MetaCommentsClient(brand, result.platform, http)
     if data["comment_change_id"]:
         change = comments.load(data["comment_change_id"])
+        if reconcile_only and change.status in {"proposed", "rejected"}:
+            return result
         if change.status == "proposed" or (change.status == "rejected" and retry_rejected):
             _pending_source(brand, data)
         if change.status == "rejected" and retry_rejected:
@@ -231,7 +245,39 @@ def _first_comment(brand, http, store, data, *, retry_rejected=False):
     return result
 
 
-def _youtube_first_comment(brand, http, store, data, result, *, retry_rejected):
+def _native_existing_comment(brand, http, store, data, result):
+    """A complete initial read prevents duplicate writes; an observation is not a receipt."""
+    if result.platform is Platform.YOUTUBE:
+        from socialctl.management.youtube_community import YouTubeCommunityClient, FILTERS
+        client = YouTubeCommunityClient(brand, http)
+        matches = []
+        for state in FILTERS:
+            listing = client.list_threads(result.platform_id, moderation_status=state)
+            if not listing['complete']:
+                raise CommentError('Initial comment read incomplete; no new comment attempted')
+            for row in listing['items']:
+                comment = row['snippet']['topLevelComment']
+                if (comment['snippet'].get('authorChannelId', {}).get('value') == data['account']['account_id']
+                        and comment['snippet'].get('textOriginal') == data['text']):
+                    matches.append(comment['id'])
+    else:
+        client = MetaCommentsClient(brand, result.platform, http)
+        listing = client.list_comments(result.platform_id)
+        if not listing['complete']:
+            raise CommentError('Initial comment read incomplete; no new comment attempted')
+        field = 'message' if result.platform is Platform.FACEBOOK else 'text'
+        matches = [row['id'] for row in listing['data']
+            if row.get(field) == data['text'] and (row.get('from') or {}).get('id') == client.account_id]
+    if not matches:
+        return False
+    result.first_comment_status = 'observed_existing'
+    result.warnings.append('An existing own exact comment was observed; creation by this occurrence is unproven. No new comment attempted.')
+    data['media'] = result.model_dump(mode='json')
+    store.write_json(data['id'], data)
+    return True
+
+
+def _youtube_first_comment(brand, http, store, data, result, *, retry_rejected, reconcile_only=False):
     from socialctl.management.community_changes import CommunityStore, prepare_community, apply_community
     from socialctl.management.youtube_community import YouTubeCommunityClient
     comments = CommunityStore(brand.raiz)
@@ -240,6 +286,8 @@ def _youtube_first_comment(brand, http, store, data, result, *, retry_rejected):
     previous = None
     if data["comment_change_id"]:
         change = comments.load(data["comment_change_id"])
+        if reconcile_only and change.status in {"proposed", "failed"}:
+            return result
         if change.status == "proposed" or (change.status == "failed" and retry_rejected):
             _pending_source(brand, data)
         if change.status == "failed" and retry_rejected:

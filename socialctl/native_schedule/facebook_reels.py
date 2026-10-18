@@ -109,13 +109,16 @@ class FacebookReelDelivery:
 
 def read_reel(video_id: str, page_id: str, client: httpx.Client,
               page_token: str, *, expected_description: str,
-              expected_publish_at: datetime | None = None) -> dict:
+              expected_publish_at: datetime | None = None,
+              require_published: bool = False) -> dict:
     """Read the Video node and compare ownership and approved description."""
     video_id = _safe_identifier(video_id)
     page_id = _safe_identifier(page_id)
     fields = 'id,description,from,status'
     if expected_publish_at is not None:
         fields += ',published,scheduled_publish_time'
+    elif require_published:
+        fields += ',published'
     response = client.get(f'{GRAPH}/{video_id}', params={
         'fields': fields, 'access_token': page_token})
     response.raise_for_status()
@@ -124,6 +127,9 @@ def read_reel(video_id: str, page_id: str, client: httpx.Client,
         raise ValueError('Reel readback belongs to another Page')
     if item.get('description') != expected_description:
         raise ValueError('Reel description differs from approved copy')
+    if require_published and (item.get('published') is not True
+            or (item.get('status') or {}).get('video_status') != 'ready'):
+        raise ValueError('Reel is not verified published and fully processed')
     if expected_publish_at is not None:
         try:
             stamp = datetime.fromisoformat(item['scheduled_publish_time'].replace('Z', '+00:00'))

@@ -17,8 +17,7 @@ def prepared(tmp_path, *, platform='facebook', first_comment=None, existing=Fals
     data.update(route='api', dispatch_after=(now - timedelta(minutes=1)).isoformat(),
         publish_at=(now.astimezone(ZoneInfo('America/New_York')) + timedelta(days=2)).replace(
             hour=9, minute=0, second=0, microsecond=0).isoformat())
-    # Success/uncertainty fixtures approve no first comment; comment obligations
-    # are covered explicitly by the public pending-follow-up regressions below.
+    # First-comment intent is retained unchanged across native submission and follow-up.
     data['payload']['first_comment'] = first_comment
     account = 'page-1' if platform == 'facebook' else 'channel'
     data.update(platform=platform, account_id=account)
@@ -263,7 +262,7 @@ def instagram_manifest(tmp_path, monkeypatch, *, fmt='carousel', first_comment=N
 
 
 @pytest.mark.parametrize('derived', [False, True])
-def test_public_instagram_first_comment_pending_before_any_mutation(tmp_path, monkeypatch, derived):
+def test_public_instagram_first_comment_waits_for_published_readback(tmp_path, monkeypatch, derived):
     comment = '🎥 Video completo en https://www.youtube.com/watch?v=M3zbWgbb4lo' if derived else 'Approved first comment'
     brand, store, moment = instagram_manifest(tmp_path, monkeypatch, fmt='reel', first_comment=comment, derived=derived)
     writes = []
@@ -273,10 +272,10 @@ def test_public_instagram_first_comment_pending_before_any_mutation(tmp_path, mo
             'success': True, 'status_code': 'FINISHED'}, request=httpx.Request(method, url))
     monkeypatch.setattr(httpx.Client, 'request', request)
     result = invoke(tmp_path, 'dispatch', 'clip', '--eligibility', 'pilot.json')
-    assert store.get('clip').state == 'blocked', result.output
-    assert writes == []
-    assert store.get_attempts('clip') == []
-    assert any('first-comment delivery pending' in notice['message'] for notice in store.get_notices('clip'))
+    assert store.get('clip').state == 'verifying', result.output
+    assert len(writes) == 3 and all(not url.endswith('/comments') for url in writes)
+    assert len(store.get_attempts('clip')) == 1
+    assert json.loads(result.output)['first_comment']['status'] == 'pending'
 
 
 @pytest.mark.parametrize('variant', ['success', 'failed_child', 'changed_hosted_bytes', 'expired_url',
@@ -359,7 +358,7 @@ def test_public_instagram_carousel_preserves_preview_order_bytes_and_failures(tm
 @pytest.mark.parametrize('command', ['submit-api', 'dispatch', 'deliver'])
 @pytest.mark.parametrize('platform,existing', [('facebook', False), ('youtube', False), ('youtube', True)])
 @pytest.mark.parametrize('with_comment', [False, True])
-def test_public_native_first_comment_pending_preserves_approval_without_claim(tmp_path, monkeypatch, command, platform, existing, with_comment):
+def test_public_native_submission_preserves_comment_until_actual_publication(tmp_path, monkeypatch, command, platform, existing, with_comment):
     from tests.test_native_schedule_youtube import resource
     from socialctl.native_schedule import facebook
     comment = ('🎥 Video completo en https://www.youtube.com/watch?v=M3zbWgbb4lo' if platform == 'facebook'
@@ -401,21 +400,14 @@ def test_public_native_first_comment_pending_preserves_approval_without_claim(tm
     result = invoke(tmp_path, *args)
     assert store.get_payload('clip') == payload
     assert store.get('clip').approval_digest == approved.approval_digest
+    assert result.exit_code == 0, result.output
+    assert store.get('clip').state == 'verifying'
+    assert len(store.get_attempts('clip')) == 1 and writes
     if with_comment:
-        assert result.exit_code == 1, result.output
-        assert writes == [] and store.get_attempts('clip') == [], result.output
-        if command == 'submit-api':
-            assert json.loads(result.stdout)['state'] == 'ui_required'
-            assert 'first-comment delivery pending durable follow-up' in result.output
-            assert store.get('clip').state == 'approved'
-        else:
-            assert store.get('clip').state == 'blocked'
-            assert any('first-comment delivery pending durable follow-up' in note['message']
-                for note in store.get_notices('clip'))
-    else:
-        assert result.exit_code == 0, result.output
-        assert store.get('clip').state == 'verifying'
-        assert len(store.get_attempts('clip')) == 1 and writes
+        from socialctl.brands import cargar_brand
+        from socialctl.native_schedule.first_comment import first_comment_status
+        assert first_comment_status(cargar_brand(tmp_path,'Histopast'), store.get('clip'), payload)['status'] == 'pending'
+
 
 
 @pytest.mark.parametrize('command', ['submit-api', 'dispatch', 'deliver'])

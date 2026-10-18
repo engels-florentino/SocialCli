@@ -78,7 +78,7 @@ def dispatch_ready(now: datetime, brand: str, *, store: NativeStore,
                     adapter, capability = delivery_context(job, payload)
                 except Exception:
                     store.transition(job.id, job.state, 'blocked', now=now)
-                    reason = ('Instagram first-comment delivery pending durable follow-up; no publication attempted'
+                    reason = ('Unsupported Instagram first-comment combination or eligibility; no publication attempted'
                               if job.platform == 'instagram' and payload.get('first_comment') else
                               'API delivery eligibility or account check failed; no publication attempted')
                     store.notice(job.id, reason, now=now)

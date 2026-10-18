@@ -160,7 +160,7 @@ def _readback(job, payload, remote_id, api, expected_parts=None):
         return YouTubeScheduleResult('conflict',remote_id,'Authenticated channel mismatch')
     data=api._get_json(URL_VIDEOS,token,params={'id':remote_id,'part':'snippet,status,processingDetails'},operation='verify scheduling')
     items=data.get('items')
-    if not isinstance(items,list) or len(items)!=1:
+    if not isinstance(items,list) or len(items)!=1 or any(k in data for k in ('nextPageToken', 'prevPageToken')):
         return YouTubeScheduleResult('uncertain',remote_id,'No unique remote readback')
     item=items[0]; snippet=item.get('snippet',{}); status=item.get('status',{})
     expected_options=payload['options']
@@ -212,6 +212,8 @@ def schedule_youtube(job: NativeJob, payload: dict, *, brand: Brand, store: Nati
         _id(remote_id)
         edit=MetadataEdit(video_id=remote_id,kind='schedule',never_published=payload['options'].get('never_published',False),patch={k:metadata['status'][k] for k in ('publishAt','privacyStatus')})
         observed=api.inspect(remote_id)
+        if payload.get('first_comment') and observed.resource['status'].get('madeForKids') is True:
+            return YouTubeScheduleResult('ui_required', reason='First comments are unavailable for videos made for kids; no submission attempted')
         if observed.resource['status'].get('privacyStatus')!='private':
             raise ValueError('Existing video is not private; no write')
         if any(observed.resource['snippet'].get(k)!=v for k,v in metadata['snippet'].items()):
