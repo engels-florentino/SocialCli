@@ -150,7 +150,8 @@ class Package:
             objects.append(dict(request_id='req_'+kind,response_sha256='4'*64,reference_id=kind,requested_id=oid,returned_id=oid,object_type=kind,
                   account_id='acct_fictional',mode='test',user_id=user,app_id='app_fictional',customer_id=customer,
                   subscription_id=subscription,checkout_id=checkout,invoice_id=invoice,
-                  price_id='price_fictional' if kind in {'subscription','checkout','invoice','line_item'} else None,observed_at=self.now-2,
+                  price_id='price_fictional' if kind in {'subscription','checkout','invoice','line_item'} else None,
+                  event_object_id='in_fictional' if kind == 'event' else None,observed_at=self.now-2,
                   outcome='present',retained_refs=[]))
         collections=[{'collection':kind,'parent_id':parent,'object_ids':[oid],'pagination':'complete','observed_at':self.now-2}
                      for kind,parent,oid in [('subscriptions','cus_fictional','sub_fictional'),('sessions','cus_fictional','cs_fictional'),
@@ -195,7 +196,56 @@ class Package:
             lineage_ids=[l['id'] for l in self.evidence['lineages']],rows=list(self.rows.values()),
             record_refs=[{'kind':kind,'id':oid} for kind,oid in records],
             uncertainty_ids=[u['id'] for u in self.evidence['uncertainties']],evidence_sha256=[],findings=[])
+        self.refresh_rehearsal()
         self.seal()
+
+    def refresh_rehearsal(self):
+        # Independent fictional fixture uses the actual existing restore recipe;
+        # enrollment's in-memory verifier is not used to manufacture its roots.
+        import uuid
+        from socialctl.saas import billing_inventory as inventory
+        from socialctl.saas.restore_guard import export_manifest, prepare_restore, release_restore
+        copy_dir = self.directory.parent / ('prepared_' + uuid.uuid4().hex)
+        copy_dir.mkdir(mode=0o700)
+        copy_path = copy_dir / 'copy.sqlite3'
+        authority = export_manifest(self.vault.path, now=self.now)
+        prepare_restore(self.vault.path, copy_path, self.keys, authority,
+                        now=self.now, snapshot_created=self.now)
+        release_restore(copy_path, self.keys, authority, now=self.now, identity_cleanup_confirmed=True)
+        with sqlite3.connect(copy_path) as db:
+            db.execute('PRAGMA journal_mode=DELETE')
+        report = inventory.inspect_database(copy_path, self.keys)
+        root = api().root_from_inventory(report)
+        source = api().root_from_inventory(self.objects['inventory'])
+        target = self.target | {'database_path':str(copy_path), 'device':report['target']['device'],
+            'inode':report['target']['inode'], 'service_id':'rehearsal_service', 'mount_id':'rehearsal_mount'}
+        before = {table.name:table for table in source.tables}
+        reasons = {'records':'access_cleanup', 'saas_record_owners':'access_cleanup',
+            'saas_record_links':'access_cleanup', 'saas_record_emails':'access_cleanup',
+            'saas_users':'session_invalidation', 'saas_google_revocations':'revocation_authority',
+            'legacy_allowance':'legacy_cleanup', 'saas_restore_guard':'restore_guard'}
+        changes = [dict(table=table.name, before=before[table.name].model_dump() if table.name in before else None,
+                    after=table.model_dump(), reason=reasons.get(table.name,'deletion_authority'))
+                   for table in root.tables if before.get(table.name) != table]
+        binding = dict(kind='saas-billing-environment',id='active',expires=253402300799,
+                       credential_hash='',payload={'account_id':'acct_fictional','mode':'test'})
+        ciphertext = Fernet(self.keys[0]).encrypt(json.dumps(binding,separators=(',',':')).encode())
+        with sqlite3.connect(copy_path) as db:
+            db.execute('INSERT INTO records(kind,id,expires,credential_hash,payload) VALUES(?,?,?,?,?)',
+                       ('saas-billing-environment','active',253402300799,'',ciphertext))
+        post = api().root_from_inventory(inventory.inspect_database(copy_path,self.keys))
+        delta = self.s.RehearsalDelta.model_validate(dict(post=post.model_dump(),post_excluding_binding=root.model_dump(),
+            binding=binding,binding_ciphertext_sha256=api().sha256(ciphertext),result='one_binding_insert_verified'))
+        self.objects['rehearsal']['facts'].update(prepared_copy=dict(
+            source_target=self.target, source_authority_id='current_endpoint', source_baseline=source.model_dump(),
+            target=target, identity=report['target'], baseline=root.model_dump(),
+            preparation_receipt_sha256='5'*64, prepared_at=self.now,snapshot_created_at=self.now,changes=changes),
+            enrollment_delta=delta.model_dump(),baseline_sha256=root.state_sha256,
+            exact_delta_sha256=api().sha256(api().encode(delta)))
+        self.add('rehearsal','rehearsal',self.objects['rehearsal'])
+        self.objects['compatibility']['facts'].update(rehearsal_sha256=self.digest('rehearsal'),copy_target=target,
+            before=post.model_dump(),after=post.model_dump(),binding_ciphertext_sha256=api().sha256(ciphertext))
+        self.add('compatibility','compatibility',self.objects['compatibility'])
 
     @staticmethod
     def ref(name,selector='facts'):
@@ -586,3 +636,164 @@ def test_approval_expiry_at_final_commit_check_rolls_back(tmp_path,monkeypatch):
     monkeypatch.setattr(api().Snapshot,'check_identity',expire_at_last_identity)
     with pytest.raises(ValueError): p.apply()
     assert calls[0] and frozen(p.vault.path)==before
+
+
+def orphan_event_package(p, payload):
+    """Retain a fully enumerated orphan so rejection tests provenance, not coverage."""
+    from copy import deepcopy
+    from socialctl.saas import billing_inventory as inventory
+    with p.vault.transaction() as db:
+        p.vault.put(db, 'saas-stripe-event', 'orphan_event', payload, expires=1)
+    with sqlite3.connect(p.vault.path) as db:
+        db.execute('PRAGMA journal_mode=DELETE')
+    p.add('inventory', 'inventory', inventory.inspect_database(p.vault.path, p.keys))
+    lineage = deepcopy(p.evidence['lineages'][1])
+    lineage.update(id='orphan_event_lineage', rows=[], record_refs=[{'kind':'saas-stripe-event','id':'orphan_event'}])
+    p.evidence['lineages'].append(lineage)
+    p.documentary['lineage_ids'].append(lineage['id'])
+    p.documentary['record_refs'].extend(lineage['record_refs'])
+    uncertainty = dict(id='orphan_event_uncertain', row_refs=[], record_refs=lineage['record_refs'],
+                       reason_code='orphan_record', provenance_lineage_ids=[lineage['id']], preserved=True)
+    p.evidence['uncertainties'].append(uncertainty)
+    p.documentary['uncertainty_ids'].append(uncertainty['id'])
+    p.objects['rehearsal']['facts']['uncertainty_ids'].append(uncertainty['id'])
+    p.refresh_rehearsal()
+    return p
+
+
+def retained_event_payload():
+    return {'id':'evt_fictional','livemode':False,'account':'acct_fictional',
+            'data':{'object':{'id':'in_fictional','object':'invoice','livemode':False,
+                    'customer':'cus_fictional','subscription':'sub_fictional','checkout_session':'cs_fictional',
+                    'metadata':{'user_id':'owner','app':'app_fictional'}}}}
+
+
+def test_review_r1_reapproved_conflicting_historical_receipt_is_denied(tmp_path, monkeypatch):
+    p=Package(tmp_path,monkeypatch)
+    assertion=p.objects['deployment']['facts'] | {'account_id':'acct_foreign','from_id':'foreign_empty','to_id':'foreign_current'}
+    p.fact('conflicting_deployment','deployment',assertion)
+    p.evidence['lineages'][0]['historical_refs']=[p.ref('conflicting_deployment')]
+    p.seal(); before=frozen(p.vault.path)
+    with pytest.raises(ValueError): p.prepare()
+    assert frozen(p.vault.path)==before
+
+
+def test_review_r1_reapproved_orphan_nested_foreign_relationships_are_denied(tmp_path,monkeypatch):
+    p=Package(tmp_path,monkeypatch)
+    payload=retained_event_payload()
+    payload['data']['object'].update(customer='cus_foreign',subscription='sub_foreign',
+                                    metadata={'user_id':'foreign_user','app':'foreign_app'})
+    orphan_event_package(p,payload).seal(); before=frozen(p.vault.path)
+    with pytest.raises(ValueError): p.prepare()
+    assert frozen(p.vault.path)==before
+
+
+def test_review_r1_reapproved_unrelated_rehearsal_hashes_are_denied(tmp_path,monkeypatch):
+    p=Package(tmp_path,monkeypatch)
+    p.objects['rehearsal']['facts'].update(baseline_sha256='6'*64,exact_delta_sha256='7'*64)
+    p.seal(); before=frozen(p.vault.path)
+    with pytest.raises(ValueError): p.prepare()
+    assert frozen(p.vault.path)==before
+
+
+@pytest.mark.parametrize('field', ['id','customer','subscription','checkout_session','missing_customer',
+                                  'user','app','app_id','nested_metadata','nested_subscription','missing_object'])
+def test_review_r1_each_orphan_relationship_is_checked_independently(tmp_path,monkeypatch,field):
+    p=Package(tmp_path,monkeypatch); payload=retained_event_payload(); obj=payload['data']['object']
+    if field in {'id','customer','subscription','checkout_session'}: obj[field]='foreign_object'
+    elif field=='missing_customer': obj.pop('customer')
+    elif field=='missing_object': payload['data'].pop('object')
+    elif field=='nested_metadata': obj['subscription_details']={'metadata':{'user_id':'foreign_user'}}
+    elif field=='nested_subscription': obj['parent']={'subscription_details':{'subscription':'sub_foreign'}}
+    else: obj['metadata']['user_id' if field=='user' else field]='foreign_value'
+    orphan_event_package(p,payload).seal()
+    with pytest.raises(ValueError): p.prepare()
+
+
+def test_review_r1_consistent_orphan_event_and_distinct_prepared_copy_succeed(tmp_path,monkeypatch):
+    p=orphan_event_package(Package(tmp_path,monkeypatch),retained_event_payload()); p.seal()
+    copied=p.objects['rehearsal']['facts']['prepared_copy']
+    assert copied['source_target']['inode']!=copied['target']['inode']
+    assert copied['source_baseline']['state_sha256']!=copied['baseline']['state_sha256']
+    assert {change['table'] for change in copied['changes']} >= {'saas_users','saas_restore_guard','saas_google_revocations'}
+    p.prepare(); assert p.apply()['status']=='one_binding_insert_verified'
+
+
+def bind_rehearsal_compatibility(p):
+    """Re-approve changed documentary bytes, including their compatibility link."""
+    p.add('rehearsal','rehearsal',p.objects['rehearsal'])
+    p.objects['compatibility']['facts']['rehearsal_sha256']=p.digest('rehearsal')
+    p.seal()
+
+
+@pytest.mark.parametrize('field',['source_target','source_authority','source_root','copy_identity',
+                                  'missing_change','extra_change','wrong_reason','post_count','post_other_table',
+                                  'compatibility_root','compatibility_ciphertext','compatibility_target'])
+def test_review_r1_resealed_unrelated_copy_preparation_or_delta_is_denied(tmp_path,monkeypatch,field):
+    p=Package(tmp_path,monkeypatch)
+    rehearsal=p.objects['rehearsal']['facts']; copy=rehearsal['prepared_copy']; delta=rehearsal['enrollment_delta']
+    comp=p.objects['compatibility']['facts']
+    if field=='source_target': copy['source_target']=copy['source_target']|{'inode':0}
+    elif field=='source_authority': copy['source_authority_id']='unrelated_authority'
+    elif field=='source_root': copy['source_baseline']['state_sha256']='a'*64
+    elif field=='copy_identity': copy['identity']['inode']+=1
+    elif field=='missing_change': copy['changes'].pop()
+    elif field=='extra_change': copy['changes'].append(copy['changes'][0])
+    elif field=='wrong_reason': copy['changes'][0]['reason']='deletion_authority'
+    elif field=='post_count': next(t for t in delta['post']['tables'] if t['name']=='records')['count']+=1
+    elif field=='post_other_table': next(t for t in delta['post']['tables'] if t['name']=='rates')['sha256']='a'*64
+    elif field=='compatibility_root': comp['after']['state_sha256']='a'*64
+    elif field=='compatibility_ciphertext': comp['binding_ciphertext_sha256']='a'*64
+    elif field=='compatibility_target': comp['copy_target']=comp['copy_target']|{'inode':0}
+    # Re-bind the structured delta hash, so a fresh detached approval cannot
+    # turn contradictory contents into an eligible rehearsal.
+    rehearsal['exact_delta_sha256']=api().sha256(api().encode(p.s.RehearsalDelta.model_validate(delta)))
+    bind_rehearsal_compatibility(p)
+    with pytest.raises(ValueError): p.prepare()
+
+
+@pytest.mark.parametrize('table',['saas_entitlements','records'])
+def test_review_r1_preparation_reason_cannot_authorize_unrelated_access_or_ciphertext_changes(tmp_path,monkeypatch,table):
+    p=Package(tmp_path,monkeypatch)
+    from socialctl.saas import billing_inventory as inventory
+    rehearsal=p.objects['rehearsal']['facts']; copy=rehearsal['prepared_copy']; delta=rehearsal['enrollment_delta']
+    # Forge internally consistent hashes for a different prepared table, while
+    # retaining this source's actual authority and original inventory root.
+    for root in [copy['baseline'],delta['post_excluding_binding'],delta['post']]:
+        target=next(t for t in root['tables'] if t['name']==table); target['sha256']='d'*64
+        logical={t['name']:{'rows':t['count'],'digest':t['sha256'],
+            'columns':p.objects['inventory']['tables'][t['name']]['columns'] if t['name']!='saas_restore_guard'
+            else ['prepared','singleton','snapshot_created','state']} for t in root['tables']}
+        root['state_sha256']=inventory._state_root(root['schema_sha256'],inventory._data_root(logical),copy['identity'])
+    old=next(t for t in copy['source_baseline']['tables'] if t['name']==table)
+    new=next(t for t in copy['baseline']['tables'] if t['name']==table)
+    copy['changes']=[c for c in copy['changes'] if c['table']!=table]
+    copy['changes'].append(dict(table=table,before=old,after=new,
+                               reason='access_cleanup' if table=='records' else 'deletion_authority'))
+    rehearsal['baseline_sha256']=copy['baseline']['state_sha256']
+    rehearsal['exact_delta_sha256']=api().sha256(api().encode(p.s.RehearsalDelta.model_validate(delta)))
+    p.objects['compatibility']['facts'].update(before=delta['post'],after=delta['post'])
+    bind_rehearsal_compatibility(p)
+    with pytest.raises(ValueError): p.prepare()
+
+
+@pytest.mark.parametrize('change',['session_cleanup','terminal_revocation','grant_tombstone','user_tombstone'])
+def test_review_r1_exact_existing_restore_cleanup_is_allowed_only_on_rehearsal_copy(tmp_path,monkeypatch,change):
+    from socialctl.saas import billing_inventory as inventory
+    p=Package(tmp_path,monkeypatch)
+    with p.vault.transaction() as db:
+        if change=='session_cleanup':
+            p.vault.put(db,'saas-session','fictional_session',{'user_id':'owner'},expires=p.now+100)
+        elif change=='terminal_revocation':
+            p.vault.put(db,'google-revocation','revoked',{'user_id':'deleting'},expires=p.now+100)
+        elif change=='grant_tombstone':
+            db.execute("INSERT INTO saas_deletion_tombstones VALUES('grant','unrelated_grant',?)",(p.now-1,))
+        else:
+            db.execute("INSERT INTO saas_deletion_tombstones VALUES('user','owner',?)",(p.now-1,))
+    with sqlite3.connect(p.vault.path) as db: db.execute('PRAGMA journal_mode=DELETE')
+    p.add('inventory','inventory',inventory.inspect_database(p.vault.path,p.keys))
+    p.refresh_rehearsal();p.seal()
+    original=p.objects['inventory']['state_root']
+    p.prepare();assert p.apply()['status']=='one_binding_insert_verified'
+    with api().database(p.vault.path,p.keys) as snapshot:
+        assert api().transaction_root(snapshot.db,snapshot.schema,snapshot.identity,exclude_binding=True).state_sha256==original

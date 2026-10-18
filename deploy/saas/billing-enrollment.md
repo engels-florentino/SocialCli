@@ -109,15 +109,15 @@ one closed `facts` object. The registry role fixes the accepted facts model:
 | --- | --- |
 | `initial_empty` | Original source receipt digest, endpoint, account/test, time, zero encrypted/billing/event/paid-state counts. |
 | `deployment` | Original source receipt digest, exact transition ID/kind/from/to/account/test/time and continuous/unresolved/contradictory finding. Only continuous is eligible. |
-| `provider` | Object references with request ID/response digest, requested and returned IDs, object type, account/test, user/application, customer/subscription/session/invoice/price relationships, observation time and retained-terminal references; exhaustive complete collections for customer subscriptions/sessions/invoices and Checkout line items. |
+| `provider` | Object references with request ID/response digest, requested and returned IDs, object type, account/test, user/application, customer/subscription/session/invoice/price relationships, exact nested `event_object_id`, observation time and retained-terminal references; exhaustive complete collections for customer subscriptions/sessions/invoices and Checkout line items. |
 | `configuration` | Reviewed account/test, application, configured price and portal IDs, observation time. |
 | `documentary_review` | Original/current endpoints, exact ordered transitions, exhaustive lineage/row/record/uncertainty references, evidence artifact hashes, and no unresolved/conflicting findings. |
 | `owner_instruction` | Exact manual-grant user and entitlement row hashes, original owner conversation receipt digest and time. |
 | `authority`, `auth_authority` | Exact target, distinct current endpoints, observation/expiry times and no competing authority. |
 | `freeze` | Exact target/freeze ID/times, all seven drained writer categories, retained/rejected arrivals and deny-all network prerequisite. |
 | `backup` | Exact target and SQLite/Auth authority endpoints, paired snapshot digests and final verification time. |
-| `rehearsal` | Reviewed source/image/previous-image digests, copy baseline/delta hashes, matching TEST startup accepted, foreign/live rejected before provider calls, isolated network/ready restore, exact uncertainty IDs. |
-| `compatibility` | Previous image digest with preserved binding and baseline. |
+| `rehearsal` | Reviewed source/image/previous-image digests, exact authoritative source target/authority/root, distinct prepared-copy target/identity/root, controlled preparation map/receipt/times, structured one-binding delta and bound hashes, matching TEST startup accepted, foreign/live rejected before provider calls, isolated network/ready restore, exact uncertainty IDs. |
+| `compatibility` | Previous image digest, exact rehearsal artifact hash and copy target, identical before/after post-enrollment roots and binding ciphertext hash. |
 | `source`, `image` | Exact source-file hashes and externally attested image/source association. |
 
 Source receipt/response digests refer to the originals examined by the private
@@ -135,6 +135,52 @@ ownership, relationships and complete collection membership are cross-checked.
 Unavailable terminal objects require retained deployment references; absence
 alone is not provenance. Observation age uses the **oldest** required object or
 collection timestamp, and every observation must be inside the final freeze.
+
+Historical references must be exact members of the validated transition receipt
+set. Every declared deployment assertion must participate in that chain; a second
+assertion with the same transition ID cannot substitute foreign endpoints or
+account provenance. An ID match alone does not establish receipt membership.
+
+Every retained event, including an orphan without a SQL event row, must match its
+specific provider event observation and that observation's `event_object_id`.
+The nested object identity, object type/test flag when present, required
+relationships and available nested relationships/ownership/application metadata
+must agree. Missing required relationships are a refusal, not an uncertainty
+that can be waved through. Unsupported retained payload shapes remain blocked.
+
+The prepared-copy assertion is tied to the **current complete authoritative
+source root**, target and authority endpoint. The copy has a separate path,
+service and file identity. Its root is recomputed with its own identity through
+the shared inventory encoders; live and copy roots are never equated by inode.
+Preparation differences are derived in memory from the existing source-defined
+`prepare_restore` plus `release_restore` recipe and the source snapshot's current
+tombstones/pending revocations. The verifier performs no restore or mutation:
+
+- Remove only the fixed restore access kinds and their actual index/cascade rows;
+  preserve every other ciphertext unless current source deletion/revocation
+  authority specifically removes its record.
+- Increment surviving users' session versions twice, once for each existing
+  preparation/release authority application; clear existing legacy allowances.
+- Apply exact source tombstones and pending-revocation reconciliation, including
+  only their related deletions, and remove brands left without slots.
+- Establish the fixed ready restore guard using the asserted preparation and
+  snapshot times, with the existing schema variant retained.
+
+The precise before/after table roots and fixed reason labels must equal that
+calculation. A reason label cannot authorize an arbitrary entitlement change,
+credential replacement or unrelated deletion. Original source rows remain
+unchanged throughout enrollment. The prepared source/copy association and its
+original preparation receipt remain documentary assertions under independent
+custody review; this is not cryptographic evidence that a rehearsal ran.
+
+`baseline_sha256` must equal the prepared baseline. `exact_delta_sha256` hashes a
+closed structured assertion containing full post/excluding-binding roots, exact
+TEST binding and ciphertext hash. Its only allowed enrollment delta is one
+records row; all other table/schema roots remain unchanged. Compatibility binds
+the exact rehearsal bytes, copy target, identical enrolled before/after roots,
+and the same binding ciphertext. These additions are part of the independently
+reviewed fact-schema extension; the original five v1 artifact field sets are
+unchanged. No new operational collection or broad recovery drill is implied.
 
 ## Prepare and final approvals
 

@@ -444,6 +444,21 @@ def validate_provider(runtime, evidence):
                     require(obj.subscription_id == related.subscription_id)
         if obj.object_type in {'subscription', 'checkout', 'invoice'}:
             require(obj.customer_id is not None and obj.user_id is not None)
+    for obj in provider.objects:
+        if obj.object_type == 'event':
+            require(obj.event_object_id in ids)
+            nested = ids[obj.event_object_id]
+            require(nested.object_type in {'customer', 'subscription', 'checkout', 'invoice'})
+            require(nested.user_id == obj.user_id)
+            for field in ('customer_id', 'subscription_id', 'checkout_id', 'invoice_id'):
+                value = getattr(nested, field)
+                if value is not None:
+                    require(getattr(obj, field) == value)
+            own_field = {'customer':'customer_id', 'subscription':'subscription_id',
+                         'checkout':'checkout_id', 'invoice':'invoice_id'}[nested.object_type]
+            require(getattr(obj, own_field) == nested.returned_id)
+        else:
+            require(obj.event_object_id is None)
     require(account in ids and ids[account].object_type == 'account')
     config = runtime.facts(runtime.one('configuration'))
     require(config.price_id in ids and ids[config.price_id].object_type == 'price')
@@ -475,6 +490,210 @@ def validate_provider(runtime, evidence):
     return ids
 
 
+
+def validate_retained_event(payload, event, provider_ids, lineage, app_id):
+    """All retained payloads, including orphans, must agree with exact observations."""
+    require(event.object_type == 'event' and event.user_id == lineage.user_id)
+    data = payload.get('data')
+    require(isinstance(data, dict) and isinstance(data.get('object'), dict))
+    obj = data['object']
+    require(obj.get('id') == event.event_object_id)
+    observed = provider_ids[event.event_object_id]
+    if 'object' in obj:
+        expected_type = {'customer':'customer', 'subscription':'subscription',
+                         'checkout':'checkout.session', 'invoice':'invoice'}[observed.object_type]
+        require(obj['object'] == expected_type)
+    if 'livemode' in obj:
+        require(obj['livemode'] is False)
+    for field, reference in [('customer', 'customer_id'), ('subscription', 'subscription_id'),
+                             ('checkout_session', 'checkout_id'), ('invoice', 'invoice_id')]:
+        expected = getattr(observed, reference)
+        # A relationship required by the matching object observation cannot be
+        # omitted. A nested object's own ID is checked separately above.
+        if expected is not None or field in obj:
+            require(obj.get(field) == expected == getattr(event, reference))
+    relationship_fields = {'customer':'customer_id', 'subscription':'subscription_id',
+                           'checkout_session':'checkout_id', 'invoice':'invoice_id'}
+    def check_nested_relationships(value):
+        if isinstance(value, dict):
+            for field, child in value.items():
+                if field == 'metadata':
+                    continue
+                if field in relationship_fields:
+                    expected = getattr(event, relationship_fields[field])
+                    actual = child.get('id') if isinstance(child, dict) else child
+                    require(actual == expected)
+                check_nested_relationships(child)
+        elif isinstance(value, list):
+            for child in value:
+                check_nested_relationships(child)
+    check_nested_relationships(obj)
+    def check_metadata(value):
+        if isinstance(value, dict):
+            if 'metadata' in value:
+                metadata = value['metadata']
+                require(isinstance(metadata, dict))
+                for field, expected in [('user_id', lineage.user_id), ('app', app_id), ('app_id', app_id)]:
+                    if field in metadata:
+                        require(metadata[field] == expected)
+            for child in value.values():
+                check_metadata(child)
+        elif isinstance(value, list):
+            for child in value:
+                check_metadata(child)
+    check_metadata(obj)
+    metadata = obj.get('metadata')
+    # Ownership-bearing objects in the existing billing contract require these
+    # metadata fields; invoice events may carry ownership through exact pointers.
+    if observed.object_type in {'customer', 'subscription', 'checkout'}:
+        require(isinstance(metadata, dict) and metadata.get('user_id') == lineage.user_id
+                and metadata.get('app') == app_id)
+
+def prepared_copy_tables(snapshot, copy):
+    """Derive the fixed existing prepare+release restore effects in memory.
+
+    No target mutation or arbitrary after-values: both authority applications
+    use this exact source's current tombstones and pending revocations. Existing
+    ciphertext is only retained or removed by the fixed restore rules.
+    """
+    tables = {name: [dict(item['values']) for item in rows] for name, rows in snapshot.rows.items()}
+    tables['records'] = [row for row in tables['records'] if (row['kind'], row['id']) != BINDING_KEY]
+    cleanup_kinds = {'saas-session', 'saas-login', 'saas-pair', 'saas-installation', 'saas-capability',
+                     'saas-candidate', 'authorization', 'connection',
+                     'saas-meta-webhook-binding', 'saas-meta-webhook-event'}
+    pending = {row['id'] for row in tables['saas_google_revocations'] if row['state'] == 'pending'}
+    tombstones = list(tables['saas_deletion_tombstones'])
+    def remove_records(keys):
+        keys = set(keys) & {(row['kind'], row['id']) for row in tables['records']}
+        if snapshot.root.schema_variant == 'schema10_candidate_receiver':
+            grants = {record_id for kind, record_id in keys if kind == 'saas-grant'}
+            keys |= ({(row['kind'], row['id']) for row in tables['saas_record_links']
+                      if row['grant_id'] in grants and row['kind'] in
+                      {'saas-meta-webhook-binding', 'saas-meta-webhook-event'}} &
+                     {(row['kind'], row['id']) for row in tables['records']})
+        tables['records'] = [row for row in tables['records'] if (row['kind'], row['id']) not in keys]
+        for name in ('saas_record_owners', 'saas_record_links', 'saas_record_emails'):
+            tables[name] = [row for row in tables[name] if (row['kind'], row['id']) not in keys]
+    # prepare_restore and release_restore each apply the current-authority
+    # cleanup. Only session_version is non-idempotent across the two passes.
+    for _ in range(2):
+        remove_records((row['kind'], row['id']) for row in tables['records'] if row['kind'] in cleanup_kinds)
+        for row in tables['saas_users']:
+            row['session_version'] += 1
+        if 'legacy_allowance' in tables:
+            tables['legacy_allowance'] = []
+        for row in list(tables['saas_google_revocations']):
+            if row['id'] not in pending:
+                remove_records({('google-revocation', row['id'])})
+                tables['saas_google_revocations'].remove(row)
+            else:
+                row.update(state='pending', lease=None, lease_until=0.0, next_attempt=0.0)
+        for tombstone in tombstones:
+            kind, record_id = tombstone['kind'], tombstone['id']
+            require(kind in {'grant', 'user'})
+            if kind == 'grant':
+                remove_records({('saas-grant', record_id)})
+                tables['saas_slots'] = [row for row in tables['saas_slots'] if row['grant_id'] != record_id]
+            else:
+                customers = {row['customer_id'] for row in tables['saas_billing']
+                             if row['user_id'] == record_id and row['customer_id']}
+                events = [row for row in tables['saas_billing_events'] if row['customer_id'] in customers]
+                remove_records(('saas-stripe-event', ':'.join((row['account_id'], row['mode'], row['event_id'])))
+                               for row in events)
+                tables['saas_billing_events'] = [row for row in tables['saas_billing_events'] if row not in events]
+                owned = {(row['kind'], row['id']) for row in tables['saas_record_owners'] if row['user_id'] == record_id}
+                remove_records(owned | {('saas-user', record_id)})
+                for name in ('saas_users', 'saas_entitlements', 'saas_billing', 'saas_slots', 'saas_brands',
+                             'saas_reminders', 'saas_deletions', 'saas_media_allocations'):
+                    field = 'id' if name == 'saas_users' else 'user_id'
+                    tables[name] = [row for row in tables[name] if row[field] != record_id]
+        slot_users = {row['user_id'] for row in tables['saas_slots']}
+        tables['saas_brands'] = [row for row in tables['saas_brands'] if row['user_id'] in slot_users]
+    require(all(any(row['kind'] == 'google-revocation' and row['id'] == record_id
+                    for row in tables['records']) for record_id in pending))
+    tables['saas_restore_guard'] = [{'singleton': 1, 'state': 'ready',
+        'prepared': float(copy.prepared_at), 'snapshot_created': float(copy.snapshot_created_at)}]
+    schema = list(snapshot.schema)
+    if 'saas_restore_guard' not in snapshot.rows:
+        schema.append(inv._RESTORE_SCHEMA)
+    metadata = {}
+    for name in tables:
+        if name == 'saas_restore_guard' and name not in snapshot.rows:
+            columns = [(0, 'singleton', 'INTEGER', 0, None, 1, 0),
+                       (1, 'state', 'TEXT', 1, None, 0, 0),
+                       (2, 'prepared', 'REAL', 1, None, 0, 0),
+                       (3, 'snapshot_created', 'REAL', 1, None, 0, 0)]
+            require(inv._rows_digest([('column', *row) for row in columns]) == inv._SOURCE_METADATA_ROOTS[name])
+            metadata[name] = {'columns': columns, 'indexes': []}
+        else:
+            columns = [tuple(row) for row in snapshot.db.execute(f'PRAGMA table_xinfo("{name}")')]
+            indexes = [(tuple(index), [tuple(row) for row in snapshot.db.execute(f'PRAGMA index_xinfo("{index[1]}")')])
+                       for index in snapshot.db.execute(f'PRAGMA index_list("{name}")').fetchall()]
+            metadata[name] = {'columns': columns, 'indexes': indexes}
+    logical = {}
+    for name, rows in tables.items():
+        columns = sorted(column[1] for column in metadata[name]['columns'])
+        logical[name] = {'columns': columns, 'rows': len(rows),
+                         'digest': inv._rows_digest([tuple(row[column] for column in columns) for row in rows])}
+    schema_root = inv._schema_root(schema, metadata, snapshot.db.execute('PRAGMA encoding').fetchone()[0])
+    return logical, schema_root
+
+
+def preparation_reason(table):
+    return {'records':'access_cleanup', 'saas_record_owners':'access_cleanup',
+            'saas_record_links':'access_cleanup', 'saas_record_emails':'access_cleanup',
+            'saas_users':'session_invalidation', 'saas_google_revocations':'revocation_authority',
+            'legacy_allowance':'legacy_cleanup', 'saas_restore_guard':'restore_guard'}.get(table, 'deletion_authority')
+
+
+def validate_rehearsal(runtime, snapshot, baseline, now):
+    rehearsal = runtime.facts(runtime.one('rehearsal'))
+    compatibility = runtime.facts(runtime.one('compatibility'))
+    copy = rehearsal.prepared_copy
+    require(copy.source_target == runtime.policy.target and copy.source_baseline == baseline)
+    require(copy.source_authority_id == runtime.facts(runtime.one('authority')).endpoint_id)
+    require(copy.target.account_id == runtime.policy.target.account_id)
+    require(copy.target.host_authority_id == runtime.policy.target.host_authority_id)
+    require(copy.target.service_id != runtime.policy.target.service_id)
+    require(copy.target.database_path != runtime.policy.target.database_path)
+    require((copy.target.device, copy.target.inode) != (runtime.policy.target.device, runtime.policy.target.inode))
+    require((copy.identity.device, copy.identity.inode) == (copy.target.device, copy.target.inode))
+    require(copy.snapshot_created_at <= copy.prepared_at <= now)
+    require(copy.prepared_at - copy.snapshot_created_at <= 6 * 86400)
+    logical, schema_root = prepared_copy_tables(snapshot, copy)
+    expected = root_from_inventory({'tables': logical, 'schema_root': schema_root,
+        'state_root': inv._state_root(schema_root, inv._data_root(logical), copy.identity.model_dump()),
+        'schema_variant': baseline.schema_variant})
+    require(copy.baseline == expected and rehearsal.baseline_sha256 == expected.state_sha256)
+    before = {table.name: table for table in baseline.tables}
+    after = {table.name: table for table in expected.tables}
+    expected_changes = {name for name in after if before.get(name) != after[name]}
+    require(unique([change.table for change in copy.changes]) == expected_changes)
+    for change in copy.changes:
+        require(change.before == before.get(change.table) and change.after == after[change.table])
+        require(change.reason == preparation_reason(change.table))
+    delta = rehearsal.enrollment_delta
+    require(rehearsal.exact_delta_sha256 == sha256(encode(delta)))
+    require(delta.post_excluding_binding == expected)
+    require(delta.binding == s.Binding(kind=BINDING_KEY[0], id=BINDING_KEY[1],
+        payload=s.BindingPayload(account_id=runtime.policy.target.account_id, mode='test'),
+        expires=253402300799, credential_hash=''))
+    require(delta.post.schema_variant == expected.schema_variant and delta.post.schema_sha256 == expected.schema_sha256)
+    post = {table.name: table for table in delta.post.tables}
+    require(unique([table.name for table in delta.post.tables]) == set(after))
+    for name in after:
+        require(post[name].count == after[name].count + (name == 'records'))
+        if name != 'records':
+            require(post[name] == after[name])
+        else:
+            require(post[name].sha256 != after[name].sha256)
+    post_logical = {name: {**logical[name], 'rows': table.count, 'digest': table.sha256} for name, table in post.items()}
+    require(delta.post.state_sha256 == inv._state_root(schema_root, inv._data_root(post_logical), copy.identity.model_dump()))
+    require(compatibility.rehearsal_sha256 == runtime.one('rehearsal').sha256)
+    require(compatibility.copy_target == copy.target and compatibility.before == delta.post == compatibility.after)
+    require(compatibility.binding_ciphertext_sha256 == delta.binding_ciphertext_sha256)
+
+
 def validate_evidence(runtime, snapshot, evidence, now):
     require(evidence.created_at <= now)
     unique([a.id for a in evidence.artifacts])
@@ -497,6 +716,7 @@ def validate_evidence(runtime, snapshot, evidence, now):
     first = runtime.facts(runtime.one('initial_empty'))
     require(first.endpoint_id == doc.original_empty_id and first.account_id == doc.account_id)
     require(first.observed_at <= now)
+    validated_history = set()
     endpoint = first.endpoint_id
     last_observed = first.observed_at
     for index, transition in enumerate(evidence.transitions):
@@ -507,7 +727,10 @@ def validate_evidence(runtime, snapshot, evidence, now):
         unique_refs(transition.receipts)
         for ref in transition.receipts:
             require(ref.artifact_id in declared)
-            receipts.append(runtime.reference(ref, {'initial_empty', 'deployment'}))
+            receipt = runtime.reference(ref, {'initial_empty', 'deployment'})
+            receipts.append(receipt)
+            if isinstance(receipt, s.ContinuityFacts):
+                validated_history.add((ref.artifact_id, ref.selector))
         continuity = [r for r in receipts if isinstance(r, s.ContinuityFacts)]
         require(bool(continuity))
         if index == 0:
@@ -521,6 +744,8 @@ def validate_evidence(runtime, snapshot, evidence, now):
         endpoint = transition.to_id
     unique([evidence.transitions[0].from_id, *[t.to_id for t in evidence.transitions]])
     require(endpoint == authority.endpoint_id)
+    require({a.id for a in evidence.artifacts if a.role == 'deployment'} ==
+            {artifact_id for artifact_id, _ in validated_history})
     provider_ids = validate_provider(runtime, evidence)
     required_rows, required_records = required_coverage(snapshot)
     lineage_ids = unique([lineage.id for lineage in evidence.lineages])
@@ -534,6 +759,7 @@ def validate_evidence(runtime, snapshot, evidence, now):
         for refs in (lineage.historical_refs, lineage.provider_refs, lineage.owner_instruction_refs):
             unique_refs(refs)
         for ref in lineage.historical_refs:
+            require((ref.artifact_id, ref.selector) in validated_history)
             require(ref.artifact_id in declared)
             historical = runtime.reference(ref, {'deployment'})
             require(historical.transition_id in transition_ids and historical.finding == 'continuous')
@@ -598,6 +824,7 @@ def validate_evidence(runtime, snapshot, evidence, now):
                 require(lineage.category == 'event' and payload.get('livemode') is False)
                 require(payload.get('account') in (None, doc.account_id))
                 require(payload.get('id') in linked_ids)
+                validate_retained_event(payload, provider_ids[payload['id']], provider_ids, lineage, runtime.policy.app_id)
             owners = [row['values']['user_id'] for row in snapshot.rows['saas_record_owners']
                       if (row['values']['kind'], row['values']['id']) == key]
             require(not owners or owners == [lineage.user_id])
@@ -680,6 +907,7 @@ def validate_snapshot(runtime, snapshot, evidence, now, *, baseline=None):
                                              schema_root, data_root, original_report)
     require(json.dumps(inventory_report, sort_keys=True, allow_nan=False) ==
             json.dumps(expected_report, sort_keys=True, allow_nan=False))
+    validate_rehearsal(runtime, snapshot, actual_root, now)
     validate_evidence(runtime, snapshot, evidence, now)
     for entry in runtime.entries.values():
         if entry.role == 'approval':

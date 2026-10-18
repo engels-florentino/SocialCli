@@ -398,7 +398,7 @@ def _schema(db):
 def _logical_state(db, schema, *, exclude_binding=False):
     """Pin every table, column, duplicate and ciphertext in this transaction."""
     tables = {}
-    schema_parts = list(schema)
+    schema_metadata = {}
     for name in sorted(row[1] for row in schema if row[0] == 'table'):
         columns = sorted(tuple(row) for row in db.execute(f'PRAGMA table_xinfo("{name}")'))
         # The source allowlist fixes names before any interpolated identifier.
@@ -411,16 +411,28 @@ def _logical_state(db, schema, *, exclude_binding=False):
             parameters = ('saas-billing-environment', 'active')
         rows = db.execute(query, parameters).fetchall()
         tables[name] = {'columns': names, 'rows': len(rows), 'digest': _rows_digest(rows)}
-        schema_parts.extend(('column', name, *column) for column in columns)
+        schema_metadata[name] = {'columns': columns, 'indexes': []}
         for index in db.execute(f'PRAGMA index_list("{name}")').fetchall():
+            schema_metadata[name]['indexes'].append((tuple(index),
+                [tuple(column) for column in db.execute(f'PRAGMA index_xinfo("{index[1]}")')]))
+    schema_root = _schema_root(schema, schema_metadata, db.execute('PRAGMA encoding').fetchone()[0])
+    return tables, schema_root, _data_root(tables)
+
+
+def _schema_root(schema, metadata, encoding):
+    schema_parts = list(schema)
+    for name, value in sorted(metadata.items()):
+        schema_parts.extend(('column', name, *column) for column in value['columns'])
+        for index, columns in value['indexes']:
             schema_parts.append(('index_metadata', name, *index))
-            schema_parts.extend(('index_column', index[1], *tuple(column))
-                                for column in db.execute(f'PRAGMA index_xinfo("{index[1]}")'))
-    schema_parts.append(('encoding', db.execute('PRAGMA encoding').fetchone()[0]))
-    schema_root = _rows_digest(schema_parts)
-    data_root = _rows_digest((name, json.dumps(value['columns'], separators=(',', ':')),
-                             value['rows'], value['digest']) for name, value in tables.items())
-    return tables, schema_root, data_root
+            schema_parts.extend(('index_column', index[1], *column) for column in columns)
+    schema_parts.append(('encoding', encoding))
+    return _rows_digest(schema_parts)
+
+
+def _data_root(tables):
+    return _rows_digest((name, json.dumps(value['columns'], separators=(',', ':')),
+                         value['rows'], value['digest']) for name, value in tables.items())
 
 
 def _state_root(schema_root, data_root, identity):

@@ -348,6 +348,7 @@ class ProviderObject(Closed):
     checkout_id: Identifier | None
     invoice_id: Identifier | None
     price_id: Identifier | None
+    event_object_id: Identifier | None
     observed_at: Timestamp
     outcome: Literal['present', 'retained_terminal']
     retained_refs: list[Ref]
@@ -430,10 +431,50 @@ class BackupFacts(Closed):
     verified_at: Timestamp
 
 
+class CopyIdentity(Closed):
+    device: Timestamp
+    inode: Timestamp
+    owner: Timestamp
+    group: Timestamp
+    mode: Literal[384]
+    links: Literal[1]
+
+
+class PreparationChange(Closed):
+    table: Identifier
+    before: TableRoot | None
+    after: TableRoot
+    reason: Literal['access_cleanup', 'session_invalidation', 'deletion_authority',
+                    'revocation_authority', 'legacy_cleanup', 'restore_guard']
+
+
+class PreparedCopy(Closed):
+    source_target: Target
+    source_authority_id: Identifier
+    source_baseline: Root
+    target: Target
+    identity: CopyIdentity
+    baseline: Root
+    preparation_receipt_sha256: Digest
+    prepared_at: Timestamp
+    snapshot_created_at: Timestamp
+    changes: list[PreparationChange]
+
+
+class RehearsalDelta(Closed):
+    post: Root
+    post_excluding_binding: Root
+    binding: Binding
+    binding_ciphertext_sha256: Digest
+    result: Literal['one_binding_insert_verified']
+
+
 class RehearsalFacts(Closed):
     source_sha256: Digest
     image_sha256: Digest
     previous_image_sha256: Digest
+    prepared_copy: PreparedCopy
+    enrollment_delta: RehearsalDelta
     baseline_sha256: Digest
     exact_delta_sha256: Digest
     matching_test_startup: Literal['accepted']
@@ -446,6 +487,11 @@ class RehearsalFacts(Closed):
 
 class CompatibilityFacts(Closed):
     previous_image_sha256: Digest
+    rehearsal_sha256: Digest
+    copy_target: Target
+    before: Root
+    after: Root
+    binding_ciphertext_sha256: Digest
     binding: Literal['preserved']
     baseline: Literal['preserved']
 
