@@ -797,3 +797,55 @@ def test_review_r1_exact_existing_restore_cleanup_is_allowed_only_on_rehearsal_c
     p.prepare();assert p.apply()['status']=='one_binding_insert_verified'
     with api().database(p.vault.path,p.keys) as snapshot:
         assert api().transaction_root(snapshot.db,snapshot.schema,snapshot.identity,exclude_binding=True).state_sha256==original
+
+
+def test_review_r2_deployed_source_actual_restore_acquires_only_known_copy_schema(tmp_path,monkeypatch):
+    from socialctl.saas import billing_inventory as inventory
+    p=Package(tmp_path,monkeypatch)
+    with p.vault.transaction() as db:
+        db.execute('DROP TRIGGER records_meta_webhook_grant_delete')
+        db.execute('DROP INDEX saas_record_links_grant')
+        p.vault.put(db,'saas-meta-webhook-event','fictional_linked_event',
+                    {'user_id':'owner','grant_id':'unrelated_grant'},expires=p.now+100)
+        db.execute("INSERT INTO saas_deletion_tombstones VALUES('grant','unrelated_grant',?)",(p.now-1,))
+    with sqlite3.connect(p.vault.path) as db: db.execute('PRAGMA journal_mode=DELETE')
+    source=inventory.inspect_database(p.vault.path,p.keys)
+    assert source['schema_variant']=='schema10_deployed_rc15'
+    p.add('inventory','inventory',source)
+    p.refresh_rehearsal();p.seal()
+    assert p.objects['rehearsal']['facts']['prepared_copy']['baseline']['schema_variant']=='schema10_candidate_receiver'
+    p.prepare();assert p.apply()['status']=='one_binding_insert_verified'
+    with api().database(p.vault.path,p.keys) as snapshot:
+        assert snapshot.root.schema_variant=='schema10_deployed_rc15'
+        assert api().transaction_root(snapshot.db,snapshot.schema,snapshot.identity,exclude_binding=True).state_sha256==source['state_root']
+
+
+@pytest.mark.parametrize('ddl',[
+    'CREATE INDEX unreviewed_copy_index ON rates(bucket)',
+    'CREATE TRIGGER unreviewed_copy_trigger AFTER INSERT ON rates BEGIN SELECT 1; END',
+])
+def test_review_r2_resealed_unknown_copy_schema_is_refused(tmp_path,monkeypatch,ddl):
+    from socialctl.saas import billing_inventory as inventory
+    p=Package(tmp_path,monkeypatch)
+    rehearsal=p.objects['rehearsal']['facts']; copy=rehearsal['prepared_copy']; delta=rehearsal['enrollment_delta']
+    copy_path=Path(copy['target']['database_path'])
+    # Even actual, consistently encoded copy roots cannot authorize extra DDL.
+    # Bypass collection's schema gate only to model re-approved false assertions.
+    with sqlite3.connect(copy_path) as db:
+        db.execute(ddl)
+        schema=db.execute('SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name').fetchall()
+        for exclude in (True,False):
+            tables,schema_root,data_root=inventory._logical_state(db,schema,exclude_binding=exclude)
+            root=api().root_from_inventory(dict(tables=tables,schema_root=schema_root,
+                state_root=inventory._state_root(schema_root,data_root,copy['identity']),
+                schema_variant='schema10_candidate_receiver')).model_dump()
+            if exclude:
+                copy['baseline']=root;delta['post_excluding_binding']=root
+            else:
+                delta['post']=root
+    with pytest.raises(ValueError): inventory.inspect_database(copy_path,p.keys)
+    rehearsal['baseline_sha256']=copy['baseline']['state_sha256']
+    rehearsal['exact_delta_sha256']=api().sha256(api().encode(p.s.RehearsalDelta.model_validate(delta)))
+    p.objects['compatibility']['facts'].update(before=delta['post'],after=delta['post'])
+    bind_rehearsal_compatibility(p)
+    with pytest.raises(ValueError): p.prepare()

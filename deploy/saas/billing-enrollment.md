@@ -163,8 +163,11 @@ tombstones/pending revocations. The verifier performs no restore or mutation:
   preparation/release authority application; clear existing legacy allowances.
 - Apply exact source tombstones and pending-revocation reconciliation, including
   only their related deletions, and remove brands left without slots.
-- Establish the fixed ready restore guard using the asserted preparation and
-  snapshot times, with the existing schema variant retained.
+- On the disposable copy, the existing Store constructor installs the exact
+  frozen receiver trigger and grant-link index before cleanup. A deployed-rc15
+  source therefore produces candidate-receiver copy schema and cascade behavior;
+  an existing candidate source retains them. No other schema change is accepted
+  beyond the fixed ready restore guard and its asserted preparation/snapshot times.
 
 The precise before/after table roots and fixed reason labels must equal that
 calculation. A reason label cannot authorize an arbitrary entitlement change,

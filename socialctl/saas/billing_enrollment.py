@@ -558,6 +558,14 @@ def prepared_copy_tables(snapshot, copy):
     """
     tables = {name: [dict(item['values']) for item in rows] for name, rows in snapshot.rows.items()}
     tables['records'] = [row for row in tables['records'] if (row['kind'], row['id']) != BINDING_KEY]
+    # The existing restore recipe constructs Store on the disposable copy
+    # before cleanup, installing precisely the two frozen receiver objects.
+    schema = list(snapshot.schema)
+    upgrade_receiver = snapshot.root.schema_variant == 'schema10_deployed_rc15'
+    if upgrade_receiver:
+        schema.extend(row for row in inv._BASE_SCHEMA if row[1] in inv._RECEIVER_OBJECTS)
+    prepared_variant = inv._schema_variant(schema)
+    require(prepared_variant == 'schema10_candidate_receiver')
     cleanup_kinds = {'saas-session', 'saas-login', 'saas-pair', 'saas-installation', 'saas-capability',
                      'saas-candidate', 'authorization', 'connection',
                      'saas-meta-webhook-binding', 'saas-meta-webhook-event'}
@@ -565,7 +573,7 @@ def prepared_copy_tables(snapshot, copy):
     tombstones = list(tables['saas_deletion_tombstones'])
     def remove_records(keys):
         keys = set(keys) & {(row['kind'], row['id']) for row in tables['records']}
-        if snapshot.root.schema_variant == 'schema10_candidate_receiver':
+        if prepared_variant == 'schema10_candidate_receiver':
             grants = {record_id for kind, record_id in keys if kind == 'saas-grant'}
             keys |= ({(row['kind'], row['id']) for row in tables['saas_record_links']
                       if row['grant_id'] in grants and row['kind'] in
@@ -613,7 +621,6 @@ def prepared_copy_tables(snapshot, copy):
                     for row in tables['records']) for record_id in pending))
     tables['saas_restore_guard'] = [{'singleton': 1, 'state': 'ready',
         'prepared': float(copy.prepared_at), 'snapshot_created': float(copy.snapshot_created_at)}]
-    schema = list(snapshot.schema)
     if 'saas_restore_guard' not in snapshot.rows:
         schema.append(inv._RESTORE_SCHEMA)
     metadata = {}
@@ -629,6 +636,20 @@ def prepared_copy_tables(snapshot, copy):
             columns = [tuple(row) for row in snapshot.db.execute(f'PRAGMA table_xinfo("{name}")')]
             indexes = [(tuple(index), [tuple(row) for row in snapshot.db.execute(f'PRAGMA index_xinfo("{index[1]}")')])
                        for index in snapshot.db.execute(f'PRAGMA index_list("{name}")').fetchall()]
+            if name == 'saas_record_links' and upgrade_receiver:
+                # SQLite lists the newly created index first. All source column
+                # ordinals and index metadata have already passed frozen review.
+                cids = {column[1]: column[0] for column in columns}
+                grant_columns = [(seq, cids[column], column, 0, 'BINARY', 1)
+                                 for seq, column in enumerate(('grant_id', 'kind', 'id'))]
+                grant_columns.append((3, -1, None, 0, 'BINARY', 0))
+                indexes = [((0, 'saas_record_links_grant', 0, 'c', 0), grant_columns)] + [
+                    ((index[0] + 1, *index[1:]), values) for index, values in indexes]
+                frozen_metadata = [('column', *column) for column in columns]
+                for index, values in indexes:
+                    frozen_metadata.append(('index', *index[1:]))
+                    frozen_metadata.extend(('index_column', index[1], *value) for value in values)
+                require(inv._rows_digest(frozen_metadata) == inv._SOURCE_METADATA_ROOTS[name])
             metadata[name] = {'columns': columns, 'indexes': indexes}
     logical = {}
     for name, rows in tables.items():
@@ -636,7 +657,7 @@ def prepared_copy_tables(snapshot, copy):
         logical[name] = {'columns': columns, 'rows': len(rows),
                          'digest': inv._rows_digest([tuple(row[column] for column in columns) for row in rows])}
     schema_root = inv._schema_root(schema, metadata, snapshot.db.execute('PRAGMA encoding').fetchone()[0])
-    return logical, schema_root
+    return logical, schema_root, prepared_variant
 
 
 def preparation_reason(table):
@@ -660,10 +681,10 @@ def validate_rehearsal(runtime, snapshot, baseline, now):
     require((copy.identity.device, copy.identity.inode) == (copy.target.device, copy.target.inode))
     require(copy.snapshot_created_at <= copy.prepared_at <= now)
     require(copy.prepared_at - copy.snapshot_created_at <= 6 * 86400)
-    logical, schema_root = prepared_copy_tables(snapshot, copy)
+    logical, schema_root, prepared_variant = prepared_copy_tables(snapshot, copy)
     expected = root_from_inventory({'tables': logical, 'schema_root': schema_root,
         'state_root': inv._state_root(schema_root, inv._data_root(logical), copy.identity.model_dump()),
-        'schema_variant': baseline.schema_variant})
+        'schema_variant': prepared_variant})
     require(copy.baseline == expected and rehearsal.baseline_sha256 == expected.state_sha256)
     before = {table.name: table for table in baseline.tables}
     after = {table.name: table for table in expected.tables}
