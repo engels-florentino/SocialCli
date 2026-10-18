@@ -38,10 +38,13 @@ INSIGHT_PERIODS = frozenset({"day", "week", "days_28", "lifetime"})
 
 
 class MetaClient:
-    def __init__(self, brand, platform, client):
+    def __init__(self, brand, platform, client, *, user_page_authorizer=None):
         if platform not in {Platform.FACEBOOK, Platform.INSTAGRAM}:
             raise MetaError("plataforma Meta requerida")
         self.brand, self.platform, self.client = brand, platform, client
+        # Server-only verifier for explicit asset grants when /me/accounts is
+        # completely empty. Never supplied from a proposal or remote payload.
+        self._user_page_authorizer = user_page_authorizer
         self.page_id = meta_id((brand.cuentas.get("facebook") or {}).get("page_id"))
         self.account_id = self.page_id if platform is Platform.FACEBOOK else meta_id((brand.cuentas.get("instagram") or {}).get("ig_user_id"))
         try:
@@ -214,9 +217,14 @@ class MetaClient:
                 raise MetaError("authenticated USER actor does not match configured actor")
             pages = self._pages("me/accounts", {"fields": "id,tasks,instagram_business_account", "limit": "100"})
             matches = [p for p in pages["data"] if p.get("id") == self.page_id]
-            if not pages["complete"] or len(matches) != 1 or not matches[0].get("tasks"):
-                raise MetaError("Page managed by USER actor was not verified")
-            selected = matches[0]
+            if pages['complete'] and not pages['data'] and self._user_page_authorizer is not None:
+                selected = self._user_page_authorizer(actor)
+                if not isinstance(selected, dict) or selected.get('id') != self.page_id:
+                    raise MetaError('Explicit USER Page authorization did not match the selected Page')
+            else:
+                if not pages["complete"] or len(matches) != 1 or not matches[0].get("tasks"):
+                    raise MetaError("Page managed by USER actor was not verified")
+                selected = matches[0]
             if user_required:
                 permissions = self._pages("me/permissions", {"limit": "100"})
                 granted = {p.get("permission") for p in permissions["data"] if p.get("status") == "granted"}

@@ -26,8 +26,14 @@ server-side operation route; clients never receive the broader User credential.
   `ads_management` **or** `ads_read` when the person's Page role was granted
   through Business Manager. That eligibility condition must be checked; do not
   request ad permissions for every connection by default.
-- The route checks fresh grants, User identity, Page tasks, the linked Instagram
-  account, resource ownership and the exact approved baseline before dispatch.
+- The route checks fresh grants, User identity, Page authorization, the linked
+  Instagram account, resource ownership and the exact approved baseline before
+  dispatch. Normally Page authorization comes from the complete `/me/accounts`
+  response and its tasks. When that response is completely empty, a server-only
+  fallback verifies fresh `debug_token` metadata against this app and User,
+  explicit action-specific grants for the selected Page and Instagram account,
+  and their current association. It never invents tasks or overrides an
+  incomplete or conflicting accounts response.
 - Durable operation records prevent uncertain writes from being sent again.
   They are bound to the SocialCli owner and Instagram account, so replacing a
   provider grant does not bypass an unresolved operation. Server records have a
@@ -42,7 +48,8 @@ server-side operation route; clients never receive the broader User credential.
   fixture verification remain required. Local automated tests do not satisfy those gates.
 
 References: [media deletion](https://developers.facebook.com/documentation/instagram-platform/reference/instagram-media)
-and [mention replies](https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/mentions).
+and [mention replies](https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/mentions),
+plus [token inspection](https://developers.facebook.com/docs/graph-api/reference/debug_token).
 
 ### General limits
 

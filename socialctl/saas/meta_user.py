@@ -87,9 +87,45 @@ def install_meta_user_route(app, connections, clock):
         secret = {**user, 'token_mode': 'facebook_user', 'actor_id': meta_id(actor.get('id'))}
         brand = SimpleNamespace(cuentas={'facebook': {'page_id': account['page_id']},
             'instagram': {'ig_user_id': account['id']}}, leer_secreto=lambda platform: secret)
-        client = MetaClient(brand, Platform.INSTAGRAM, providers.client)
+
+        def explicit_page_authorization(actor_id):
+            # Facebook Login can return an empty /me/accounts for explicitly
+            # selected assets. Require fresh app/user/action-specific granular
+            # grants and a current Page->Instagram link, never guessed tasks.
+            credentials = providers.settings.providers['instagram']
+            metadata = providers.request('GET', f'{GRAPH}/debug_token',
+                headers={'Authorization': f'Bearer {credentials.client_id}|{credentials.client_secret}'},
+                params={'input_token': user['access_token']}).get('data')
+            required = USER_ACTIONS[action] | {'pages_show_list', 'pages_read_engagement'}
+            if (not isinstance(metadata, dict) or metadata.get('is_valid') is not True
+                    or metadata.get('type') != 'USER' or metadata.get('app_id') != credentials.client_id
+                    or metadata.get('user_id') != actor_id or not isinstance(metadata.get('scopes'), list)
+                    or not required <= set(metadata['scopes'])):
+                raise MetaError('Current USER app and permission binding could not be verified')
+            granular = metadata.get('granular_scopes')
+            if not isinstance(granular, list) or not 1 <= len(granular) <= 100:
+                raise MetaError('Explicit asset permission grants are required')
+            for scope in required:
+                entries = [g for g in granular if isinstance(g, dict) and g.get('scope') == scope]
+                if len(entries) != 1:
+                    raise MetaError('Explicit asset permission grant is missing or ambiguous')
+                targets = entries[0].get('target_ids')
+                expected = account['page_id'] if scope.startswith('pages_') else account['id']
+                if (not isinstance(targets, list) or not 1 <= len(targets) <= 100
+                        or any(meta_id(target) != target for target in targets) or expected not in targets):
+                    raise MetaError('Permission was not granted for the selected asset')
+            page = providers.request('GET', f'{GRAPH}/{account["page_id"]}',
+                headers={'Authorization': 'Bearer ' + user['access_token']},
+                params={'fields': 'id,instagram_business_account'})
+            if (page.get('id') != account['page_id'] or
+                    (page.get('instagram_business_account') or {}).get('id') != account['id']):
+                raise MetaError('Current Page and Instagram association could not be verified')
+            return page
+
+        client = MetaClient(brand, Platform.INSTAGRAM, providers.client,
+                            user_page_authorizer=explicit_page_authorization)
         # Validate fresh permissions as well as the saved grant. Identity then
-        # verifies the User's Page tasks and the exact linked Instagram account.
+        # verifies Page authorization and the exact linked Instagram account.
         perms = client._pages('me/permissions', {'limit': '100'})
         scopes = {p.get('permission') for p in perms['data'] if p.get('status') == 'granted'}
         if not perms['complete'] or not USER_ACTIONS[action] <= scopes:

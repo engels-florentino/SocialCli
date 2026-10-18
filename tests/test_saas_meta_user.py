@@ -54,8 +54,8 @@ class MetaProvider:
         return httpx.Response(404)
 
 
-def connected(tmp_path):
-    graph = MetaProvider()
+def connected(tmp_path, graph=None):
+    graph = graph or MetaProvider()
     client, now, _ = service(tmp_path, provider=graph)
     client.app.state.saas_connections.providers.settings.providers['instagram'] = AppCredentials('fake-app', 'fake-secret')
     login(client)
@@ -81,6 +81,118 @@ def connected(tmp_path):
 
 
 EDIT = {'action': 'media-delete', 'target_id': '789'}
+
+
+class GranularMetaProvider(MetaProvider):
+    """Real-provider shape: accounts edge empty, explicit asset grants present."""
+    def __init__(self):
+        super().__init__()
+        self.empty_accounts = False
+        self.debug_calls = 0
+        self.metadata_patch = {}
+        self.bad_scope = None
+        self.page_id = '123'
+        self.linked_ig = '456'
+        self.accounts_response = None
+
+    def __call__(self, request):
+        path = request.url.path.removeprefix('/v26.0/')
+        if request.method == 'GET' and path == 'debug_token':
+            self.debug_calls += 1
+            assert request.headers['authorization'] == 'Bearer fake-app|fake-secret'
+            assert request.url.params['input_token'] == 'USER-PRIVATE'
+            scopes = ['pages_show_list', 'pages_read_engagement', 'instagram_basic',
+                      'instagram_manage_contents', 'instagram_manage_comments']
+            metadata = {'is_valid': True, 'app_id': 'fake-app', 'type': 'USER',
+                        'user_id': '111', 'scopes': scopes, 'granular_scopes': [
+                            {'scope': s, 'target_ids': ['999' if s == self.bad_scope else
+                             ('123' if s.startswith('pages_') else '456')]} for s in scopes]}
+            return httpx.Response(200, json={'data': {**metadata, **self.metadata_patch}})
+        if request.method == 'GET' and path == 'me/accounts' and self.empty_accounts:
+            return httpx.Response(200, json=self.accounts_response or {'data': []})
+        if request.method == 'GET' and path == '123':
+            assert request.headers['authorization'] == 'Bearer USER-PRIVATE'
+            assert request.url.params['fields'] == 'id,instagram_business_account'
+            return httpx.Response(200, json={'id': self.page_id,
+                'instagram_business_account': {'id': self.linked_ig}})
+        return super().__call__(request)
+
+
+@pytest.mark.parametrize('mention', [False, True])
+def test_empty_accounts_uses_exact_current_granular_asset_authorization(tmp_path, mention):
+    graph = GranularMetaProvider()
+    client, _, _, connection = connected(tmp_path, graph)
+    graph.empty_accounts = True
+    edit = {'action': 'mention-reply', 'target_id': '456', 'media_id': '789',
+            'comment_id': '800', 'message': 'Approved test reply'} if mention else EDIT
+    approved = proposal(client, connection, edit)
+    response = call(client, connection, 'mutate', edit=edit, **approved)
+    assert response.status_code == 200, response.text
+    assert response.json()['identity']['token_mode'] == 'facebook_user'
+    assert graph.writes == [('POST', '456/mentions')] if mention else graph.writes == [('DELETE', '789')]
+    assert 'PRIVATE' not in response.text and 'fake-secret' not in response.text
+
+
+@pytest.mark.parametrize('invalid', [
+    {'is_valid': False}, {'app_id': 'other-app'}, {'user_id': '222'}, {'type': 'PAGE'},
+    {'scopes': []}, {'granular_scopes': []}, {'granular_scopes': 'malformed'},
+])
+def test_empty_accounts_rejects_unbound_debug_metadata_before_delete(tmp_path, invalid):
+    graph = GranularMetaProvider()
+    client, _, _, connection = connected(tmp_path, graph)
+    approved = proposal(client, connection)
+    graph.empty_accounts = True
+    graph.metadata_patch = invalid
+    assert call(client, connection, 'mutate', **approved).status_code == 400
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('scope', ['pages_show_list', 'pages_read_engagement',
+                                  'instagram_basic', 'instagram_manage_contents'])
+def test_granular_permission_for_another_asset_cannot_authorize_delete(tmp_path, scope):
+    graph = GranularMetaProvider()
+    client, _, _, connection = connected(tmp_path, graph)
+    approved = proposal(client, connection)
+    graph.empty_accounts = True
+    graph.bad_scope = scope
+    assert call(client, connection, 'mutate', **approved).status_code == 400
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('attribute', ['page_id', 'linked_ig'])
+def test_granular_grants_do_not_replace_current_page_instagram_link(tmp_path, attribute):
+    graph = GranularMetaProvider()
+    client, _, _, connection = connected(tmp_path, graph)
+    approved = proposal(client, connection)
+    graph.empty_accounts = True
+    setattr(graph, attribute, '999')
+    assert call(client, connection, 'mutate', **approved).status_code == 400
+    assert not graph.writes
+
+
+@pytest.mark.parametrize('accounts', [
+    {'data': [], 'paging': {'next': 'https://graph.facebook.com/next'}},
+    {'data': [{'id': '123', 'tasks': [], 'instagram_business_account': {'id': '456'}}]},
+    {'data': [{'id': '999', 'tasks': ['MANAGE'], 'instagram_business_account': {'id': '456'}}]},
+])
+def test_granular_fallback_does_not_override_incomplete_or_conflicting_page_evidence(tmp_path, accounts):
+    graph = GranularMetaProvider()
+    client, _, _, connection = connected(tmp_path, graph)
+    approved = proposal(client, connection)
+    graph.empty_accounts = True
+    graph.accounts_response = accounts
+    assert call(client, connection, 'mutate', **approved).status_code == 400
+    assert graph.debug_calls == 0 and not graph.writes
+
+
+def test_granular_asset_revoked_after_preview_prevents_delete(tmp_path):
+    graph = GranularMetaProvider()
+    client, _, _, connection = connected(tmp_path, graph)
+    graph.empty_accounts = True
+    approved = proposal(client, connection)
+    graph.bad_scope = 'instagram_manage_contents'
+    assert call(client, connection, 'mutate', **approved).status_code == 400
+    assert not graph.writes
 
 
 def call(client, connection, phase='inspect', edit=None, **extra):
