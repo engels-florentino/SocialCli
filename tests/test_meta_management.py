@@ -640,6 +640,24 @@ def test_facebook_content_inventory_exposes_documented_edges(tmp_path):
         assert result["complete"] is True
 
 
+def test_instagram_story_inventory_avoids_incompatible_comment_fields(tmp_path):
+    _, _, graph, client, _ = service(tmp_path, "instagram")
+    def provider(request):
+        if request.url.path.endswith('/456/stories'):
+            if 'is_comment_enabled' in request.url.params.get('fields', '').split(','):
+                return httpx.Response(400, json={'error': {
+                    'code': 10, 'message': 'Comments cannot be made on story media.'}})
+            return httpx.Response(200, json={'data': [{
+                'id': '789', 'owner': {'id': '456'}, 'media_type': 'IMAGE',
+                'media_product_type': 'STORY', 'timestamp': '2026-10-18T13:26:07+0000'}]})
+        return graph(request)
+    client.client = httpx.Client(transport=httpx.MockTransport(provider))
+    result = client.content_list('stories')
+    assert result['complete'] is True
+    assert result['data'][0]['id'] == '789'
+    assert result['data'][0]['media_product_type'] == 'STORY'
+
+
 def test_native_feed_reprogram_and_cancel_use_exact_remote_id(tmp_path):
     mod, _, graph, client, store = service(tmp_path)
     graph.state.update(is_published=False, scheduled_publish_time=int(time.time()) + 3600)

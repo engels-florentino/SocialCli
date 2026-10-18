@@ -707,7 +707,7 @@ wheels = [
 
 [[package]]
 name = "socialcli"
-version = "0.3.0rc12"
+version = "0.3.0rc13"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

@@ -282,7 +282,8 @@ def apply(client, store, change_id, approval):
             change.receipt, change.result_id = mutate(client, change)
         except ResourceRejected as exc:
             change.status = "failed"
-            _event(change, "write_rejected", http_status=exc.http_status)
+            _event(change, "write_rejected", http_status=exc.http_status,
+                   provider_reason=exc.provider_reason)
         except Exception:
             change.status = "uncertain"
             _event(change, "write_uncertain")

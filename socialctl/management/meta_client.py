@@ -246,6 +246,9 @@ class MetaClient:
         # Comment traversal needs only IDs and exact ownership. Optional edit,
         # disclosure or scheduling fields must not block an otherwise readable inbox.
         fields = f'id,{owner}' if for_comments else CONTENT_FIELDS[kind]
+        if self.platform is Platform.INSTAGRAM and edge == "stories" and not for_comments:
+            # Story media rejects the comment controls used by feed/Reel media.
+            fields = "id,owner,media_type,media_product_type,timestamp,permalink"
         result = self.listing(self.account_id, edge, fields=fields, max_pages=max_pages)
         for row in result["data"]:
             meta_id(row.get("id"), composite=kind == "post")
