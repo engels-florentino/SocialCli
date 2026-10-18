@@ -18,7 +18,7 @@ No command names, option names, values, identifiers, records, exit codes, approv
 
 ## Commit
 
-Pending scoped commit.
+Scoped implementation commit: `3b635d2` (`fix: translate observed QA CLI strings`).
 
 ## Concerns
 
