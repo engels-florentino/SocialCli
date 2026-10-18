@@ -76,7 +76,7 @@ class Providers:
         management_scopes = {
             'youtube': [GOOGLE_MANAGEMENT],
             'facebook': ['pages_read_user_content', 'pages_manage_engagement', 'pages_manage_metadata'],
-            'instagram': ['instagram_manage_comments', 'pages_manage_metadata'],
+            'instagram': ['instagram_manage_comments', 'instagram_manage_contents', 'pages_manage_metadata'],
         }
         return scopes + (management_scopes[platform] if management else []) + ([analytics_scope[platform]] if analytics else [])
 

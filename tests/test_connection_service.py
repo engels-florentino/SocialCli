@@ -225,7 +225,7 @@ def test_uninstalled_connection_expires_within_pairing_window(tmp_path):
 
 @pytest.mark.parametrize('platform,expected', [
     ('facebook', {'pages_read_user_content', 'pages_manage_engagement', 'pages_manage_metadata', 'read_insights'}),
-    ('instagram', {'instagram_manage_comments', 'pages_manage_metadata', 'instagram_manage_insights'}),
+    ('instagram', {'instagram_manage_comments', 'instagram_manage_contents', 'pages_manage_metadata', 'instagram_manage_insights'}),
 ])
 def test_meta_optional_scopes_survive_service_authorization_roundtrip(tmp_path, platform, expected):
     from socialctl.connection_service.app import create_app

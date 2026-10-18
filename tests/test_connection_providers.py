@@ -216,7 +216,7 @@ def test_tiktok_rejects_analytics_and_management(tmp_path):
 
 @pytest.mark.parametrize('platform,management,analytics', [
     ('facebook', {'pages_read_user_content', 'pages_manage_engagement', 'pages_manage_metadata'}, 'read_insights'),
-    ('instagram', {'instagram_manage_comments', 'pages_manage_metadata'}, 'instagram_manage_insights'),
+    ('instagram', {'instagram_manage_comments', 'instagram_manage_contents', 'pages_manage_metadata'}, 'instagram_manage_insights'),
 ])
 def test_meta_management_consent_is_optional_and_combines_with_analytics(tmp_path, platform, management, analytics):
     provider = setup(tmp_path, lambda r: httpx.Response(500))
@@ -228,12 +228,15 @@ def test_meta_management_consent_is_optional_and_combines_with_analytics(tmp_pat
     assert query['auth_type'] == ['rerequest']
 
 
-@pytest.mark.parametrize('platform', ['facebook', 'instagram'])
+@pytest.mark.parametrize('platform,missing_scope', [
+    ('facebook', 'pages_manage_engagement'),
+    ('instagram', 'instagram_manage_comments'),
+    ('instagram', 'instagram_manage_contents'),
+])
 @pytest.mark.parametrize('missing', [False, True])
-def test_meta_management_exchange_validates_requested_permissions(tmp_path, platform, missing):
+def test_meta_management_exchange_validates_requested_permissions(tmp_path, platform, missing, missing_scope):
     provider = setup(tmp_path, lambda r: httpx.Response(500))
     required = provider.scopes(platform, management=True, analytics=True)
-    missing_scope = 'pages_manage_engagement' if platform == 'facebook' else 'instagram_manage_comments'
     granted = [scope for scope in required if not missing or scope != missing_scope]
     def handler(request):
         if request.url.path.endswith('/oauth/access_token'):
