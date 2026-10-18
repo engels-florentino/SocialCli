@@ -21,6 +21,13 @@ configuration ancestors. Modified or foreign files, unsafe log destinations,
 and mismatching loaded jobs require manual review. A failed bootstrap can leave
 the private configuration saved for diagnosis; it does not establish supervision.
 Repeating installation for an unchanged matching job does not restart it.
+After a new bootstrap, installation may make up to five read-only checks, with
+0.2-second gaps and a one-second budget for starting further checks. Each
+supervisor command retains its own bounded timeout. A check that takes longer
+than this retry budget prevents further retries. Explicit configuration
+conflicts, disabled state or known execution failures stop verification
+immediately. Success always requires a fresh complete positive observation;
+installation never repeats enable or bootstrap to repair uncertain evidence.
 
 Doctor requires exact saved configuration, matching loaded path, interpreter,
 arguments, working directory, log destinations and 60-second interval, an

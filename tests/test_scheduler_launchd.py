@@ -443,3 +443,94 @@ def test_observed_words_do_not_admit_duplicate_or_unknown_states(tmp_path, monke
     result = invoke('schedule-doctor', root)
     assert result.exit_code == 1
     assert json.loads(result.stdout)['supervisor']['enabled'] is None
+
+
+@pytest.mark.parametrize('settles', [True, False])
+def test_new_bootstrap_observes_bounded_fresh_proof_without_repeating_mutations(tmp_path, monkeypatch, settles):
+    """Uncaptured immediate QA failure permits new proof, never assumed readiness."""
+    import time
+    manager = Launchd(monkeypatch, tmp_path)
+    root = tmp_path / 'workspace'; crear_brand(root, 'Example')
+    original = manager.output
+    observations, pauses = [], []
+    def incomplete_then_complete(name):
+        observations.append(name)
+        assert len(observations) <= 6, 'post-bootstrap inspection did not stop within a small bound'
+        output = original(name)
+        if len(observations) == 1 or not settles:
+            output = output.replace('\trun interval = 60 seconds\n', '')
+        return output
+    manager.output = incomplete_then_complete
+    monkeypatch.setattr(time, 'sleep', lambda seconds: pauses.append(seconds))
+    result = invoke('schedule-install', root)
+    assert result.exit_code == (0 if settles else 1), result.output
+    assert 2 <= len(observations) <= 5
+    assert pauses and all(0 < seconds <= .5 for seconds in pauses)
+    assert sum(pauses) <= 1
+    assert sum(call[0] == 'enable' for call in manager.calls) == 1
+    assert sum(call[0] == 'bootstrap' for call in manager.calls) == 1
+    assert not any(call[0] == 'bootout' for call in manager.calls)
+    assert len(manager.jobs) == 1
+    assert len(list(manager.directory.glob('*.plist'))) == 1
+
+
+@pytest.mark.parametrize('failure', ['exit', 'signal', 'foreign_path', 'foreign_arguments', 'disabled', 'changed_file'])
+def test_post_bootstrap_known_failure_is_not_retried_into_success(tmp_path, monkeypatch, failure):
+    import time
+    manager = Launchd(monkeypatch, tmp_path)
+    root = tmp_path / 'workspace'; crear_brand(root, 'Example')
+    original = manager.output
+    observations, pauses = [], []
+    def failed_then_complete(name):
+        observations.append(name)
+        output = original(name)
+        if len(observations) != 1:
+            return output
+        if failure == 'exit':
+            output = output.replace('last exit code = 0', 'last exit code = 7')
+            # Missing another field cannot hide known last-execution failure.
+            output = output.replace('\trun interval = 60 seconds\n', '')
+        elif failure == 'signal':
+            output = output.replace('\tstate = ', '\tlast terminating signal = 9\n\tstate = ')
+            output = output.replace('\trun interval = 60 seconds\n', '')
+        elif failure == 'foreign_path':
+            output = output.replace('\tpath = ', '\tpath = /foreign')
+        elif failure == 'foreign_arguments':
+            output = output.replace('\t\trun-due\n', '\t\tother-command\n')
+        elif failure == 'disabled':
+            manager.disabled[name] = True
+        else:
+            path = next(manager.directory.glob('*.plist'))
+            path.write_bytes(path.read_bytes() + b'<!-- changed during observation -->')
+            output = output.replace('\trun interval = 60 seconds\n', '')
+        return output
+    manager.output = failed_then_complete
+    monkeypatch.setattr(time, 'sleep', lambda seconds: pauses.append(seconds))
+    result = invoke('schedule-install', root)
+    assert result.exit_code == 1
+    assert len(observations) == 1
+    assert pauses == []
+    assert sum(call[0] == 'enable' for call in manager.calls) == 1
+    assert sum(call[0] == 'bootstrap' for call in manager.calls) == 1
+    assert not any(call[0] == 'bootout' for call in manager.calls)
+
+
+def test_slow_first_inspection_cannot_start_more_post_bootstrap_probes(tmp_path, monkeypatch):
+    import time
+    manager = Launchd(monkeypatch, tmp_path)
+    root = tmp_path / 'workspace'; crear_brand(root, 'Example')
+    original = manager.output
+    observations, pauses = [], []
+    def slow_unverified(name):
+        observations.append(name)
+        output = original(name)
+        return output.replace('\trun interval = 60 seconds\n', '') if len(observations) == 1 else output
+    manager.output = slow_unverified
+    moments = iter([0, 2, 2, 2])
+    monkeypatch.setattr(time, 'monotonic', lambda: next(moments))
+    monkeypatch.setattr(time, 'sleep', lambda seconds: pauses.append(seconds))
+    result = invoke('schedule-install', root)
+    assert result.exit_code == 1
+    assert len(observations) == 1
+    assert pauses == []
+    assert sum(call[0] == 'bootstrap' for call in manager.calls) == 1

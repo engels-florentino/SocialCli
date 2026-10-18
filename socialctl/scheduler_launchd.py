@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 from socialctl.scheduler_systemd import SupervisorError
 
@@ -164,9 +165,11 @@ def _loaded_matches(output, domain, path, payload):
                 'working directory': payload['WorkingDirectory'],
                 'stdout path': payload['StandardOutPath'], 'stderr path': payload['StandardErrorPath'],
                 'run interval': '60 seconds'}
+    conflicts = (any(key in fields and fields[key] != value for key, value in expected.items())
+                 or ('arguments' in fields and argv != payload['ProgramArguments']))
     return (all(fields.get(key) == value for key, value in expected.items())
             and argv == payload['ProgramArguments']
-            and fields.get('state') in {'running', 'not running'}), fields
+            and fields.get('state') in {'running', 'not running'}), fields, conflicts
 
 
 def _enabled(domain, name):
@@ -216,13 +219,8 @@ def inspect(brand: str, root: Path) -> dict:
         if observed is None:
             report['reason'] = 'job_unregistered'
             return report
-        matches, fields = _loaded_matches(observed, domain, path, payload)
+        matches, fields, conflicts = _loaded_matches(observed, domain, path, payload)
         report['configuration_matches'] = matches
-        if not matches:
-            report['reason'] = 'loaded_configuration_unverified'
-            return report
-        report['active'] = True  # Registered interval task; a PID need not run between ticks.
-        report['enabled'] = _enabled(domain, payload['Label'])
         code, signal = fields.get('last exit code', ''), fields.get('last terminating signal', '')
         if re.fullmatch(r'-?\d+', code):
             report['last_exit_code'] = int(code)
@@ -234,6 +232,11 @@ def inspect(brand: str, root: Path) -> dict:
         elif 'last terminating signal' in fields and report['service_failed'] is not True:
             # Unknown signal text must not inherit success from an older exit.
             report['service_failed'] = None
+        if not matches:
+            report['reason'] = 'loaded_configuration_mismatch' if conflicts else 'loaded_configuration_unverified'
+            return report
+        report['active'] = True  # Registered interval task; a PID need not run between ticks.
+        report['enabled'] = _enabled(domain, payload['Label'])
         report['reason'] = ('last_execution_failed' if report['service_failed'] is True
                             else 'verified_now' if report['enabled'] is True and report['service_failed'] is False
                             else 'execution_or_enabled_state_unverified')
@@ -269,11 +272,30 @@ def install(brand: str, root: Path) -> dict:
     _run(['enable', domain + '/' + payload['Label']])
     if observed is None:
         _run(['bootstrap', domain, str(path)])
-    report = inspect(brand, root)
-    if (not all(report[key] is True for key in ('configuration_matches', 'registered', 'enabled', 'active'))
-            or report['service_failed'] is True):
-        raise SupervisorError('The scheduler configuration was saved, but a working enabled launchd job was not verified; run schedule-doctor.')
-    return report
+    # A new bootstrap can return before a complete diagnostic snapshot exists.
+    # Obtain fresh positive proof for a short bounded period; never replay a
+    # mutation or reinterpret missing evidence as a successful installation.
+    attempts = 5 if observed is None else 1
+    deadline = time.monotonic() + 1.0
+    retryable = {'job_unregistered', 'loaded_configuration_unverified',
+                 'configuration_or_supervisor_unverified', 'execution_or_enabled_state_unverified'}
+    for attempt in range(attempts):
+        if attempt and time.monotonic() >= deadline:
+            break
+        if not _configuration(path, content):
+            break
+        report = inspect(brand, root)
+        if not _configuration(path, content):
+            break
+        if report['service_failed'] is True or report['enabled'] is False:
+            break
+        if all(report[key] is True for key in ('configuration_matches', 'registered', 'enabled', 'active')):
+            return report
+        if (report['reason'] not in retryable or attempt + 1 == attempts
+                or time.monotonic() + 0.2 >= deadline):
+            break
+        time.sleep(0.2)
+    raise SupervisorError('The scheduler configuration was saved, but a working enabled launchd job was not verified; run schedule-doctor.')
 
 
 def uninstall(brand: str, root: Path) -> bool:
