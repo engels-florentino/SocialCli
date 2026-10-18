@@ -64,7 +64,32 @@ Facebook reactions listing has a saved complete empty response and is excluded.
   to `facebook_page`. Adding the OAuth scope alone does not provide the user-token
   route required for Instagram deletion. Resolve this in Task 2 before a live attempt.
 
-## Constraints
+## Second-review coverage boundary
+
+The October 18 second review maps all 167 registered leaf commands and all 163
+catalog records. The private ledger has 87 follow-up cases, including 20 added
+variant/workflow cases; these are not 87 demonstrated bugs. Child checklists keep
+field/format claims separate. Passed exclusions apply only to the exact recorded
+variant: a playlist title update cannot certify localization or privacy edits.
+
+New coverage includes remaining playlist fields, query families, image Stories,
+batch/restoration, inbox drafts/first-comment recovery, scheduler/worker boundaries,
+manual Story/Group handoffs, imports, media transfer, credential/account lifecycle
+and retention cleanup. Audit saved evidence before testing any of these again.
+No live social write was made for this second review.
+
+Source-only delivery classes must be traced to a public route. In particular,
+the Instagram native-delivery carousel/resumable class exists, but public
+dispatch/deliver does not supply adapters/capabilities. Record this as a route
+gap, not evidence of available or successful carousel publication. Disabled
+catalog entries stay outside the live queue. Local helper success and manual
+handoff success never imply a provider write.
+
+Scope checks for newly discovered families remain explicit execution gates;
+the review is complete as coverage accounting, not as fresh token validation
+or certification that every declared API combination is supported.
+
+## Operating constraints
 
 All product files and documentation are English. Evidence with creator IDs, media,
 credentials or provider receipts stays in the private brand workspace. New automated
