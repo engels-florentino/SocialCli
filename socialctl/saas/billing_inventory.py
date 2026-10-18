@@ -395,7 +395,7 @@ def _schema(db):
     return schema
 
 
-def _logical_state(db, schema):
+def _logical_state(db, schema, *, exclude_binding=False):
     """Pin every table, column, duplicate and ciphertext in this transaction."""
     tables = {}
     schema_parts = list(schema)
@@ -404,7 +404,12 @@ def _logical_state(db, schema):
         # The source allowlist fixes names before any interpolated identifier.
         names = sorted(row[1] for row in columns)
         selection = ','.join('"'+name+'"' for name in names)
-        rows = db.execute(f'SELECT {selection} FROM "{name}"').fetchall()
+        query = f'SELECT {selection} FROM "{name}"'
+        parameters = ()
+        if exclude_binding and name == 'records':
+            query += ' WHERE NOT (kind=? AND id=?)'
+            parameters = ('saas-billing-environment', 'active')
+        rows = db.execute(query, parameters).fetchall()
         tables[name] = {'columns': names, 'rows': len(rows), 'digest': _rows_digest(rows)}
         schema_parts.extend(('column', name, *column) for column in columns)
         for index in db.execute(f'PRAGMA index_list("{name}")').fetchall():
@@ -418,11 +423,16 @@ def _logical_state(db, schema):
     return tables, schema_root, data_root
 
 
-def _authenticate(db, keys):
+def _state_root(schema_root, data_root, identity):
+    """Shared inventory/enrollment state-root encoder; preserve report bytes."""
+    return _rows_digest([(schema_root, data_root, json.dumps(identity, sort_keys=True))])
+
+
+def _authenticate(db, keys, *, json_loader=json.loads):
     cipher = MultiFernet([Fernet(key) for key in keys])
     records = {}
     for kind, record_id, expires, credential_hash, ciphertext in db.execute('SELECT kind,id,expires,credential_hash,payload FROM records ORDER BY kind,id'):
-        envelope = json.loads(cipher.decrypt(ciphertext))
+        envelope = json_loader(cipher.decrypt(ciphertext))
         if (not isinstance(envelope, dict) or envelope['kind'] != kind or envelope['id'] != record_id
                 or envelope['expires'] != expires or envelope['credential_hash'] != credential_hash
                 or not isinstance(envelope['payload'], dict)):
@@ -626,6 +636,20 @@ def _inventory(db, records, tables):
     }
 
 
+def _inspection_report(schema, identity, tables, schema_root, data_root, report):
+    """Shared exact report builder; enrollment does not maintain a second format."""
+    root = _state_root(schema_root, data_root, identity)
+    return {'format': 'socialcli-billing-inventory-v1', 'status': 'inventory_only',
+            'enrollment_authorized': False, 'schema_version': 10,
+            'schema_variant': _schema_variant(schema),
+            'target': identity, 'schema_root': schema_root, 'state_root': root,
+            'tables': tables, **report,
+            'not_established': dict.fromkeys((
+                'historical_account_mode_provenance', 'provider_get_validation',
+                'owner_approval', 'reviewer_approval', 'live_freshness',
+                'current_authority', 'external_auth_authority', 'deployment_lineage'), 'NOT_ESTABLISHED')}
+
+
 def inspect_database(database: Path, keys: list[bytes]) -> dict:
     """Read only the exact existing private file; return private inventory evidence.
 
@@ -662,16 +686,7 @@ def inspect_database(database: Path, keys: list[bytes]) -> dict:
                 _assert_identity(database, identity, fd)
                 db.rollback()
             _assert_identity(database, identity, fd)
-            root = _rows_digest([(schema_root, data_root, json.dumps(identity, sort_keys=True))])
-            return {'format': 'socialcli-billing-inventory-v1', 'status': 'inventory_only',
-                    'enrollment_authorized': False, 'schema_version': 10,
-                    'schema_variant': _schema_variant(schema),
-                    'target': identity, 'schema_root': schema_root, 'state_root': root,
-                    'tables': tables, **report,
-                    'not_established': dict.fromkeys((
-                        'historical_account_mode_provenance', 'provider_get_validation',
-                        'owner_approval', 'reviewer_approval', 'live_freshness',
-                        'current_authority', 'external_auth_authority', 'deployment_lineage'), 'NOT_ESTABLISHED')}
+            return _inspection_report(schema, identity, tables, schema_root, data_root, report)
         finally:
             os.close(fd)
     except Exception:
