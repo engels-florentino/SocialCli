@@ -3,13 +3,13 @@
 <blockquote>
 <p>Install SocialCli: https://socialcli.app/agents</p>
 </blockquote>
-<p>The assistant follows a compact bootstrap, verifies the published 0.3.0rc10 wheel from TestPyPI by SHA256 and installs it in an isolated environment. Dependencies come from normal PyPI. The pilot is not a stable production PyPI release; do not substitute a similarly named package or overwrite an existing installation silently.</p>
+<p>The assistant follows a compact bootstrap, verifies the published 0.3.0rc15 wheel from TestPyPI by SHA256 and installs it in an isolated environment. Dependencies come from normal PyPI. The pilot is not a stable production PyPI release; do not substitute a similarly named package or overwrite an existing installation silently.</p>
 <h2 id="if-your-assistant-still-reports-rc1">If your assistant still reports rc1</h2>
 <p>The server and the CLI installed in an assistant's environment update separately.
 Ask the assistant to fetch https://socialcli.app/agents again using its
 terminal HTTP client, rather than reuse a previous conversation or search excerpt.
 It must follow the verified wheel installation instructions and run the selected
-executable with <code>--version</code>; the result must be exactly <code>0.3.0rc10</code>. If PATH still
+executable with <code>--version</code>; the result must be exactly <code>0.3.0rc15</code>. If PATH still
 selects an older installation, use the new environment's absolute executable for
 all commands. Never infer the installed version from the website.</p>
 <p>Updating the client must preserve the existing workspace, credential store and
@@ -25,7 +25,7 @@ existing installation silently; use an isolated environment when needed.</p>
 <p>Ask your assistant to read account status, connections and capabilities before writing. Then use your own produced content, inspect the complete preview and explicitly approve the exact operation. Installation and connection consent do not approve publication.</p>
 <p>Google is External / In production, but its sensitive YouTube scopes are not yet verified; the unverified-app warning and user cap still apply. Meta development and TikTok sandbox eligibility remain separate. Stripe uses test payments only. The plan is USD 10/month after 14 free days from the first successful social connection. See <a href="platforms.html">availability</a> and <a href="terms.html">terms</a>.</p>
 <h2 id="commands-and-development">Commands and development</h2>
-<p>Run socialcli --version to verify 0.3.0rc10. The packaged socialcli agent-guide provides offline setup, publish, schedule, inbox and error topics. The internal Python module is socialctl; socialctl remains a command alias.</p>
+<p>Run socialcli --version to verify 0.3.0rc15. The packaged socialcli agent-guide provides offline setup, publish, schedule, inbox and error topics. The internal Python module is socialctl; socialctl remains a command alias.</p>
 <p>For source development only:</p>
 <pre><code class="language-bash">git clone https://github.com/engels-florentino/SocialCli.git
 cd SocialCli

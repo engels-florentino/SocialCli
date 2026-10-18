@@ -1,4 +1,16 @@
-# Current public candidate: 0.3.0rc10
+# Current public candidate: 0.3.0rc15
+
+Owner-approved TestPyPI publication completed. Downloaded wheel and sdist match
+the reviewed CI artifacts; fresh installed-wheel smoke passed. The hosted rc15
+service is healthy, and Instagram User-token identity plus feed-image publication
+and API deletion were verified on an owner-approved disposable fixture. CLI
+accepted deletion receipts and external cleanup evidence remain distinct.
+
+Muse adoption and remaining live QA are separate gates. See
+[rc15 verification](qa-rc15-2026-10-18.md). This is a TestPyPI candidate, not stable
+PyPI publication or provider-wide approval.
+
+# Historical candidate: 0.3.0rc10
 
 Published to TestPyPI after owner approval and deployed to the hosted pilot.
 Both actual TestPyPI archives match reviewed hashes; clean-install checks and
