@@ -4529,14 +4529,17 @@
       "availability": "api",
       "delivery": "normal",
       "enabled": false,
-      "field_scope": "hide/unhide and documented moderation fields; only supported provider operations",
+      "field_scope": "hidden bool for an exact visitor comment on owned media; own comments excluded",
       "required_scopes": {
         "all_of": [
-          "instagram_manage_comments"
+          "instagram_basic",
+          "instagram_manage_comments",
+          "pages_read_engagement",
+          "pages_show_list"
         ],
         "evidence": "documented_requirements_not_grants"
       },
-      "eligibility": "Facebook Login mode; exact configured Page and linked professional Instagram identity; required Page tasks/app review and resource ownership must be verified",
+      "eligibility": "Candidate-only server-held Facebook User-token pilot bound to the exact connection, installation, Page, Instagram account, owned media, visitor comment and bounded expiry. Saved and current permissions, actor, Page association, ownership and complete comment membership must be verified; general availability remains disabled.",
       "source": {
         "url": "https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user",
         "observed_at": "2026-09-12",
@@ -4544,16 +4547,18 @@
       },
       "implemented_scopes": [
         {
-          "fields": "hidden bool; explicit own comment id",
+          "fields": "hidden bool; exact visitor comment ID with verified author distinct from the selected account",
           "command": "meta prepare --platform instagram --brand BRAND --file EDIT.yml; meta apply CHANGE_ID --brand BRAND after exact fingerprint",
           "handler": "socialctl/management/meta_changes.py:apply_meta",
           "tests": [
-            "tests/test_meta_management.py::test_comment_moderation_is_explicit_and_uses_owned_media_membership"
+            "tests/test_saas_instagram_moderation.py::test_exact_pilot_hides_and_restores_visitor_comment_without_token_export",
+            "tests/test_saas_instagram_moderation.py::test_pilot_never_turns_ineligible_comment_into_a_success",
+            "tests/test_saas_instagram_moderation.py::test_public_provider_timeout_reconciles_after_pilot_expiry_without_receipt"
           ]
         }
       ],
       "remaining": [],
-      "limitation": "Only listed handlers/field scopes implemented; no current-token write-grant claim"
+      "limitation": "Candidate pilot only; provider approval and live moderation/restore evidence remain pending. Historical reconciliation is read-only after pilot expiry and does not fabricate provider receipts."
     },
     {
       "id": "instagram.profile.get",

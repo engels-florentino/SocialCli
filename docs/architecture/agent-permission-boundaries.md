@@ -22,6 +22,36 @@ installation stops future broker access but does not prove immediate invalidatio
 of previously exported provider tokens. Provider-level revocation is a separate
 operation, with potentially wider effects on other installations.
 
+An approval fingerprint binds proposal content; it is not a human signature or
+proof that a person reviewed it. The supplied-media rule is an operator workflow
+requirement. SocialCli can compare approved file bytes but cannot establish how
+another program created them.
+
+## Candidate-only Instagram moderation
+
+General Instagram moderation remains disabled. The scoped SaaS User-token route
+may admit an expiring operator pilot for exactly one connection, installation,
+Page, Instagram account, media and visitor comment. The server-only
+`SOCIALCLI_IG_MODERATION_PILOT` JSON names those six identifiers plus `expires_at`;
+unknown fields, missing bindings or expiry deny new writes. Pilot duration is
+bounded to seven days. This is not a client-supplied capability or a provider
+approval claim. Ordinary public prepare/apply calls use this route, preserving
+the preview fingerprint and owner-bound uncertainty journal.
+
+The server checks the saved and current permissions, User actor, Page association,
+owned media and complete comment read before a write, and rechecks the pilot and
+connection before dispatch. Own-author comments are excluded because Meta says
+they remain visible when hidden. Historical receipt lookup and authorized
+read-only inspection remain possible after the pilot expires. When a provider
+response was lost, the server can independently verify the exact changed hidden
+state against the original operation and release its unresolved target guard.
+It records readback verification without inventing an acceptance receipt;
+unchanged, unreadable or identity-conflicting observations retain uncertainty.
+User credentials
+stay on the service. This narrow route does not change the broader exported-token
+limitations described above. Enabling a real pilot requires the exact fixture
+and existing preview approval; automated tests do not enable a live pilot.
+
 ## Provider evidence that changes the design
 
 Documentation was resolved and queried through Context7; the official YouTube

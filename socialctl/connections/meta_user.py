@@ -11,6 +11,7 @@ NO_WRITE_CODES = {
     'connection_changed', 'platform_not_allowed', 'installation_revoked',
     'installation_expired', 'privacy_acceptance_required',
     'assistant_consent_required', 'subscription_required', 'activation_required',
+    'capability_not_enabled',
 }
 
 
@@ -53,8 +54,14 @@ class RemoteMetaUser:
                 if identity != change.identity:
                     raise ValueError('Receipt identity does not match the approved operation')
                 receipt = result.get('receipt')
-                if edit.action == 'media-delete':
-                    if receipt != {'success': True, 'target_id': edit.target_id}:
+                if (phase == 'status' and edit.action == 'comment-moderate'
+                        and result.get('reconciliation') == 'verified_readback'
+                        and receipt is None):
+                    expected = dict(change.before, hidden=edit.hide)
+                    if result.get('before') != expected or expected == change.before:
+                        raise ValueError('Invalid independent moderation readback')
+                elif edit.action in {'media-delete','comment-moderate'}:
+                    if receipt != {'success': True, 'target_id': edit.comment_id or edit.target_id}:
                         raise ValueError('Invalid receipt')
                 elif not isinstance(receipt, dict) or set(receipt) != {'id', 'accepted'} or receipt['accepted'] is not True:
                     raise ValueError('Invalid receipt')

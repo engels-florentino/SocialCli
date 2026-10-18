@@ -9,7 +9,8 @@ from .store import NativeStore
 
 def dispatch_ready(now: datetime, brand: str, *, store: NativeStore,
                    job_id: str | None = None, budget: int = 10,
-                   adapters: dict | None = None, capabilities: dict | None = None) -> list[str]:
+                   adapters: dict | None = None, capabilities: dict | None = None,
+                   native_submit=None, delivery_context=None) -> list[str]:
     """Budget counts delivery attempts, independently of editorial reservations.
 
     API jobs send in a bounded five-minute window from the approved instant.
@@ -51,8 +52,37 @@ def dispatch_ready(now: datetime, brand: str, *, store: NativeStore,
         if len(delivered) >= budget:
             break
         if job.route == 'api':
+            if delivery_mode == 'native_schedule' and native_submit is not None:
+                try:
+                    result = native_submit(job, payload)
+                    if result.state == 'pending_verification':
+                        delivered.append(job.id)
+                    elif result.state == 'ui_required':
+                        store.transition(job.id, job.state, 'blocked', now=now)
+                        store.notice(job.id, result.reason, now=now)
+                    else:
+                        store.notice(job.id, 'Native API result requires reconciliation; no automatic resend', now=now)
+                except Exception:
+                    current = store.get(job.id)
+                    # Native submitters own their durable claim and uncertainty
+                    # handling. A competing worker may have claimed this job;
+                    # this outer worker must never alter that attempt's state.
+                    if current.state == job.state and current.state in {'approved', 'waiting_window', 'ready'}:
+                        store.transition(job.id, current.state, 'blocked', now=now)
+                    store.notice(job.id, 'Native API submission unavailable; inspect eligibility and existing attempts before another approval', now=now)
+                continue
             capability = (capabilities or {}).get(job.platform, {})
             adapter = (adapters or {}).get(job.platform)
+            if delivery_mode == 'at_time' and delivery_context is not None:
+                try:
+                    adapter, capability = delivery_context(job, payload)
+                except Exception:
+                    store.transition(job.id, job.state, 'blocked', now=now)
+                    reason = ('Instagram first-comment delivery pending durable follow-up; no publication attempted'
+                              if job.platform == 'instagram' and payload.get('first_comment') else
+                              'API delivery eligibility or account check failed; no publication attempted')
+                    store.notice(job.id, reason, now=now)
+                    continue
             native_unverified = (delivery_mode == 'native_schedule'
                 and capability.get('verified_delivery_mode') != 'native_schedule')
             if native_unverified or delivery_route(job, capability, payload.get('options', {}).get('format')) != 'api' or adapter is None:

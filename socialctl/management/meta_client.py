@@ -38,13 +38,15 @@ INSIGHT_PERIODS = frozenset({"day", "week", "days_28", "lifetime"})
 
 
 class MetaClient:
-    def __init__(self, brand, platform, client, *, user_page_authorizer=None):
+    def __init__(self, brand, platform, client, *, user_page_authorizer=None, moderation_authorizer=None):
         if platform not in {Platform.FACEBOOK, Platform.INSTAGRAM}:
             raise MetaError("plataforma Meta requerida")
         self.brand, self.platform, self.client = brand, platform, client
         # Server-only verifier for explicit asset grants when /me/accounts is
         # completely empty. Never supplied from a proposal or remote payload.
         self._user_page_authorizer = user_page_authorizer
+        # Only the authenticated server composition supplies this pilot verifier.
+        self._moderation_authorizer = moderation_authorizer
         self.page_id = meta_id((brand.cuentas.get("facebook") or {}).get("page_id"))
         self.account_id = self.page_id if platform is Platform.FACEBOOK else meta_id((brand.cuentas.get("instagram") or {}).get("ig_user_id"))
         try:
@@ -380,7 +382,7 @@ class MetaClient:
         return {"id": comment_id, "media_id": media_id, "text": mention["text"]}
 
     def _uses_remote_user(self, edit):
-        return self._remote_user is not None and edit.action in {'media-delete', 'mention-reply'}
+        return self._remote_user is not None and edit.action in {'media-delete', 'mention-reply', 'comment-moderate'}
 
     def operation_identity(self, edit):
         if self._uses_remote_user(edit):
@@ -389,8 +391,25 @@ class MetaClient:
 
     def recover_receipt(self, edit, change):
         if self._uses_remote_user(edit):
-            return self._remote_user.request('status', edit, change=change)['receipt']
+            try:
+                return self._remote_user.request('status', edit, change=change).get('receipt')
+            except MetaError as exc:
+                if (edit.action == 'comment-moderate' and getattr(exc, '_socialcli_error_code', None)
+                        in {'operation_unavailable', 'operation_uncertain'}):
+                    return None
+                raise
         return None
+
+    def require_write_capability(self, edit):
+        """Enforce disabled write scopes without blocking historical reads."""
+        if self.platform is Platform.INSTAGRAM and edit.action == 'comment-moderate':
+            if self._uses_remote_user(edit):
+                self._remote_user.request('identity', edit)
+                return
+            if self.token_mode=='facebook_user' and self._moderation_authorizer is not None:
+                self._moderation_authorizer(edit)
+                return
+            raise MetaError('Instagram comment moderation is disabled without an exact server-side User-token pilot.')
 
     def validate_action(self, edit):
         edit = validate_edit(edit)
@@ -457,6 +476,17 @@ class MetaClient:
             hidden = "is_hidden" if self.platform is Platform.FACEBOOK else "hidden"
             if len(rows) != 1 or type(rows[0].get(hidden)) is not bool:
                 raise MetaError("comment/moderation status not verified on owned media")
+            # New server pilot proposals need visitor eligibility. Historical
+            # local readback must remain available without reopening writes.
+            if self.platform is Platform.INSTAGRAM and self._moderation_authorizer is not None:
+                actor=rows[0].get('from')
+                if not isinstance(actor,dict):
+                    raise MetaError('Instagram comment author is unavailable')
+                author=actor.get('id')
+                if (not result['complete'] or meta_id(author)==self.account_id
+                        or content.get('media_type') not in {'IMAGE','VIDEO','CAROUSEL_ALBUM'}
+                        or content.get('media_product_type')=='LIVE'):
+                    raise MetaError('Instagram moderation requires a verified visitor comment on eligible owned media')
             return {"id": edit.comment_id, "hidden": rows[0][hidden]}
         if edit.action in {"like", "unlike"}:
             if self.token_mode != 'facebook_page':
@@ -504,6 +534,7 @@ class MetaClient:
 
     def mutate(self, edit, *, change=None):
         edit = validate_edit(edit)
+        self.require_write_capability(edit)
         if self._uses_remote_user(edit):
             return self._remote_user.request('mutate', edit, change=change)['receipt']
         edit = self.validate_action(edit)

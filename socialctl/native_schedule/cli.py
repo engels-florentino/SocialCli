@@ -1,4 +1,4 @@
-"""Explicit preview, persistence and approval. No remote publishing adapters here."""
+"""Explicit preview/approval and account-gated local publication dispatch."""
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -227,6 +227,18 @@ def output(value):
     typer.echo(text)
 
 
+def eligibility_artifact(chosen, filename):
+    relative = Path(filename)
+    if relative.is_absolute() or not relative.parts:
+        raise ValueError('Eligibility path must be relative to the brand')
+    for part in relative.parts:
+        component(part)
+    path = (chosen.raiz / relative).resolve()
+    if not path.is_relative_to(chosen.raiz.resolve()) or '.secrets' in path.parts:
+        raise ValueError('Eligibility artifact must remain inside brand root outside secrets')
+    return path
+
+
 def api_eligibility(chosen, job, filename):
     from .facebook import FacebookEligibility
     from .youtube import YouTubeEligibility
@@ -235,7 +247,7 @@ def api_eligibility(chosen, job, filename):
         raise ValueError('Native API scheduling is not supported for this platform; no upload attempted')
     if filename is None:
         return kind()
-    path = artifact(chosen, filename)
+    path = eligibility_artifact(chosen, filename)
     if path.stat().st_size > 16384:
         raise ValueError('Invalid eligibility file')
     data = json.loads(path.read_text())
@@ -286,18 +298,52 @@ def submit_api(job_id: str, eligibility: str | None = typer.Option(None, '--elig
     run(operation, json_output=json_output, command='submit-api', brand=brand)
 
 
+def dispatch_local(chosen, store, *, job_id=None, eligibility=None, eligibility_dir=None):
+    """Compose the existing native submitters; no new unguarded provider path."""
+    import httpx
+    from .dispatcher import dispatch_ready
+    from .facebook import schedule_facebook, FacebookScheduleResult
+    from .youtube import schedule_youtube
+    directory = eligibility_artifact(chosen, eligibility_dir) if eligibility_dir else None
+    if directory is not None and not directory.is_dir():
+        raise ValueError('Eligibility directory is unavailable')
+    with httpx.Client(timeout=60, follow_redirects=False) as client:
+        def delivery_context(job, payload):
+            if job.platform != 'instagram':
+                raise ValueError('This at-time API route is not enabled')
+            from .instagram_runtime import delivery_context as instagram_context
+            filename = str((directory / 'instagram.json').relative_to(chosen.raiz.resolve())) if directory else eligibility
+            path = eligibility_artifact(chosen, filename) if filename else None
+            return instagram_context(chosen, job, payload, path=path,
+                evidence_path=lambda value: eligibility_artifact(chosen, value), client=client,
+                clock=lambda: datetime.now(timezone.utc))
+        def submit(job, payload):
+            if job.platform not in {'facebook', 'youtube'}:
+                return FacebookScheduleResult(reason='No supported native API submission for this platform')
+            filename = eligibility
+            if directory is not None:
+                filename = str((directory / f'{job.platform}.json').relative_to(chosen.raiz.resolve()))
+            proof = api_eligibility(chosen, job, filename)
+            begin_submission()
+            handler = schedule_facebook if job.platform == 'facebook' else schedule_youtube
+            return handler(job, payload, brand=chosen, store=store, client=client, eligibility=proof)
+        return dispatch_ready(datetime.now(timezone.utc), chosen.nombre, store=store,
+                              job_id=job_id, native_submit=submit, delivery_context=delivery_context)
+
+
 @native_app.command()
-def dispatch(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), yes: bool = typer.Option(False,'--yes'), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
+def dispatch(job_id: str, brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), yes: bool = typer.Option(False,'--yes'), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.'), eligibility: str | None = typer.Option(None, '--eligibility')):
     def operation():
-        from .dispatcher import dispatch_ready
         component(job_id)
-        chosen=selected(root,brand,['dispatch',job_id] + (['--yes'] if yes else []))
+        chosen=selected(root,brand,['dispatch',job_id] + (['--yes'] if yes else []) + (['--eligibility',eligibility] if eligibility else []))
         if chosen is None: return
         store=NativeStore(chosen.raiz,brand=brand)
         if store.get(job_id) is None or not store.get(job_id).approval_digest: raise ValueError('Explicit approval required; --yes cannot bypass approval')
         verify_approval(store.get(job_id),store.get_payload(job_id))
-        dispatch_ready(datetime.now(timezone.utc),brand,store=store,job_id=job_id)
+        dispatch_local(chosen,store,job_id=job_id,eligibility=eligibility)
         output({'job_id':job_id,'state':store.get(job_id).state,'notices':store.get_notices(job_id)})
+        if store.get(job_id).state in {'blocked', 'uncertain'}:
+            raise typer.Exit(1)
     run(operation, json_output=json_output, command='dispatch', brand=brand)
 
 
@@ -417,14 +463,17 @@ def migration_recover(digest: str = typer.Option(...,'--digest'), brand: str = t
 
 
 @native_app.command('deliver')
-def deliver(brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.')):
+def deliver(brand: str = typer.Option(...,'--brand'), root: Path = typer.Option(DEFAULT_ROOT), json_output: bool = typer.Option(False, '--json', help='One structured native result; preview on stderr.'), eligibility_dir: str | None = typer.Option(None, '--eligibility-dir')):
     """Periodic worker: approved jobs only; no graphical session on the server."""
     def operation():
-        from .dispatcher import dispatch_ready
-        chosen=selected(root,brand,['deliver'])
+        chosen=selected(root,brand,['deliver'] + (['--eligibility-dir',eligibility_dir] if eligibility_dir else []))
         if chosen is None: return
         store=NativeStore(chosen.raiz,brand=brand)
-        delivered=dispatch_ready(datetime.now(timezone.utc),brand,store=store)
+        delivered=dispatch_local(chosen,store,eligibility_dir=eligibility_dir)
+        problems=[j.id for j in store.list_jobs() if j.state in {'blocked', 'uncertain'}]
         output({'delivered':delivered,'awaiting_ui':[j.id for j in store.list_jobs() if j.state=='awaiting_ui'],
+                'needs_attention':problems,
                 'instruction':'Official UI handoffs require an authorized operator session; API routes remain closed unless capability is enabled.'})
+        if problems:
+            raise typer.Exit(1)
     run(operation, json_output=json_output, command='deliver', brand=brand)

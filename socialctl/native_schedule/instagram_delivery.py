@@ -59,7 +59,7 @@ def _public_url(value, allowed_hosts):
 class InstagramDelivery:
     def __init__(self, client: httpx.Client, access_token: str, *,
                  max_polls: int = 5, sleep_s: float = 60.0,
-                 allowed_media_hosts: frozenset[str] = frozenset()):
+                 allowed_media_hosts: frozenset[str] = frozenset(), before_publish=None):
         if not access_token or max_polls < 1 or sleep_s < 0:
             raise ValueError('Instagram token and polling limits required')
         self.client = client
@@ -67,8 +67,11 @@ class InstagramDelivery:
         self.max_polls = max_polls
         self.sleep_s = sleep_s
         self.allowed_media_hosts = frozenset(allowed_media_hosts)
+        self.before_publish = before_publish
 
     def _post(self, url, data):
+        if url.endswith('/media_publish') and self.before_publish is not None:
+            self.before_publish()
         response = self.client.post(url, data=data | {'access_token': self.token})
         response.raise_for_status()
         return response.json()
@@ -138,6 +141,8 @@ class InstagramDelivery:
     def deliver(self, job: NativeJob, payload: dict, checkpoint) -> str:
         if job.platform != 'instagram':
             raise ValueError('Approved Instagram job required')
+        if payload.get('first_comment'):
+            raise ValueError('Instagram first-comment delivery is pending durable follow-up integration')
         account = _identifier(job.account_id)
         edge = f'{GRAPH}/{account}/media'
         media = payload.get('media')

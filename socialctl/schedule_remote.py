@@ -221,9 +221,12 @@ def send_native(root: Path, brand: str, args: list[str]):
         raise ScheduleError('invalid native remote command')
     operation=args[0]
     identifier=lambda value: bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}',value))
+    relative_artifact=lambda value: len(value)<=512 and all(identifier(part) for part in value.split('/'))
     digest=lambda value: bool(re.fullmatch(r'[a-f0-9]{64}',value))
     valid=operation in {'status','deliver'} and len(args)==1
-    if operation=='migration-prepare':
+    if operation=='deliver' and len(args)==3:
+        valid=args[1]=='--eligibility-dir' and relative_artifact(args[2])
+    elif operation=='migration-prepare':
         valid=len(args)==4 and args[1]=='--manifest' and identifier(args[2]) and args[3]=='--dry-run'
     elif operation=='migration-apply':
         valid=len(args)==5 and args[1]=='--manifest' and identifier(args[2]) and args[3]=='--digest' and digest(args[4])
@@ -248,8 +251,12 @@ def send_native(root: Path, brand: str, args: list[str]):
                 except (ValueError,IndexError):
                     valid=False
             valid=valid and (tail==['--dry-run'] or (len(tail)==2 and tail[0]=='--approval-digest' and digest(tail[1])))
+        elif operation=='dispatch':
+            if tail[:1]==['--yes']:
+                tail=tail[1:]
+            valid=valid and (tail==[] or (len(tail)==2 and tail[0]=='--eligibility' and relative_artifact(tail[1])))
         else:
-            valid=valid and (tail==[] or (operation=='dispatch' and tail==['--yes']))
+            valid=valid and tail==[]
     if not valid:
         raise ScheduleError('invalid native remote arguments')
     return _send(root,brand,['native-schedule',*args,*(['--json'] if json_output else [])])

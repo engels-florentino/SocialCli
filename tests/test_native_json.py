@@ -220,10 +220,10 @@ def test_real_local_lifecycle_envelopes_pass_remote_validation(tmp_path,action_k
     (brand/'native.json').write_text(json.dumps(manifest))
     inventory.update(coverage_start=(now-timedelta(days=1)).isoformat(),coverage_end=(now+timedelta(days=7)).isoformat())
     (brand/'native-calendar.json').write_text(json.dumps(inventory))
-    def checked(*args):
+    def checked(*args, expected_exit=0):
         result=invoke(tmp_path,*args)
-        assert result.exit_code==0,result.output
-        value=validate_remote(result.stdout,command=args[0],brand='Example',exit_code=0,request_args=args)
+        assert result.exit_code==expected_exit,result.output
+        value=validate_remote(result.stdout,command=args[0],brand='Example',exit_code=expected_exit,request_args=args)
         assert value==json.loads(result.stdout)
         return value
     preview=checked('prepare','native.json','--dry-run')
@@ -235,7 +235,9 @@ def test_real_local_lifecycle_envelopes_pass_remote_validation(tmp_path,action_k
     checked('submit-marker','clip')
     checked('reconcile','clip')
     checked('status')
-    checked('deliver')
+    delivery=checked('deliver',expected_exit=1)
+    assert delivery['data'][0]['needs_attention']==['clip']
+    assert delivery['jobs'][0]['state']=='uncertain'
     from hashlib import sha256
     from socialctl.native_schedule.models import NativeObservation
     job=NativeStore(brand,brand='Example').get('clip')

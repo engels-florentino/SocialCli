@@ -487,13 +487,50 @@ def test_instagram_content_insights_use_ig_allowlist(tmp_path):
     assert result["data"][0]["name"] == "views"
 
 
-@pytest.mark.parametrize("platform,field", [("facebook", "is_hidden"), ("instagram", "hide")])
+@pytest.mark.parametrize("platform,field", [("facebook", "is_hidden")])
 def test_comment_moderation_is_explicit_and_uses_owned_media_membership(tmp_path, platform, field):
     mod, _, graph, client, store = service(tmp_path, platform)
     change = mod.prepare_meta(client, store, {"action": "comment-moderate", "target_id": graph.state["id"], "comment_id": "800", "hide": True})
     result = mod.apply_meta(client, store, change.id, change.fingerprint)
     assert graph.writes == [("POST", "800", {field: ["true"]})]
     assert result.status == "verified"
+
+
+def test_disabled_instagram_moderation_cannot_prepare_or_mutate(tmp_path):
+    from socialctl.management.meta_schema import validate_edit
+    mod, _, graph, client, store = service(tmp_path, 'instagram')
+    raw = {'action': 'comment-moderate', 'target_id': '789', 'comment_id': '800', 'hide': True}
+    with pytest.raises(ValueError, match='disabled'):
+        mod.prepare_meta(client, store, raw)
+    with pytest.raises(ValueError, match='disabled'):
+        client.mutate(validate_edit(raw))
+    assert graph.writes == []
+    assert not list(store.root.glob('*.json'))
+
+
+def test_disabled_instagram_moderation_preserves_old_proposals_and_reconciliation(tmp_path):
+    from socialctl.management.meta_schema import validate_edit
+    from socialctl.management.changes import now_utc
+    mod, brand, graph, client, store = service(tmp_path, 'instagram')
+    raw = {'action': 'comment-moderate', 'target_id': '789', 'comment_id': '800', 'hide': True}
+    edit = validate_edit(raw)
+    moment = now_utc()
+    change = mod.MetaChange(id='44444444-4444-4444-8444-444444444444',
+        brand=brand.nombre, brand_root=str(brand.raiz.resolve()), platform='instagram',
+        identity=client.operation_identity(edit), edit=raw, before=client.snapshot(edit),
+        created_at=moment, updated_at=moment)
+    change.fingerprint = mod.fingerprint(change)
+    store.save(change)
+    with pytest.raises(ValueError, match='disabled'):
+        mod.apply_meta(client, store, change.id, change.fingerprint)
+    assert store.load(change.id).status == 'proposed'
+    assert graph.writes == []
+    change.status = 'uncertain'
+    change.receipt = {'success': True, 'target_id': '800'}
+    graph.hidden = True
+    store.save(change)
+    assert mod.reconcile_meta(client, store, change.id).status == 'verified'
+    assert graph.writes == []
 
 
 def test_page_like_unlike_separate_approved_changes(tmp_path):

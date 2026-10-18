@@ -61,6 +61,7 @@ def event(change, name, **details):
 
 def prepare_meta(client, store, raw):
     edit = validate_edit(raw)
+    client.require_write_capability(edit)
     before = client.snapshot(edit)
     moment = now_utc()
     change = MetaChange(id=str(uuid.uuid4()), brand=client.brand.nombre,
@@ -162,6 +163,7 @@ def apply_meta(client, store, change_id, approval_digest):
             if change.status == "applying":
                 change.status = "uncertain"
             return readback(client, store, change)
+        client.require_write_capability(edit)
         for path in store.root.glob("*.json"):
             other = store.load(path.stem)
             if other.id != change.id and operation_key(other) == key and other.status in {"applying", "uncertain"}:

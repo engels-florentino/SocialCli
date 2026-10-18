@@ -76,7 +76,7 @@ class BrokerClient:
             raise ValueError('could not reach the connection service securely') from None
 
 
-def broker_access_token(brand,platform,client,*,refresh=True):
+def broker_access_token(brand,platform,client,*,refresh=True,required_scopes=frozenset()):
     if (brand.dir_secretos/'socialcli-rotation.json').exists():
         raise ValueError('Credential rotation is pending. Run socialcli account rotate to resume.')
     metadata=brand.leer_secreto(platform)
@@ -101,6 +101,11 @@ def broker_access_token(brand,platform,client,*,refresh=True):
         raise
     if result.get('platform')!=platform.value or result.get('account',{}).get('id')!=expected:
         raise ValueError('connection account mismatch; reconnect explicitly')
+    if required_scopes:
+        granted=result.get('granted_scopes')
+        if (not isinstance(granted,list) or any(not isinstance(scope,str) for scope in granted)
+                or not set(required_scopes)<=set(granted)):
+            raise ValueError('Required granted provider permissions are missing or unknown')
     expiry=result.get('expires_at')
     if type(expiry) not in {int,float} or not math.isfinite(expiry) or expiry<=0:
         raise ValueError('invalid connection expiration')

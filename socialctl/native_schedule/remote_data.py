@@ -117,9 +117,12 @@ def validate_data(rows, *, command, brand, jobs, request_args):
                 if hash_value(row['payload']) != known['content_hash']:
                     raise ValueError('Mismatched handoff payload')
         elif command == 'deliver':
-            shape(row, ('delivered','awaiting_ui','instruction'))
+            shape(row, ('delivered','awaiting_ui','instruction'), ('needs_attention',))
             if not isinstance(row['awaiting_ui'], list) or any(target(i)['state'] != 'awaiting_ui' for i in row['awaiting_ui']):
                 raise ValueError('Invalid delivered jobs')
+            attention = row.get('needs_attention', [])
+            if not isinstance(attention, list) or any(target(i)['state'] not in {'blocked', 'uncertain'} for i in attention):
+                raise ValueError('Invalid jobs requiring attention')
         elif command == 'migration-prepare':
             shape(row, ('version','brand','brand_root','manifest','manifest_hash','inventory','legacy_entries','legacy_results','native_jobs','transfers','excluded','protections','instruction','digest'))
             if row['version'] != 1 or row['brand'] != brand or row['digest'] != hash_value({k:v for k,v in row.items() if k != 'digest'}):

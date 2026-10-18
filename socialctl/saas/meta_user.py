@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import os
 from types import SimpleNamespace
 from typing import Literal
 from uuid import UUID
@@ -16,7 +18,9 @@ from socialctl.models import Platform
 
 USER_ACTIONS = {'media-delete': {'instagram_basic', 'instagram_manage_contents'},
                 'mention-reply': {'instagram_basic', 'instagram_manage_comments',
-                                  'pages_read_engagement', 'pages_show_list'}}
+                                  'pages_read_engagement', 'pages_show_list'},
+                'comment-moderate': {'instagram_basic', 'instagram_manage_comments',
+                                     'pages_read_engagement', 'pages_show_list'}}
 RETAIN_SECONDS = 90 * 86400
 
 
@@ -31,7 +35,7 @@ class UserOperation(BaseModel):
     @model_validator(mode='after')
     def exact_operation(self):
         if self.edit.action not in USER_ACTIONS:
-            raise ValueError('Only owned media deletion and exact mention replies are supported')
+            raise ValueError('Only scoped Instagram User operations are supported')
         if self.phase in {'mutate', 'status'}:
             if self.expected_identity is None or self.expected_before is None or self.operation_id is None:
                 raise ValueError('Mutation requires an exact operation ID and approved observations')
@@ -48,6 +52,23 @@ def _digest(value):
 
 def install_meta_user_route(app, connections, clock):
     vault, providers = connections.vault, connections.providers
+
+    def require_pilot(cap,connection_id,edit):
+        if edit.action!='comment-moderate':return
+        expected={'connection_id':connection_id,'installation_id':cap['installation_id'],
+            'account_id':cap['account']['id'],'page_id':cap['account']['page_id'],
+            'target_id':edit.target_id,'comment_id':edit.comment_id}
+        try:
+            raw=os.environ.get('SOCIALCLI_IG_MODERATION_PILOT','')
+            if len(raw)>4096:raise ValueError
+            policy=json.loads(raw)
+            if not isinstance(policy,dict) or set(policy)!=set(expected)|{'expires_at'}:raise ValueError
+            if any(policy[key]!=value for key,value in expected.items()):raise ValueError
+            expiry=policy['expires_at'];now=clock()
+            if type(expiry) not in (int,float) or not math.isfinite(expiry) or not now<expiry<=now+7*86400:
+                raise ValueError
+        except (ValueError,TypeError):
+            raise HTTPException(403,'capability_not_enabled: Instagram moderation requires an exact active operator pilot.') from None
 
     def authorized(db, connection_id, request):
         cap = connections.capability(db, connection_id, request)['payload']
@@ -66,13 +87,14 @@ def install_meta_user_route(app, connections, clock):
         result = row['payload']
         if result['digest'] != digest:
             raise HTTPException(409, 'operation_conflict: Operation ID has different approved content.')
-        if result['status'] == 'accepted':
+        if result['status'] in {'accepted', 'verified_readback'}:
             return result['response']
         if result['status'] == 'rejected':
             raise HTTPException(400, 'operation_rejected: The provider rejected this operation; it was not repeated.')
         raise HTTPException(409, 'operation_uncertain: Inspect the existing operation; never repeat the write.')
 
-    def user_client(cap, grant, action):
+    def user_client(cap, grant, edit, connection_id):
+        action=edit.action
         user = grant.get('meta_user_grant')
         if not isinstance(user, dict) or not isinstance(user.get('access_token'), str):
             raise HTTPException(409, 'user_authorization_required: Reconnect Instagram with owner-approved management consent.')
@@ -124,7 +146,8 @@ def install_meta_user_route(app, connections, clock):
             return page
 
         client = MetaClient(brand, Platform.INSTAGRAM, providers.client,
-                            user_page_authorizer=explicit_page_authorization)
+                            user_page_authorizer=explicit_page_authorization,
+                            moderation_authorizer=lambda proposed:require_pilot(cap,connection_id,proposed))
         # Validate fresh permissions as well as the saved grant. Identity then
         # verifies Page authorization and the exact linked Instagram account.
         perms = client._pages('me/permissions', {'limit': '100'})
@@ -143,13 +166,20 @@ def install_meta_user_route(app, connections, clock):
             key = _digest([*owner, body.operation_id])
             target_key = _digest([*owner, body.edit.target_id])
             if body.phase in {'mutate', 'status'}:
-                previous = existing(db, key, digest)
-                if previous is not None:
-                    return previous
-                if body.phase == 'status':
-                    raise HTTPException(404, 'operation_unavailable: No durable receipt is available; do not resend.')
+                row = vault.get(db, 'saas-meta-operation', key)
+                reconcile = (body.phase == 'status' and body.edit.action == 'comment-moderate'
+                             and row is not None and row['payload']['digest'] == digest
+                             and row['payload']['status'] in {'intent', 'uncertain'})
+                if not reconcile:
+                    previous = existing(db, key, digest)
+                    if previous is not None:
+                        return previous
+                    if body.phase == 'status':
+                        raise HTTPException(404, 'operation_unavailable: No durable receipt is available; do not resend.')
+            if body.phase in {'identity','mutate'}:
+                require_pilot(cap,connection_id,body.edit)
         try:
-            client = user_client(cap, grant, body.edit.action)
+            client = user_client(cap, grant, body.edit, connection_id)
             identity = client.identity(user_required=body.edit.action == 'media-delete')
             result = {'version': 1, 'platform': 'instagram', 'account': cap['account'], 'identity': identity}
             if body.phase == 'identity':
@@ -157,6 +187,25 @@ def install_meta_user_route(app, connections, clock):
             before = client.snapshot(body.edit)
             if body.phase == 'inspect':
                 return {**result, 'before': before}
+            if body.phase == 'status':
+                # A current exact changed hidden state independently verifies the
+                # original intent. This is not a reconstructed provider receipt.
+                expected = client.expected(body.edit, body.expected_before)
+                if identity != body.expected_identity:
+                    raise HTTPException(409, 'operation_conflict: Account or actor changed since the preview.')
+                if before != expected or before == body.expected_before:
+                    raise HTTPException(409, 'operation_uncertain: Exact changed state could not be verified; do not resend.')
+                response = {**result, 'reconciliation': 'verified_readback', 'before': before}
+                with vault.transaction() as db:
+                    current, _ = authorized(db, connection_id, request)
+                    row = vault.get(db, 'saas-meta-operation', key)
+                    if current != cap or row is None or row['payload']['digest'] != digest:
+                        raise HTTPException(409, 'connection_changed: Review the current connection.')
+                    saved = row['payload']
+                    if saved['status'] in {'intent', 'uncertain'}:
+                        saved.update(status='verified_readback', response=response)
+                        vault.put(db, 'saas-meta-operation', key, saved, expires=clock() + RETAIN_SECONDS)
+                    return existing(db, key, digest)
             if identity != body.expected_identity or before != body.expected_before:
                 raise HTTPException(409, 'operation_conflict: Account or resource changed since the preview.')
         except HTTPException:
@@ -170,6 +219,7 @@ def install_meta_user_route(app, connections, clock):
             current, _ = authorized(db, connection_id, request)
             if current != cap:
                 raise HTTPException(409, 'connection_changed: Review the current connection.')
+            require_pilot(current,connection_id,body.edit)
             previous = existing(db, key, digest)
             if previous is not None:
                 return previous
@@ -202,8 +252,12 @@ def install_meta_user_route(app, connections, clock):
                 # Authorization disappearing after dispatch does not mean
                 # Meta rejected the write. Preserve the no-replay verdict.
                 raise HTTPException(409, 'operation_uncertain: Authorization changed after dispatch; do not repeat.') from None
-            if vault.get(db, 'saas-meta-operation', key) is None:
+            current_operation = vault.get(db, 'saas-meta-operation', key)
+            if current_operation is None:
                 raise HTTPException(409, 'operation_uncertain: Operation storage was removed after dispatch; do not repeat.')
+            # A delayed timeout cannot erase an independently verified readback.
+            if current_operation['payload']['status'] == 'verified_readback' and saved['status'] == 'uncertain':
+                saved = current_operation['payload']
             vault.put(db, 'saas-meta-operation', key, saved, expires=clock() + RETAIN_SECONDS)
         if saved['status'] == 'rejected':
             raise HTTPException(400, 'operation_rejected: Instagram rejected the write.')
