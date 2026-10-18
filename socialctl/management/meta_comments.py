@@ -95,7 +95,7 @@ class MetaCommentsClient:
             raise with_error_code(error(f'Meta: transport interrupted ({transport_label(exc)}); outcome unconfirmed'), exc, read_only=not writing) from None
         except Exception as exc:
             error = CommentUncertain if writing else CommentError
-            raise with_error_code(error("Meta: transporte interrumpido; resultado desconocido" if writing else
+            raise with_error_code(error("Meta: transport interrupted; outcome unconfirmed" if writing else
                         "Meta: failed to complete read"), exc, read_only=not writing) from None
         if not response.is_success:
             params = kwargs.get("params") or {}

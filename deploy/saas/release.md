@@ -8,6 +8,15 @@ Muse confirmed rc16 adoption, dependency integrity, the corrected comparison and
 healthy existing Facebook/Instagram connections. Public installation guides now
 serve rc16. This closes the playlist fix, not the remaining live QA plan.
 
+October 18 audit work is separate from that published artifact. Independent
+Google availability/verified-backup monitoring is deployed and its isolated
+notification/recovery drill passed. Application source changes remain candidates
+until their own review, release and deployment checks pass. See
+[provider review status](provider-review-status-2026-10-18.md),
+[independent monitoring](independent-monitoring.md) and
+[billing cutover](billing-cutover.md). Changing test billing configuration alone
+does not migrate customer pointers or paid access to live mode.
+
 # Previous public candidate: 0.3.0rc15
 
 Owner-approved TestPyPI publication completed. Downloaded wheel and sdist match
@@ -291,3 +300,11 @@ A different video returned 403 and remains an explicit per-video limitation.
 Server deployment checked matching Drive backup receipts and resumed maintenance
 timers. Health passed and running TikTok authorization scope set verified.
 Public TestPyPI candidate remains immutable; this is a server-only scope fix.
+# Deployment image selection
+
+The candidate Compose template requires `SOCIALCLI_CANDIDATE_IMAGE` explicitly
+in the invoking environment or Compose interpolation file. Select the reviewed
+image tag for the intended build/deployment; `service.env` supplies container
+settings and does not supply Compose interpolation. Do not reuse a historical
+release tag for a new build. Record the resulting image digest, runtime version,
+schema and rollback image separately from the published client version.

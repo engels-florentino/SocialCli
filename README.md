@@ -2,7 +2,7 @@
 
 # SocialCli
 
-**Current source version: 0.3.0rc10 (validation candidate; public installation remains rc9 until release verification).** SocialCli SaaS is the current SocialCli
+**Current source version: 0.3.0rc16 (validation candidate).** SocialCli SaaS is the current SocialCli
 product. The repository root on `main` is its single development workspace;
 the CLI, hosted connection service and account/billing components live together
 here. Earlier versions remain in Git history for reference and migration.
@@ -32,15 +32,19 @@ Copy this line into your terminal-enabled AI assistant:
 The installation guide verifies the selected release download and uses
 https://pilot.socialcli.app for email sign-in, assistant approval and account
 connections. The pilot supports eligible YouTube, Facebook, Instagram and TikTok
-test accounts. Google remains in Testing; Meta development access and TikTok
-sandbox restrictions still apply. Stripe uses test mode. Planned access costs
+test accounts. Provider verification is separate from the OAuth publishing
+toggle; Meta development access and TikTok sandbox restrictions still apply.
+Stripe uses test mode. Planned access costs
 USD 10/month after 14 free days from the first successful connection. No real
 subscriptions are collected in this pilot.
 
-The published candidate is **0.3.0rc9 on TestPyPI** and the hosted pilot runs that
-version. Its wheel and source archive were downloaded and verified against the
+The published client candidate is **0.3.0rc16 on TestPyPI**. The compatible hosted
+runtime is **0.3.0rc15**, with rc16 installation guides. The client's wheel and
+source archive were downloaded and verified against the
 reviewed build hashes. Stable 0.3.0 production publication remains separate from
 this pilot. See the [release record](deploy/saas/release.md).
+The [stable release scope](docs/stable-scope.md) excludes unsupported automatic
+operations; disabled research catalogue entries are not offered features.
 
 ## Install and connect
 

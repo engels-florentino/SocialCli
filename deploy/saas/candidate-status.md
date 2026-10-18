@@ -1,8 +1,10 @@
 # Current rollout status
 
-The public pilot runs rc8, published on TestPyPI with its artifacts verified.
-Schema9, maintenance and public agent guides were checked after deployment.
-See [rc8 rollout](rollout-rc8-2026-10-15.md) and [release.md](release.md).
+Verified October 18: the published client is rc16 on TestPyPI; the compatible
+hosted runtime is rc15 with rc16 installation guides. The running image is
+`socialcli-saas-candidate:rc16-guides-14da67a`, observed healthy. Schema10,
+maintenance and backup checks are recorded in [release.md](release.md).
+Package publication, running code and guide updates are separate facts.
 
 ## Previous status and historical checkpoints
 

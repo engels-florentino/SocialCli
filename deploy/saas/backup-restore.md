@@ -1,3 +1,28 @@
+# Latest isolated recovery evidence — October 18, 2026
+
+The current paired data/recovery snapshots were restored directly from Drive
+with `restic restore --verify` into a new root-private server directory. Both
+data-file hashes matched the manifest. Keys from the restored recovery files
+authenticated all 20 encrypted vault records; SQLite integrity and schema10
+passed in the exact running image with network disabled and read-only source
+mounts. No backup or recovered secret was downloaded to the Mac.
+
+A fresh manifest from the current authority drove offline restore preparation.
+The copy remained quarantined until the paired Auth dump restored successfully
+in a disposable network-none PostgreSQL container and the generated cleanup SQL
+removed all restored sessions/refresh tokens. Three user rows remained. The
+SQLite release gate then reported ready with integrity ok. Its output correctly
+retains `identity_cleanup_verified:false` and the operator attestation; this was
+SQL cleanup verification, not an Auth HTTP login rehearsal or a live cutover.
+New receiver record kinds also have separate fictional restore/deletion tests.
+
+All disposable containers, restored plaintext/configuration and key-only
+environment files were removed. Production databases, provider grants and
+backup receipts were unchanged. The sanitized operational receipt is retained
+privately. Independent Google service/verified-backup checks and an actual
+alert/recovery email drill are documented in
+[independent monitoring](independent-monitoring.md).
+
 # Current retention and restore changes — October 15, 2026
 
 The source now implements an absolute six-day snapshot cutoff, post-prune integrity checks, and a checked Drive mirror with permanent removal of expired objects. `backup_host.py --preview-retention` inventories both repositories without deletion; `--retention` uses the same worker lock as backups. Configure both `drive_remote` (the exact `socialcli_backup_isolated:SocialCli-Backups/candidate` root) and private `drive_config` before enabling remote completion. Independent six-hour retention has a durable status receipt and freshness/error alerts. Do not keep the older copy-only systemd post-commands: install the current drive-copy.conf.

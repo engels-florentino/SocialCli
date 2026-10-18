@@ -130,7 +130,7 @@ class WebhookStore:
         with self.database() as conn:
             row = conn.execute("SELECT target,payload FROM events WHERE id=?", (event_id,)).fetchone()
             if row is None:
-                raise MetaError("evento desconocido")
+                raise MetaError("unknown webhook event")
         try:
             payload = json.loads(row[1])["change"]
             if payload["field"] == "mentions":

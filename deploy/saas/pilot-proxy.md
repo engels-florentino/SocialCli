@@ -1,7 +1,8 @@
-# Current deployment: 0.3.0rc8
+# Current deployment: rc15 runtime with rc16 client guides
 
-See [the rc8 rollout evidence](rollout-rc8-2026-10-15.md) for the current runtime,
-TLS, schema, backup and routing state. The checkpoints below are historical and
+See [the current rollout status](candidate-status.md) and [release record](release.md)
+for the independently verified runtime, client, schema and backup state.
+The checkpoints below are historical and
 do not describe the current deployed version.
 
 # Isolated HTTPS pilot — public activation verified

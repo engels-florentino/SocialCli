@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: socialcli-saas-candidate:0.3.0rc9
+    image: ${SOCIALCLI_CANDIDATE_IMAGE:?Set the reviewed candidate image tag before build or deployment}
     container_name: socialcli-saas-candidate
     restart: unless-stopped
     env_file: service.env

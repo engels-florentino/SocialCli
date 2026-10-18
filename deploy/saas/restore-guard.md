@@ -1,9 +1,12 @@
 # Deletion-safe offline restore gate
 
-This candidate workflow is implemented and tested with fictional SQLite fixtures.
-It has not been deployed or rehearsed against production Auth. It does not prove
-that a restored Supabase database is clean: the final Auth step is an explicit
-operator attestation, and output continues to say `identity_cleanup_verified:false`.
+This workflow is tested with fictional SQLite fixtures. On October 18 it was
+also rehearsed against an isolated paired Drive backup of the current schema10
+vault and production Auth dump; see [recovery evidence](backup-restore.md).
+The generated SQL removed restored sessions and refresh tokens before releasing
+the offline SQLite copy. No live database was replaced or Auth HTTP login
+rehearsed. The final Auth step remains an explicit operator attestation, and
+output continues to say `identity_cleanup_verified:false`.
 
 ## Trust boundary and prerequisites
 
