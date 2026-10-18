@@ -1,0 +1,13 @@
+[Unit]
+Description=Export minimal SocialCli backup health for external monitoring
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/blades3/projects/socialcli-saas/ops/backup_alert.py /home/blades3/projects/socialcli-saas/private/backup-candidate.json --export-health /var/lib/socialcli-backup-health
+UMask=0077
+TimeoutStartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/socialcli-backup-health

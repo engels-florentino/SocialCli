@@ -92,6 +92,34 @@ def can_rearm(config,*,service_result,active_state,now=time.time):
     except Exception:return False
 
 
+def health_snapshot(config,*,service_result,now=time.time):
+    current=now()
+    healthy=not issues(config,service_result=service_result,now=lambda:current)
+    completed=None
+    if healthy:
+        try:completed=read(private(config['root'],directory=True)/'remote-status.json')['last_success']
+        except Exception:healthy=False
+    return {'check':'backup','evaluated_at':current,'completed_at':completed,'healthy':healthy}
+
+
+def export_health(config,directory,*,service_result,now=time.time):
+    directory=Path(directory)
+    if (directory.is_symlink() or not directory.is_dir()
+            or directory.stat().st_uid!=os.geteuid() or directory.stat().st_mode & 0o022):
+        raise ValueError('Invalid health export directory.')
+    value=health_snapshot(config,service_result=service_result,now=now)
+    fd,temp=tempfile.mkstemp(prefix='.health-',dir=directory)
+    try:
+        with os.fdopen(fd,'w') as stream:
+            json.dump(value,stream);stream.flush();os.fchmod(stream.fileno(),0o644);os.fsync(stream.fileno())
+        os.replace(temp,directory/'backup.json')
+        fd=os.open(directory,os.O_RDONLY)
+        try:os.fsync(fd)
+        finally:os.close(fd)
+    finally:Path(temp).unlink(missing_ok=True)
+    return {'status':'ok' if value['healthy'] else 'attention'}
+
+
 def notify(config,problems,send,*,recovered=False,now=time.time):
     root=private(config['root'],directory=True)
     if any(key not in LABELS for key in problems):raise ValueError('Unknown issue.')
@@ -132,10 +160,17 @@ def main():
     parser.add_argument('config',type=Path)
     parser.add_argument('--remote-complete',action='store_true')
     parser.add_argument('--test',action='store_true',help='Send one English test using a separate durable receipt')
+    parser.add_argument('--export-health',type=Path,help='Export minimal health only; never send email')
     args=parser.parse_args();os.umask(0o077)
     try:
         config=read(args.config)
-        if args.remote_complete:result=remote_complete(config)
+        if sum((bool(args.remote_complete),bool(args.test),args.export_health is not None))>1:
+            raise ValueError('Choose one monitor action.')
+        if args.export_health is not None:
+            service=subprocess.run(['systemctl','show','socialcli-saas-candidate-backup.service',
+                '--property=Result','--value'],capture_output=True,text=True,timeout=10,check=True).stdout.strip()
+            result=export_health(config,args.export_health,service_result=service)
+        elif args.remote_complete:result=remote_complete(config)
         else:
             # This is the existing, tested application transport, installed beside this script.
             from saas_mail import MailSettings,SMTPMailer,mailbox

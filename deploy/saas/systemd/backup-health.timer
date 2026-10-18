@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh minimal SocialCli backup health every minute
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=60
+AccuracySec=5
+Unit=socialcli-backup-health.service
+
+[Install]
+WantedBy=timers.target
