@@ -227,6 +227,61 @@ def test_playlist_create_id_durable_and_reconcile_is_readonly(env):
     assert len(api.writes) == 1
 
 
+@pytest.mark.parametrize("action", ["playlist-create", "playlist-update"])
+@pytest.mark.parametrize("difference,expected_status", [
+    ("default_mirror", "verified"),
+    ("wrong_default_title", "uncertain"),
+    ("wrong_default_description", "uncertain"),
+    ("wrong_translation", "uncertain"),
+    ("missing_translation", "uncertain"),
+    ("unapproved_language", "uncertain"),
+    ("wrong_privacy", "uncertain"),
+    ("explicit_default_changed", "uncertain"),
+])
+def test_playlist_readback_allows_only_an_added_exact_default_language_mirror(env, action, difference, expected_status):
+    api, client, store, _ = env
+    patch = {
+        "snippet": {"title": "Original", "description": "Texto original", "defaultLanguage": "es"},
+        "status": {"privacyStatus": "private"},
+        "localizations": {"en": {"title": "Translated", "description": "Translated text"}},
+    }
+    if difference == "explicit_default_changed":
+        patch["localizations"]["es"] = {"title": "Explicit original", "description": "Explicit text"}
+    kwargs = {"playlist_id": "playlist-1"} if action == "playlist-update" else {}
+    change = prepare(env, action, patch=patch, **kwargs)
+    original_after = copy.deepcopy(change.after)
+    original_fingerprint = change.fingerprint
+    rid = "playlist-1" if action == "playlist-update" else "created-playlists"
+
+    def read(request):
+        if request.url.path.endswith("/playlists") and request.url.params.get("id") == rid and api.writes:
+            row = copy.deepcopy(next(r for r in api.rows["playlists"] if r["id"] == rid))
+            row["localizations"]["es"] = {"title": "Original", "description": "Texto original"}
+            if difference == "wrong_default_title":
+                row["localizations"]["es"]["title"] = "Unexpected"
+            elif difference == "wrong_default_description":
+                row["localizations"]["es"]["description"] = "Unexpected"
+            elif difference == "wrong_translation":
+                row["localizations"]["en"]["title"] = "Unexpected"
+            elif difference == "missing_translation":
+                del row["localizations"]["en"]
+            elif difference == "unapproved_language":
+                row["localizations"]["fr"] = {"title": "Unexpected", "description": "Unexpected"}
+            elif difference == "wrong_privacy":
+                row["status"]["privacyStatus"] = "public"
+            return httpx.Response(200, json={"items": [row], "pageInfo": {"totalResults": 1, "resultsPerPage": 50}})
+
+    api.on_read = read
+    result = apply(env, change)
+    assert result.status == expected_status
+    assert result.verified is (expected_status == "verified")
+    assert result.journal[-1]["observed"]["localizations"]["es"]
+    assert result.after == original_after and result.fingerprint == original_fingerprint
+    recovered = reconcile_owned(client, store, change.id)
+    assert recovered.status == expected_status
+    assert len(api.writes) == 1
+
+
 @pytest.mark.parametrize("action,kw", [("playlist-create", {"patch": {"snippet": {"title": "New", "description": "Supplied"}, "status": {"privacyStatus": "private"}}}), ("item-insert", {"playlist_id": "playlist-1", "video_id": "video-new", "position": 1})])
 def test_uncertain_create_blocks_fresh_uuid_without_guessing_titles(env, action, kw):
     api = env[0]

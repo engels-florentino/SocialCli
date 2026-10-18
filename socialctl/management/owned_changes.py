@@ -305,6 +305,26 @@ def receipt_for(change, response):
     return {"id": rid, "identity_valid": valid}
 
 
+def _metadata_matches(resource, expected, actual):
+    if actual == expected:
+        return True
+    if resource != "playlists" or "localizations" not in expected:
+        return False
+    snippet = expected.get("snippet", {})
+    language = snippet.get("defaultLanguage")
+    if (not language or language in expected["localizations"]
+            or not {"title", "description"} <= snippet.keys()):
+        return False
+    # YouTube can add the original-language text to the translation map.
+    # Accept only that exact redundant entry; every approved field and every
+    # other language still must match. Keep the raw observation in the journal
+    # and never modify the approved after-values or their fingerprint.
+    mirrored = copy.deepcopy(expected)
+    mirrored["localizations"][language] = {
+        "title": snippet["title"], "description": snippet["description"]}
+    return actual == mirrored
+
+
 def readback(client, store, change):
     edit = validate_edit(change.edit)
     try:
@@ -333,7 +353,7 @@ def readback(client, store, change):
         elif change.receipt and change.receipt.get("identity_valid"):
             row = client.one(change.resource, change.result_id, parent=edit.playlist_id)
             actual = {p: editable(change.resource, p, row) for p in change.after}
-            match = actual == change.after
+            match = _metadata_matches(change.resource, change.after, actual)
             _event(change, "metadata_readback", matches=match, observed=actual, bytes_verified=False)
             if match:
                 if change.asset:
