@@ -1,31 +1,42 @@
-# Current public client candidate: 0.3.0rc16
+# Current release state — October 19, 2026
 
-The playlist verification fix is published to TestPyPI. Both downloaded archives
-match the reviewed CI artifacts, and Linux/macOS installation checks passed.
-The existing rc15 service is compatible; this correction runs in the client.
-See [playlist verification](qa-playlist-localizations-2026-10-18.md) for scope.
-Muse confirmed rc16 adoption, dependency integrity, the corrected comparison and
-healthy existing Facebook/Instagram connections. Public installation guides now
-serve rc16. This closes the playlist fix, not the remaining live QA plan.
+The public client candidate remains **0.3.0rc16 on TestPyPI**. Its published
+playlist verification fix, matching downloaded archives and Linux/macOS installation
+checks remain the recorded release evidence. Muse's previously confirmed rc16
+adoption, dependency integrity, corrected comparison and healthy existing
+Facebook/Instagram connections apply to that published candidate. See
+[playlist verification](qa-playlist-localizations-2026-10-18.md). No later source
+changes have been added to those immutable archives.
 
-October 18 audit work is separate from that published artifact. Independent
-Google availability/verified-backup monitoring is deployed and its isolated
-notification/recovery drill passed. Application source changes remain candidates
-until their own review, release and deployment checks pass. See
+The current tested source checkpoint is `77a04a7`: **3,842 tests passed**, with
+one existing Starlette/httpx deprecation warning. Internal wheel and sdist
+validation for that exact commit passed, including packaged-source byte comparisons,
+artifact allowlist and UI asset checks, and clean installations on Linux and macOS.
+These internal artifacts retain version `0.3.0rc16` but are unpublished and are
+not the public rc16 archives. Their validation does not establish deployment,
+provider approval or stable-release certification.
+
+The last verified hosted deployment is source `b2c227f`, image
+`sha256:d230667a3c9681b47ad1c86d80456152376e1b16f54448d90060cc04c39a4ad2`.
+The October 19, 00:33 UTC verification recorded healthy service, running Auth,
+public HTTP 200 responses, all four operational timers active and no maintenance
+hold. This is the last recorded observation; the service was not queried for this
+documentation update. Source `77a04a7` and its internal artifacts have not been deployed.
+
+October 18 audit work remains separate from the published client candidate.
+Independent Google availability/verified-backup monitoring was deployed and its
+isolated notification/recovery drill passed. See
 [provider review status](provider-review-status-2026-10-18.md),
 [independent monitoring](independent-monitoring.md) and
 [billing cutover](billing-cutover.md). Changing test billing configuration alone
 does not migrate customer pointers or paid access to live mode.
 
-Current source checkpoint (October 18): runtime commit `fcb3385` passed the full
-suite with **3,733 tests passed** and one existing Starlette deprecation warning.
-The subsequent documentation-only checkpoint `3df3ef8` passed the seven existing
-agent-product tests and packaged-guide rendering checks; runtime code is unchanged.
-These post-rc16 source changes remain unpublished, despite retaining the source
-version `0.3.0rc16`. They are absent from the published rc16 archives and the hosted
-rc15 runtime. Refresh and review the final artifacts under a new candidate version;
-never overwrite published rc16. Final candidate publication, stable PyPI publication
-and hosted deployment each retain their separate approval and validation gates.
+A new unique candidate version and its final reviewed artifacts are still required
+before publishing the later source changes; never overwrite published rc16.
+Candidate publication, stable PyPI publication, hosted deployment and adoption of
+a later client each retain their separate approval and validation gates. The
+historical checkpoints below describe their recorded releases, not the current
+source or hosted state.
 
 # Previous public candidate: 0.3.0rc15
 
