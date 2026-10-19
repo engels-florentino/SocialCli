@@ -252,9 +252,12 @@ def _apply_operation(client, store, batch, op):
     except YouTubeUpdateConflict:
         op.status = "conflict"
         _event(op, "etag_conflict")
-    except YouTubeUpdateRejected:
+    except YouTubeUpdateRejected as exc:
         op.status = "failed"
-        _event(op, "write_rejected")
+        # Only transport-produced, bounded classification is persisted. Local
+        # validation rejections get a fixed message, never arbitrary exception text.
+        diagnostic = exc.diagnostic or {"error": "Metadata validation rejected the update before PUT."}
+        _event(op, "write_rejected", **diagnostic)
     except Exception:
         op.status = "uncertain"
         _event(op, "write_uncertain")

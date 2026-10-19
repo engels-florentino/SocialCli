@@ -629,7 +629,8 @@ def test_management_permission_error_is_actionable_sanitized_and_journaled(tmp_p
         )
 
     message = str(captured.value)
-    assert "youtube.force-ssl" in message
+    assert "HTTP 403" in message
+    assert "youtube.force-ssl" not in message  # Prose alone is not a trusted reason.
     assert token not in message
     persisted = store.load(change.id)
     assert persisted.status == "failed"

@@ -46,6 +46,10 @@ class YouTubeManagementError(RuntimeError):
 class YouTubeUpdateRejected(YouTubeManagementError):
     """YouTube unequivocally rejected the write."""
 
+    def __init__(self, message: str, *, diagnostic: dict[str, str] | None = None):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
 
 class YouTubeUpdateConflict(YouTubeUpdateRejected):
     """ETag changed between reread and PUT (HTTP 412)."""
@@ -53,6 +57,40 @@ class YouTubeUpdateConflict(YouTubeUpdateRejected):
 
 class YouTubeUpdateUncertain(YouTubeManagementError):
     """Whether PUT was applied cannot be determined reliably."""
+
+
+# Only recognized reason identifiers may enter journals; provider prose is excluded.
+_REJECTION_REASONS = frozenset({
+    "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded", "userRateLimitExceeded",
+    "insufficientPermissions", "forbidden", "forbiddenPrivacySetting",
+    "invalidTitle", "invalidDescription", "invalidVideoMetadata", "invalidValue",
+    "invalidPublishAt", "invalidCategoryId", "invalidTags", "invalidDefaultLanguage",
+    "defaultLanguageNotSet", "localizationValidationError", "videoNotFound",
+    "videoChartNotFound", "uploadLimitExceeded", "badRequest", "authError",
+})
+
+
+def _rejection_diagnostic(response: httpx.Response) -> dict[str, str]:
+    """Keep bounded classification, never provider prose, bodies, URLs or headers."""
+    status = str(response.status_code)
+    reasons = []
+    try:
+        errors = response.json()["error"]["errors"]
+        if isinstance(errors, list):
+            for item in errors[:16]:
+                reason = item.get("reason") if isinstance(item, dict) else None
+                if isinstance(reason, str) and reason in _REJECTION_REASONS and reason not in reasons:
+                    reasons.append(reason)
+    except (ValueError, KeyError, TypeError):
+        pass
+    diagnostic = {"http_status": status}
+    if reasons:
+        diagnostic["reason"] = ",".join(reasons)
+    reason_text = f"; reason={diagnostic['reason']}" if reasons else ""
+    diagnostic["error"] = f"YouTube rejected videos.update (HTTP {status}{reason_text}); no change applied."
+    if "insufficientPermissions" in reasons:
+        diagnostic["error"] += " Check granted youtube.force-ssl or youtube management permission."
+    return diagnostic
 
 
 @dataclass(frozen=True)
@@ -199,14 +237,8 @@ class YouTubeManagementClient:
                 f"uncertain outcome after videos.update: {error}"
             )
         if not response.is_success:
-            if response.status_code == 403:
-                raise YouTubeUpdateRejected(
-                    "YouTube rejected videos.update; reauthorize with management permission "
-                    f"youtube.force-ssl or youtube. Details: {error}"
-                )
-            raise YouTubeUpdateRejected(
-                f"YouTube rejected videos.update without applying the change: {error}"
-            )
+            diagnostic = _rejection_diagnostic(response)
+            raise YouTubeUpdateRejected(diagnostic["error"], diagnostic=diagnostic)
 
         try:
             payload = response.json()
