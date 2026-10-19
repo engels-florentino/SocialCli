@@ -461,3 +461,80 @@ def test_hosted_story_inspect_and_approved_delete(tmp_path):
     response = call(client, connection, 'mutate', **approved)
     assert response.status_code == 200, response.text
     assert graph.writes == [('DELETE', '789')]
+
+@pytest.mark.parametrize('comment_id', [None, '800'])
+def test_read_only_mention_inspection_needs_no_reply(tmp_path, comment_id):
+    class MentionProvider(MetaProvider):
+        def __call__(self, request):
+            if request.method == 'GET' and request.url.path.endswith('/456') and 'mentioned_media' in str(request.url):
+                return httpx.Response(200, json={'id': '456', 'mentioned_media': {'id': '789', 'caption': 'Mention', 'media_type': 'IMAGE'}})
+            return super().__call__(request)
+    client, _, graph, connection = connected(tmp_path, MentionProvider())
+    body = {'media_id': '789'}
+    if comment_id is not None:
+        body['comment_id'] = comment_id
+    response = client.post('/api/saas/v1/connections/' + connection['connection_id'] + '/instagram-mention-inspect',
+        headers={'Authorization': 'Bearer ' + connection['connection_secret']}, json=body)
+    assert response.status_code == 200, response.text
+    assert response.json()['before']['id'] == (comment_id or '789')
+    assert 'PRIVATE' not in response.text and not graph.writes
+
+@pytest.mark.parametrize('body', [{'media_id': 'bad'}, {'media_id': '789', 'comment_id': None},
+    {'media_id': '789', 'message': 'Invented'}, {'media_id': '999'},
+    {'media_id': '789', 'comment_id': '999'}])
+def test_mention_inspection_rejects_invalid_or_mismatched_targets_without_writes(tmp_path, body):
+    client, _, graph, connection = connected(tmp_path)
+    response = client.post('/api/saas/v1/connections/' + connection['connection_id'] + '/instagram-mention-inspect',
+        headers={'Authorization': 'Bearer ' + connection['connection_secret']}, json=body)
+    assert response.status_code in {400, 422}
+    assert not graph.writes and 'PRIVATE' not in response.text
+
+
+def test_mention_inspection_requires_current_user_scopes(tmp_path):
+    client, _, graph, connection = connected(tmp_path)
+    graph.scopes.remove('instagram_manage_comments')
+    response = client.post('/api/saas/v1/connections/' + connection['connection_id'] + '/instagram-mention-inspect',
+        headers={'Authorization': 'Bearer ' + connection['connection_secret']}, json={'media_id': '789'})
+    assert response.status_code == 409
+    assert not graph.writes
+
+@pytest.mark.parametrize('condition', ['missing_user', 'expired_user'])
+def test_mention_inspection_never_refreshes_invalid_user_grants(tmp_path, condition):
+    client, _, graph, connection = connected(tmp_path)
+    vault = client.app.state.saas.vault
+    with vault.transaction() as db:
+        slot = db.execute("SELECT grant_id FROM saas_slots WHERE platform='instagram'").fetchone()
+        record = vault.get(db, 'saas-grant', slot['grant_id'])
+        grant = record['payload']['grant']
+        if condition == 'missing_user':
+            grant.pop('meta_user_grant')
+        else:
+            grant['meta_user_grant']['expires_at'] = 1
+        vault.put(db, 'saas-grant', slot['grant_id'], record['payload'], expires=record['expires'])
+    response = client.post('/api/saas/v1/connections/' + connection['connection_id'] + '/instagram-mention-inspect',
+        headers={'Authorization': 'Bearer ' + connection['connection_secret']}, json={'media_id': '789'})
+    assert response.status_code == 409 and not graph.writes
+
+
+def test_public_mention_reader_uses_server_user_without_page_token_export(tmp_path, monkeypatch):
+    from socialctl.brands import crear_brand
+    from socialctl.models import Platform
+    from socialctl.management.meta_client import MetaClient
+    from socialctl.connections import keychain
+    server, _, graph, connection = connected(tmp_path / 'server')
+    brand = crear_brand(tmp_path / 'client', 'Example')
+    brand.cuentas = {'facebook': {'page_id': '123'}, 'instagram': {'ig_user_id': '456'}}
+    brand.guardar_secreto(Platform.INSTAGRAM, {'version': 1, 'auth_mode': 'broker', 'protocol': 'saas-v1',
+        'service_url': 'https://social.example', 'account_id': '456', 'connection_id': connection['connection_id']})
+    monkeypatch.setattr(keychain, 'get', lambda *args: connection['connection_secret'])
+    def transport(request):
+        assert request.url.host == 'social.example'
+        assert request.url.path.endswith('/instagram-mention-inspect')
+        assert json.loads(request.content) == {'media_id': '789', 'comment_id': '800'}
+        response = server.request(request.method, str(request.url), headers=dict(request.headers), content=request.content)
+        assert 'PRIVATE' not in response.text
+        return httpx.Response(response.status_code, content=response.content)
+    http = httpx.Client(transport=httpx.MockTransport(transport))
+    assert MetaClient(brand, Platform.INSTAGRAM, http).inspect_mention('789', '800') == {
+        'id': '800', 'media_id': '789', 'text': 'Consenting test mention'}
+    assert not graph.writes

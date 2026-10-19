@@ -19,7 +19,7 @@ class RemoteMetaUser:
     def __init__(self, brand, platform, client):
         self.brand, self.platform, self.client = brand, platform, client
 
-    def request(self, phase, edit, *, change=None):
+    def request(self, phase, edit=None, *, change=None, mention=None):
         writing = phase == 'mutate'
         try:
             if (self.brand.dir_secretos / 'socialcli-rotation.json').exists():
@@ -33,13 +33,13 @@ class RemoteMetaUser:
             secret = keychain.get(self.brand, self.platform, metadata)
             if not isinstance(secret, str) or not 16 <= len(secret) <= 512:
                 raise MetaError('Connection credential unavailable in the selected secure store.')
-            body = {'phase': phase, 'edit': edit.model_dump(exclude_none=True)}
+            body = mention if mention is not None else {'phase': phase, 'edit': edit.model_dump(exclude_none=True)}
             if phase in {'mutate', 'status'}:
                 if change is None:
                     raise MetaError('Remote mutation requires the approved durable ChangeSet.')
                 body.update(operation_id=change.id, expected_identity=change.identity, expected_before=change.before)
             result = broker_for(metadata, self.client).request('POST',
-                f'/v1/connections/{connection}/instagram-management', secret=secret, body=body)
+                f'/v1/connections/{connection}/' + ('instagram-mention-inspect' if mention is not None else 'instagram-management'), secret=secret, body=body)
             identity = result.get('identity')
             page_id = (self.brand.cuentas.get('facebook') or {}).get('page_id')
             if (result.get('platform') != 'instagram' or result.get('account', {}).get('id') != expected

@@ -145,3 +145,20 @@ Current Meta documentation was retrieved through Context7 on 2026-10-18:
 [media and comment mention examples](https://developers.facebook.com/documentation/instagram-platform/webhooks/examples),
 [Page webhook setup](https://developers.facebook.com/docs/graph-api/webhooks/getting-started/webhooks-for-pages)
 and [token inspection](https://developers.facebook.com/docs/graph-api/reference/debug_token).
+
+### Offline mention inspection
+
+`meta webhook-reconcile` reads comment mentions when the signed hint contains a
+valid `comment_id`, and media mentions when that field is absent. Explicit null
+or malformed comment IDs fail closed. Both reads validate the selected Instagram
+account and exact target IDs. Inaccessible or contradictory results remain
+`unresolved`; an observed media mention does not establish media ownership.
+
+For managed SaaS connections the client uses the dedicated, read-only
+`POST /api/saas/v1/connections/{connection_id}/instagram-mention-inspect` endpoint
+with `media_id` and an optional `comment_id`. It accepts no reply text or mutation
+fields. The service reuses current installation/owner authorization, the retained
+User grant, scopes and Page-to-Instagram association; User credentials stay on
+the server and are never refreshed by this inspection. Independent Facebook Login
+User mode remains supported. This source behavior does not establish live
+webhook delivery, subscription configuration, owner opt-in or provider approval.

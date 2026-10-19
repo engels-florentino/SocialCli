@@ -134,7 +134,9 @@ class WebhookStore:
         try:
             payload = json.loads(row[1])["change"]
             if payload["field"] == "mentions":
-                observation = client.mentioned_comment(payload["value"].get("comment_id"), row[0])
+                if "comment_id" in payload["value"]:
+                    meta_id(payload["value"]["comment_id"])
+                observation = client.inspect_mention(row[0], payload["value"].get("comment_id"))
             else:
                 observation = client.content(row[0])
             state = "read_only_observed"

@@ -68,3 +68,52 @@ def test_invalid_or_excessive_payload_rejected_before_persistence(tmp_path, raw)
     with pytest.raises(ValueError):
         store.ingest(raw, signature(raw), "APP_SECRET")
     assert not store.events()
+
+@pytest.mark.parametrize('comment', ['800', None, 'invalid'])
+def test_instagram_mentions_dispatch_exact_read_shape(tmp_path, comment):
+    from types import SimpleNamespace
+    from socialctl.models import Platform
+    _, brand, _, _, _ = service(tmp_path)
+    brand.cuentas['instagram'] = {'ig_user_id': '456'}
+    value = {'media_id': '789'}
+    if comment is not None:
+        value['comment_id'] = comment
+    raw = json.dumps({'object': 'instagram', 'entry': [{'id': '456', 'time': 100,
+        'changes': [{'field': 'mentions', 'value': value}]}]}).encode()
+    store = module().WebhookStore(brand, 'instagram')
+    store.ingest(raw, signature(raw), 'APP_SECRET')
+    calls = []
+    def inspect(media, selected_comment):
+        calls.append((media, selected_comment))
+        return {'id': selected_comment or media, 'media_id': media}
+    client = SimpleNamespace(brand=brand, platform=Platform.INSTAGRAM, account_id='456', inspect_mention=inspect)
+    result = store.reconcile(client, store.events()[0]['id'])
+    assert result['remote_writes'] == 0
+    assert result['state'] == ('unresolved' if comment == 'invalid' else 'read_only_observed')
+    assert calls == ([] if comment == 'invalid' else [('789', comment)])
+
+@pytest.mark.parametrize('response', [
+    {'id': '456', 'mentioned_media': {'id': '789', 'caption': 'Mention', 'media_type': 'IMAGE'}},
+    {'id': '999', 'mentioned_media': {'id': '789', 'caption': 'Mention', 'media_type': 'IMAGE'}},
+    {'id': '456', 'mentioned_media': {'id': '999', 'caption': 'Mention', 'media_type': 'IMAGE'}},
+    {'id': '456'},
+])
+def test_independent_media_mention_requires_exact_selected_account_and_media(response):
+    from socialctl.management.meta_client import MetaClient
+    from socialctl.management.meta_schema import MetaError
+    from socialctl.models import Platform
+    client = object.__new__(MetaClient)
+    client.platform, client.token_mode, client.account_id = Platform.INSTAGRAM, 'facebook_user', '456'
+    client._remote_user = None
+    client.identity = lambda: {'account_id': '456'}
+    calls = []
+    def request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return response
+    client.request = request
+    if response.get('id') == '456' and response.get('mentioned_media', {}).get('id') == '789':
+        assert client.inspect_mention('789')['id'] == '789'
+    else:
+        with pytest.raises(MetaError):
+            client.inspect_mention('789')
+    assert calls == [('GET', '456', {'params': {'fields': 'id,mentioned_media.media_id(789){id,caption,media_type}'}})]

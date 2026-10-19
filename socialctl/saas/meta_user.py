@@ -24,6 +24,19 @@ USER_ACTIONS = {'media-delete': {'instagram_basic', 'instagram_manage_contents'}
 RETAIN_SECONDS = 90 * 86400
 
 
+class MentionInspection(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    media_id: str
+    comment_id: str | None = None
+
+    @model_validator(mode='after')
+    def exact_ids(self):
+        meta_id(self.media_id)
+        if 'comment_id' in self.model_fields_set:
+            meta_id(self.comment_id)
+        return self
+
+
 class UserOperation(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     phase: Literal['identity', 'inspect', 'mutate', 'status']
@@ -155,6 +168,25 @@ def install_meta_user_route(app, connections, clock):
         if not perms['complete'] or not USER_ACTIONS[action] <= scopes:
             raise HTTPException(409, 'provider_permissions_changed: Instagram management permissions are missing.')
         return client
+
+    @app.post('/api/saas/v1/connections/{connection_id}/instagram-mention-inspect')
+    def inspect_mention(connection_id: str, body: MentionInspection, request: Request):
+        with vault.transaction() as db:
+            cap, grant = authorized(db, connection_id, request)
+        try:
+            client = user_client(cap, grant, SimpleNamespace(action='mention-reply'), connection_id)
+            identity = client.identity()
+            before = client.inspect_mention(body.media_id, body.comment_id)
+            with vault.transaction() as db:
+                current, current_grant = authorized(db, connection_id, request)
+                if current != cap or current_grant != grant:
+                    raise HTTPException(409, 'connection_changed: Review the current connection.')
+            return {'version': 1, 'platform': 'instagram', 'account': cap['account'],
+                    'identity': identity, 'before': before}
+        except HTTPException:
+            raise
+        except (MetaError, ValueError, KeyError, TypeError):
+            raise HTTPException(400, 'operation_rejected: Mention authorization could not be verified.') from None
 
     @app.post('/api/saas/v1/connections/{connection_id}/instagram-management')
     def operation(connection_id: str, body: UserOperation, request: Request):

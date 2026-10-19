@@ -392,6 +392,38 @@ class MetaClient:
             raise MetaError("subscription fields unverifiable")
         return {"id": self.page_id, "app_id": app_id, "subscribed_fields": sorted(fields)}
 
+    def inspect_mention(self, media_id, comment_id=None):
+        meta_id(media_id)
+        if comment_id is not None:
+            meta_id(comment_id)
+        if self._remote_user is not None:
+            body = {'media_id': media_id}
+            if comment_id is not None:
+                body['comment_id'] = comment_id
+            observation = self._remote_user.request('inspect', mention=body)['before']
+            if (observation.get('id') != (comment_id or media_id)
+                    or observation.get('media_id') != media_id):
+                raise MetaError('Mention response does not match the selected target')
+            return observation
+        if comment_id is not None:
+            return self.mentioned_comment(comment_id, media_id)
+        return self.mentioned_media(media_id)
+
+    def mentioned_media(self, media_id):
+        meta_id(media_id)
+        if self.platform is not Platform.INSTAGRAM or self.token_mode != 'facebook_user':
+            raise MetaError('Mentions require an Instagram Facebook Login User token')
+        self.identity()
+        result = self.request('GET', self.account_id, params={
+            'fields': f'id,mentioned_media.media_id({media_id}){{id,caption,media_type}}'})
+        mention = result.get('mentioned_media')
+        if (result.get('id') != self.account_id or not isinstance(mention, dict)
+                or mention.get('id') != media_id or not isinstance(mention.get('caption'), str)
+                or mention.get('media_type') not in {'IMAGE', 'VIDEO', 'CAROUSEL_ALBUM'}):
+            raise MetaError('Exact media mention of selected account was not verified')
+        return {'id': media_id, 'media_id': media_id, 'caption': mention['caption'],
+                'media_type': mention['media_type']}
+
     def mentioned_comment(self, comment_id, media_id):
         if self.platform is not Platform.INSTAGRAM or self.token_mode != "facebook_user":
             raise MetaError("mentions requires Instagram Facebook Login with USER token and comment permissions")
