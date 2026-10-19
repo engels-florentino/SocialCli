@@ -354,7 +354,9 @@ def readback(client, store, change):
             row = client.one(change.resource, change.result_id, parent=edit.playlist_id)
             actual = {p: editable(change.resource, p, row) for p in change.after}
             match = _metadata_matches(change.resource, change.after, actual)
-            _event(change, "metadata_readback", matches=match, observed=actual, bytes_verified=False)
+            raw_type = ({"provider_section_type": row.get("snippet", {}).get("type")}
+                        if change.resource == "channelSections" else {})
+            _event(change, "metadata_readback", matches=match, observed=actual, bytes_verified=False, **raw_type)
             if match:
                 if change.asset:
                     change.status = "accepted_unverifiable"

@@ -453,6 +453,46 @@ def test_section_update_and_create_preserve_types_and_content(env):
     assert apply(env, change).result_id == "created-channelSections"
 
 
+@pytest.mark.parametrize("action", ["section-create", "section-update"])
+def test_section_lowercase_provider_type_preserves_values_and_verifies(env, action):
+    api, client, store, _ = env
+    api.rows["channelSections"][0]["snippet"]["type"] = "multipleplaylists"
+    original = copy.deepcopy(api.rows["channelSections"][0])
+    kwargs = {"patch": {"snippet": {"type": "multiplePlaylists", "title": "New section", "position": 0},
+                        "contentDetails": {"playlists": ["playlist-1"]}}}
+    if action == "section-update":
+        kwargs["section_id"] = "section-1"
+    change = prepare(env, action, **kwargs)
+    if action == "section-update":
+        assert change.before["resource"] == original
+    assert change.after["snippet"]["type"] == "multiplePlaylists"
+
+    def lowercase_read(request):
+        if request.url.path.endswith("/channelSections"):
+            for row in api.rows["channelSections"]:
+                row["snippet"]["type"] = row["snippet"]["type"].lower()
+    api.on_read = lowercase_read
+    result = apply(env, change)
+    assert result.status == "verified"
+    assert len(api.writes) == 1
+    assert json.loads(api.writes[0].content)["snippet"]["type"] == "multiplePlaylists"
+    assert reconcile_owned(client, store, change.id).status == "verified"
+    assert len(api.writes) == 1
+
+
+@pytest.mark.parametrize("changed", ["popularuploads", "channelsectiontypeundefined"])
+def test_section_lowercase_readback_different_or_unknown_type_is_not_success(env, changed):
+    api = env[0]
+    change = prepare(env, "section-update", section_id="section-1", patch={"snippet": {"title": "New section"}})
+    def different_read(request):
+        if api.writes and request.url.path.endswith("/channelSections"):
+            api.rows["channelSections"][0]["snippet"]["type"] = changed
+    api.on_read = different_read
+    assert apply(env, change).status == "uncertain"
+    assert reconcile_owned(env[1], env[2], change.id).status == "uncertain"
+    assert len(api.writes) == 1
+
+
 def test_recording_date_and_video_delete_are_separate_irreversible_proposals(env):
     change = prepare(env, "video-recording-date", video_id="video-1", recording_date="2021-01-01T00:00:00Z")
     assert apply(env, change).status == "verified"

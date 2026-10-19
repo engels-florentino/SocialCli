@@ -219,19 +219,25 @@ def editable(resource, part, row):
         raise ResourceError("unsupported part")
     writable, readonly = scopes[resource, part]
     mapping(raw, writable | readonly, f"{resource}.{part}")
-    return copy.deepcopy({k: v for k, v in raw.items() if k in writable})
+    result = copy.deepcopy({k: v for k, v in raw.items() if k in writable})
+    if resource == "channelSections" and part == "snippet" and "type" in result:
+        result["type"] = section_type(result["type"])
+    return result
 
 
 def section_type(value):
     types = {"allPlaylists", "completedEvents", "liveEvents", "multipleChannels", "multiplePlaylists", "popularUploads", "recentUploads", "singlePlaylist", "subscriptions", "upcomingEvents"}
-    if not isinstance(value, str) or value not in types:
+    # Provider reads also return lowercase enum spellings. Normalize only
+    # these exact known aliases; retain raw snapshots and reject unknown enums.
+    aliases = {name.lower(): name for name in types}
+    if not isinstance(value, str) or value not in types | aliases.keys():
         raise ResourceError("unsupported section type")
-    return value
+    return aliases.get(value, value)
 
 
 def section_valid(body, account):
     snip = body["snippet"]
-    section_type(snip.get("type"))
+    snip["type"] = section_type(snip.get("type"))
     details = body.get("contentDetails", {})
     for key, ids in details.items():
         if not isinstance(ids, list) or not ids or any(not isinstance(rid, str) for rid in ids) or len(ids) != len(set(ids)):
