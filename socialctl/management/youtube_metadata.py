@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import copy
 import re
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
-from typing import Any
+from typing import Any, Callable
 
 from socialctl.management.changes import ChangeError, _validate_snippet
 from socialctl.management.metadata_parts import STATUS_FIELDS, STATUS_READ_ONLY, editable_parts, validate_localizations, validate_status
@@ -21,8 +21,8 @@ class MetadataVideo:
     resource: dict[str, Any]
 
 
-def same_metadata_snapshot(before, after):
-    """Ignore only renewed ytimg signature parameters, retaining all other state."""
+def same_metadata_snapshot(before, after, *, allow_etag_only=False):
+    """Compare every returned field, normalizing signed thumbnails and opt-in ETags."""
     if before == after:
         return True
     left, right = copy.deepcopy(before), copy.deepcopy(after)
@@ -41,8 +41,8 @@ def same_metadata_snapshot(before, after):
             if {'sqp', 'rs'} <= {k for k, _ in query}:
                 thumbnail['url'] = urlunsplit(parts._replace(query=urlencode([(k,v) for k,v in query if k not in {'sqp','rs'}])))
     changed = before.get('snippet', {}).get('thumbnails') != after.get('snippet', {}).get('thumbnails')
-    if not changed:
-        return False  # An unexplained ETag-only change remains a conflict.
+    if not changed and not allow_etag_only:
+        return False  # Other caller contracts retain strict ETag-only conflicts.
     left.pop('etag', None)
     right.pop('etag', None)
     return left == right
@@ -75,11 +75,20 @@ class YouTubeMetadataClient(YouTubeManagementClient):
         validate_status({key: value for key, value in status.items() if key in STATUS_FIELDS})
         return MetadataVideo(video_id, configured, resource["etag"], resource)
 
-    def update_parts(self, video_id: str, parts: dict[str, Any], *, etag: str) -> None:
+    def update_parts(
+        self, video_id: str, parts: dict[str, Any], *, etag: str,
+        expected_resource: dict[str, Any] | None = None,
+        before_write: Callable[[str], None] | None = None,
+    ) -> None:
         if not parts or set(parts) - {"snippet", "status", "localizations"}:
             raise YouTubeUpdateRejected("unknown mutable part")
         current = self.inspect(video_id)
-        if current.etag != etag:
+        if expected_resource is not None:
+            if (expected_resource.get("id") != video_id
+                    or expected_resource.get("etag") != etag
+                    or not same_metadata_snapshot(expected_resource, current.resource, allow_etag_only=True)):
+                raise YouTubeUpdateConflict("Observed metadata changed before PUT; no write performed")
+        elif current.etag != etag:
             raise YouTubeUpdateConflict("ETag changed before PUT; no write performed")
         current_parts = editable_parts(current.resource)
         try:
@@ -108,4 +117,6 @@ class YouTubeMetadataClient(YouTubeManagementClient):
             except ChangeError as exc:
                 raise YouTubeUpdateRejected(str(exc)) from None
 
-        self._update_parts(video_id, parts, etag=etag, before_put=validate_before_put)
+        if before_write is not None:
+            before_write(current.etag)
+        self._update_parts(video_id, parts, etag=current.etag, before_put=validate_before_put)

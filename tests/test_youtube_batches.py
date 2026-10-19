@@ -37,9 +37,10 @@ def test_partial_success_continues_and_restart_never_repeats_operations(tmp_path
     assert [ident for ident, *_ in api.writes] == ["video-1", "video-2", "video-3"]
 
 
-def test_batch_conflict_is_independent_and_etag_changes_invalidate(tmp_path):
+def test_batch_conflict_is_independent_and_actual_changes_invalidate(tmp_path):
     module, api, client, store, change, _ = proposal(tmp_path)
     api.videos["video-2"]["etag"] = "new-etag"
+    api.videos["video-2"]["contentDetails"]["duration"] = "PT2M"
     result = module.apply_batch(client, store, change.id, change.fingerprint)
     assert [op.status for op in result.operations] == ["applied", "conflict", "applied"]
     assert [ident for ident, *_ in api.writes] == ["video-1", "video-3"]
@@ -344,3 +345,45 @@ def test_tag_permutation_before_write_still_invalidates_snapshot(tmp_path):
     result = module.apply_batch(client, store, change.id, change.fingerprint)
     assert result.operations[0].status == "conflict"
     assert not api.writes
+
+
+@pytest.mark.parametrize('second_change', [None, 'etag', 'title', 'extra', 'duration'])
+def test_etag_churn_requires_full_snapshot_at_both_reads(tmp_path, monkeypatch, second_change):
+    module, api, client, store, batch, _ = proposal(tmp_path, names=('video-1',))
+    observed = copy.deepcopy(batch.operations[0].observed)
+    api.videos['video-1']['etag'] = 'etag-apply'
+    inspect = client.inspect
+    reads = 0
+    def changing_read(ident):
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            video = api.videos[ident]
+            if second_change == 'etag': video['etag'] = 'etag-final'
+            if second_change == 'title': video['snippet']['title'] = 'Concurrent title'
+            if second_change == 'extra': video['extraField'] = 'Concurrent value'
+            if second_change == 'duration': video['contentDetails']['duration'] = 'PT2M'
+        return inspect(ident)
+    monkeypatch.setattr(client, 'inspect', changing_read)
+    result = module.apply_batch(client, store, batch.id, batch.fingerprint)
+    op = result.operations[0]
+    assert op.observed == observed
+    if second_change in {None, 'etag'}:
+        assert op.status == 'applied' and len(api.writes) == 1
+        expected_etag = 'etag-final' if second_change == 'etag' else 'etag-apply'
+        assert api.writes[0][2]['if-match'] == expected_etag
+        intents = [entry for entry in op.journal if entry['event'] == 'write_intent']
+        assert intents[-1]['if_match'] == expected_etag
+    else:
+        assert op.status == 'conflict' and not api.writes
+
+
+def test_etag_equivalence_does_not_retry_conditional_412(tmp_path):
+    module, api, client, store, batch, _ = proposal(tmp_path, names=('video-1',))
+    api.videos['video-1']['etag'] = 'etag-current'
+    api.failures['video-1'] = 412
+    for _ in range(2):
+        result = module.apply_batch(client, store, batch.id, batch.fingerprint)
+        assert result.operations[0].status == 'conflict'
+    assert len(api.writes) == 1
+    assert api.writes[0][2]['if-match'] == 'etag-current'

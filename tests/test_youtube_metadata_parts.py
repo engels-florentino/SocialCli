@@ -286,3 +286,17 @@ def test_direct_status_boundary_rejects_expired_preserved_publish_at(tmp_path, m
         client.update_parts("video-1", outgoing, etag="etag-1")
     assert outgoing["status"]["publishAt"] == "2099-01-01T00:00:00Z"
     assert api.writes == [] and api.videos["video-1"] == original
+
+
+def test_direct_client_without_full_snapshot_retains_strict_etag_gate(tmp_path):
+    from socialctl.management.youtube import YouTubeUpdateConflict
+    module = parts()
+    api = API()
+    client = api.client(brand_at(tmp_path))
+    observed = client.inspect('video-1')
+    _, after = module.propose_parts(observed, module.MetadataEdit(
+        video_id='video-1', kind='privacy', patch={'privacyStatus': 'unlisted'}))
+    api.videos['video-1']['etag'] = 'opaque-renewal'
+    with pytest.raises(YouTubeUpdateConflict):
+        client.update_parts('video-1', after, etag=observed.etag)
+    assert not api.writes

@@ -222,7 +222,7 @@ def _apply_operation(client, store, batch, op):
         _event(op, "reconciled_read_only", mismatch_paths=", ".join(mismatches))
         store.save(batch)
         return
-    if not same_metadata_snapshot(op.observed, current.resource):
+    if not same_metadata_snapshot(op.observed, current.resource, allow_etag_only=True):
         op.status = "conflict"
         _event(op, "observed_state_changed")
         store.save(batch)
@@ -242,7 +242,13 @@ def _apply_operation(client, store, batch, op):
     _event(op, "write_intent", approval=batch.fingerprint, if_match=current.etag)
     store.save(batch)  # durable intent MUST finish before PUT
     try:
-        client.update_parts(op.video_id, op.after, etag=current.etag)
+        def record_verified_etag(etag):
+            if etag != current.etag:
+                _event(op, "write_intent", approval=batch.fingerprint, if_match=etag)
+                store.save(batch)
+
+        client.update_parts(op.video_id, op.after, etag=current.etag,
+                            expected_resource=current.resource, before_write=record_verified_etag)
     except YouTubeUpdateConflict:
         op.status = "conflict"
         _event(op, "etag_conflict")
