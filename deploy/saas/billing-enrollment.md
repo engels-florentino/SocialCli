@@ -65,9 +65,43 @@ uv run python scripts/enroll_legacy_test_billing.py recover
 These examples describe the interface; they are not permission to execute it.
 Use an already provisioned, reviewed runtime without dependency/network fetching.
 The reviewed source tree must contain the script at its fixed repository path.
-Initialization/import failures produce the same sanitized failure as other
-failures. stdout contains only fixed statuses, counts and hashes. Exit 0 means
+Initialization/import failures produce a sanitized failure. stdout contains only
+fixed statuses, diagnostic codes, counts and hashes. Exit 0 means
 the named operation completed, 1 means refusal/failure, and 2 means uncertainty.
+Retain stdout and the exit code even when nonzero; an operator wrapper must not
+discard an `uncertain` JSON result merely because the process exits 2.
+
+Failure and uncertainty summaries add a `diagnostic` object containing only
+fixed `stage` and `error_code` strings. Existing status fields and successful
+summaries remain unchanged; this additive CLI summary extension does not change
+the closed Evidence, Manifest, Receipt or Verification artifact contracts.
+Consumers with closed summary parsers must allow this field on non-success.
+
+| Stage | Error code | Observed boundary |
+| --- | --- | --- |
+| `cli_bootstrap` | `bootstrap_failed` | Script import or an otherwise uncaught interruption. |
+| `cli_arguments` | `invalid_arguments` | Command validation. |
+| `runtime_load` | `runtime_load_failed` | Protected policy/registry and runtime inputs. |
+| `cli_preparation` | `operation_preparation_failed` | Destination or encryption-key preparation before dispatch. |
+| `prepare` | `preparation_failed` | Manifest preparation. |
+| `apply_precommit` | `precommit_rejected` | Apply refused before attempting COMMIT. |
+| `apply_commit` | `commit_outcome_unknown` | COMMIT was attempted without an observed successful return. |
+| `apply_postcommit` | `completion_unverified` | Acknowledgement time check. |
+| `apply_readback` | `completion_unverified` | Opening/authenticating/validating the fresh readback. |
+| `apply_receipt` | `completion_unverified` | Constructing, rechecking identity, encoding or durably writing the Receipt. |
+| `apply_cleanup` | `completion_unverified` | Readback or writer connection exit after the Receipt write returned. |
+| `verify` | `verification_failed` | Receipt-backed verification. |
+| `recover` | `recovery_failed` | Read-only recovery. |
+| `recover` | `receipt_missing` | Exact delta verified, but no registered Receipt establishes commit time. |
+
+A detected baseline mismatch retains `status: baseline_mismatch`, exit 1, and
+uses `error_code: baseline_mismatch` at the observed stage. Once apply attempts
+COMMIT, any caught exception or interruption instead retains `status: uncertain`
+and exit 2, including a later mismatch. Stage identifies where completion
+stopped, not a root cause, proof of rollback, or absence of a partially or fully
+written Receipt. No exception text, traceback, paths or private payloads are
+included. Uncatchable termination can still prevent output entirely; missing
+output never authorizes replay.
 
 ## Closed artifact contracts and the implementation extension
 
@@ -230,10 +264,22 @@ commits. No replacement/upsert, index update, constructor, migration, cleanup or
 provider request occurs.
 
 With writers frozen, a new read-only connection checks the exact full delta and
-writes a Receipt. `committed_at` is the observed successful COMMIT acknowledgement
+writes a Receipt while the committed writer connection remains open. This
+prevents SQLite's last-writer close from removing WAL sidecars before readback;
+the readback still uses a separate query-only transaction and all existing
+custody checks. `committed_at` is the observed successful COMMIT acknowledgement
 in UTC seconds, within the original window. A commit attempt with uncertain
 acknowledgement, late acknowledgement, failed readback or failed receipt write
 returns `uncertain`; it never retries the INSERT. Precommit failures roll back.
+
+The existing WAL custody limitation remains: later standalone reads require
+both protected WAL/SHM sidecars to exist. A checkpointed WAL database whose last
+connection removed both sidecars is refused without recreating them, including
+by `verify` and `recover`. This patch does not relax that read-only policy or
+switch to immutable reads. Successful apply/Receipt creation therefore does not
+guarantee a subsequent closed-WAL verification can run. Handling paired absence
+requires a separately reviewed custody/lifecycle change; do not bypass checks
+or infer failure of the retained Receipt from that refusal.
 
 `verify` requires the immutable Manifest/Evidence/approvals and established
 Receipt. It validates approvals at the original acknowledged operation time,

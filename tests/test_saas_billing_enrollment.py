@@ -448,7 +448,8 @@ def test_lost_receipt_is_uncertain_full_delta_only_and_never_replays(tmp_path,mo
     original=api().write_private
     def disk_full(*args,**kwargs): raise OSError('fictional private disk diagnostic')
     monkeypatch.setattr(api(),'write_private',disk_full)
-    assert p.apply()=={'status':'uncertain'}
+    assert p.apply()=={'status':'uncertain', 'diagnostic': {
+        'stage': 'apply_receipt', 'error_code': 'completion_unverified'}}
     monkeypatch.setattr(api(),'write_private',original)
     before=frozen(p.vault.path)
     p.now+=1000
@@ -479,7 +480,7 @@ def test_policy_role_forgery_and_unapproved_tool_image_are_rejected(tmp_path,mon
     assert frozen(p.vault.path)==before
 
 
-@pytest.mark.parametrize('fault',['insert_conflict','disk_full','before_commit','lost_commit_ack','readback_failure'])
+@pytest.mark.parametrize('fault',['insert_conflict','disk_full','before_commit','lost_commit_ack','readback_failure', 'postcommit_check'])
 def test_transaction_faults_rollback_before_commit_and_preserve_uncertainty_after(tmp_path,monkeypatch,fault):
     p=Package(tmp_path,monkeypatch); p.prepare()
     before=frozen(p.vault.path)
@@ -505,12 +506,20 @@ def test_transaction_faults_rollback_before_commit_and_preserve_uncertainty_afte
             raise OSError('fictional readback failure')
         return Connection(connect(path,*args,**kwargs))
     monkeypatch.setattr(api().sqlite3,'connect',wrapped)
-    if fault=='before_commit':
-        with pytest.raises(Crash): p.apply()
-    elif fault in {'insert_conflict','disk_full'}:
-        with pytest.raises(ValueError): p.apply()
+    final_check = api().final_time_check
+    def check(*args):
+        if committed[0] and fault == 'postcommit_check':
+            raise ValueError('fictional private postcommit check')
+        return final_check(*args)
+    monkeypatch.setattr(api(), 'final_time_check', check)
+    if fault in {'insert_conflict','disk_full'}:
+        with pytest.raises(api().EnrollmentError) as caught: p.apply()
+        assert caught.value.stage == 'apply_precommit'
+        assert str(caught.value) == api().ERROR
     else:
-        assert p.apply()=={'status':'uncertain'}
+        stage = {'before_commit': 'apply_commit', 'lost_commit_ack': 'apply_commit',
+                 'readback_failure': 'apply_readback', 'postcommit_check': 'apply_postcommit'}[fault]
+        assert p.apply()=={'status':'uncertain', 'diagnostic': api().diagnostic(stage)}
     monkeypatch.setattr(api().sqlite3,'connect',connect)
     if not committed[0]: assert frozen(p.vault.path)==before
     else:
@@ -595,11 +604,13 @@ def test_script_failures_are_fixed_sanitized_even_for_bad_args_and_imports(tmp_p
     result=subprocess.run([sys.executable,str(script),'apply','private-token-never-echo'],capture_output=True,text=True)
     assert result.returncode==1
     assert result.stderr==''
-    assert json.loads(result.stdout)=={'status':'failed','error':'Enrollment operation failed.'}
+    assert json.loads(result.stdout)=={'status':'failed','error':'Enrollment operation failed.',
+        'diagnostic': {'stage': 'cli_arguments', 'error_code': 'invalid_arguments'}}
     isolated=tmp_path/'isolated.py'; isolated.write_bytes(script.read_bytes())
-    result=subprocess.run([sys.executable,'-I',str(isolated),'apply'],capture_output=True,text=True,env={'PATH':os.environ['PATH']})
+    result=subprocess.run([sys.executable,'-I','-S',str(isolated),'apply'],capture_output=True,text=True,env={'PATH':os.environ['PATH']})
     assert result.returncode==1 and result.stderr==''
-    assert json.loads(result.stdout)=={'status':'failed','error':'Enrollment operation failed.'}
+    assert json.loads(result.stdout)=={'status':'failed','error':'Enrollment operation failed.',
+        'diagnostic': {'stage': 'cli_bootstrap', 'error_code': 'bootstrap_failed'}}
 
 
 @pytest.mark.parametrize('attack', ['extra_field', 'wrong_scalar', 'false_classification'])
@@ -849,3 +860,211 @@ def test_review_r2_resealed_unknown_copy_schema_is_refused(tmp_path,monkeypatch,
     p.objects['compatibility']['facts'].update(before=delta['post'],after=delta['post'])
     bind_rehearsal_compatibility(p)
     with pytest.raises(ValueError): p.prepare()
+
+
+def enrollment_cli(p, monkeypatch, command, destination):
+    """Actual script/CLI boundary with independently generated fictional custody."""
+    import runpy
+    import sys
+    monkeypatch.setattr(sys, 'argv', ['enroll_legacy_test_billing.py', command])
+    monkeypatch.setenv('SOCIALCLI_BILLING_ENROLLMENT_POLICY', str(p.policy_path))
+    monkeypatch.setenv('SOCIALCLI_BILLING_ENROLLMENT_IMAGE_DIGEST', p.image_digest)
+    monkeypatch.setenv('SOCIALCLI_BILLING_ENROLLMENT_DESTINATION', str(destination))
+    monkeypatch.delenv('SOCIALCLI_ENCRYPTION_KEYS_FILE', raising=False)
+    monkeypatch.setenv('SOCIALCLI_ENCRYPTION_KEYS', ','.join(key.decode() for key in p.keys))
+    with pytest.raises(SystemExit) as caught:
+        runpy.run_path(str(api().source_paths()['enroll_legacy_test_billing.py']), run_name='__main__')
+    return caught.value.code
+
+
+def test_cli_receipt_failure_retains_uncertainty_exit_two_and_readonly_recovery(tmp_path, monkeypatch, capsys):
+    p = Package(tmp_path, monkeypatch); p.prepare()
+    write = api().write_private
+    def refuse(*args, **kwargs):
+        raise OSError('fictional-secret-never-export')
+    monkeypatch.setattr(api(), 'write_private', refuse)
+    assert enrollment_cli(p, monkeypatch, 'apply', p.directory / 'receipt.json') == 2
+    output = capsys.readouterr()
+    assert output.err == ''
+    assert json.loads(output.out) == {'status': 'uncertain', 'diagnostic': {
+        'stage': 'apply_receipt', 'error_code': 'completion_unverified'}}
+    monkeypatch.setattr(api(), 'write_private', write)
+    before = frozen(p.vault.path)
+    assert enrollment_cli(p, monkeypatch, 'recover', p.directory / 'recovery.json') == 2
+    output = capsys.readouterr()
+    result = json.loads(output.out)
+    assert output.err == ''
+    assert result['status'] == 'uncertain' and result['delta'] == 'exact_delta_verified'
+    assert result['diagnostic'] == {'stage': 'recover', 'error_code': 'receipt_missing'}
+    assert result['rows_added'] == 1
+    assert not (p.directory / 'recovery.json').exists()
+    assert frozen(p.vault.path) == before
+    assert enrollment_cli(p, monkeypatch, 'apply', p.directory / 'receipt.json') == 1
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {'status': 'failed', 'error': api().ERROR,
+        'diagnostic': {'stage': 'apply_precommit', 'error_code': 'precommit_rejected'}}
+    assert output.err == '' and frozen(p.vault.path) == before
+
+
+@pytest.mark.parametrize(('command', 'function', 'stage', 'code'), [
+    ('apply', 'load_runtime', 'runtime_load', 'runtime_load_failed'),
+    ('apply', 'runtime_keys', 'cli_preparation', 'operation_preparation_failed'),
+    ('prepare', 'prepare', 'prepare', 'preparation_failed'),
+    ('verify', 'verify', 'verify', 'verification_failed'),
+    ('recover', 'recover', 'recover', 'recovery_failed'),
+])
+def test_cli_failed_boundaries_are_fixed_and_preserve_database(tmp_path, monkeypatch, capsys,
+                                                              command, function, stage, code):
+    p = Package(tmp_path, monkeypatch); p.prepare()
+    before = frozen(p.vault.path)
+    def refuse(*args, **kwargs):
+        raise ValueError('fictional-secret-never-export')
+    monkeypatch.setattr(api(), function, refuse)
+    assert enrollment_cli(p, monkeypatch, command, p.directory / 'unused.json') == 1
+    output = capsys.readouterr()
+    assert output.err == ''
+    assert json.loads(output.out) == {'status': 'failed', 'error': api().ERROR,
+        'diagnostic': {'stage': stage, 'error_code': code}}
+    assert frozen(p.vault.path) == before
+    assert not (p.directory / 'unused.json').exists()
+
+
+def test_cli_recovery_baseline_mismatch_is_not_reclassified_as_apply_failure(tmp_path, monkeypatch, capsys):
+    p = Package(tmp_path, monkeypatch); p.prepare(); p.apply()
+    with sqlite3.connect(p.vault.path) as db:
+        db.execute('UPDATE rates SET count=count+1')
+    before = frozen(p.vault.path)
+    assert enrollment_cli(p, monkeypatch, 'recover', p.directory / 'recovery.json') == 1
+    output = capsys.readouterr()
+    assert output.err == ''
+    assert json.loads(output.out) == {'status': 'baseline_mismatch', 'diagnostic': {
+        'stage': 'recover', 'error_code': 'baseline_mismatch'}}
+    assert frozen(p.vault.path) == before
+    assert not (p.directory / 'recovery.json').exists()
+
+
+def test_wal_apply_keeps_committed_writer_alive_through_independent_readback(tmp_path, monkeypatch):
+    """Last-holder lifecycle regression, not historical incident attribution."""
+    p = Package(tmp_path, monkeypatch); p.prepare()
+    connect = sqlite3.connect
+    keeper = connect(p.vault.path)
+    assert keeper.execute('PRAGMA journal_mode=WAL').fetchone() == ('wal',)
+    keeper.execute('SELECT count(*) FROM records').fetchone()
+    events = []
+    class Connection:
+        def __init__(self, connection, mode):
+            self.connection = connection; self.mode = mode
+        def __getattr__(self, name): return getattr(self.connection, name)
+        def execute(self, sql, *args, **kwargs):
+            result = self.connection.execute(sql, *args, **kwargs)
+            if sql == 'COMMIT':
+                events.append('commit')
+                keeper.close()  # Only the enrollment writer now keeps WAL alive.
+            if sql == 'BEGIN' and self.mode == 'ro':
+                assert self.connection.execute('PRAGMA query_only').fetchone() == (1,)
+                events.append('readback')
+            return result
+        def close(self):
+            events.append('close_' + self.mode)
+            return self.connection.close()
+    def wrapped(path, *args, **kwargs):
+        return Connection(connect(path, *args, **kwargs), 'ro' if 'mode=ro' in str(path) else 'rw')
+    monkeypatch.setattr(api().sqlite3, 'connect', wrapped)
+    try:
+        result = p.apply()
+    finally:
+        keeper.close()
+        monkeypatch.setattr(api().sqlite3, 'connect', connect)
+    assert result['status'] == 'one_binding_insert_verified'
+    assert 'diagnostic' not in result
+    assert events == ['commit', 'readback', 'close_ro', 'close_rw']
+    p.register_receipt()
+    receipt = p.s.parse_artifact((p.directory / 'receipt.json').read_bytes(), p.s.Receipt)
+    assert receipt.committed_at == p.now
+    assert receipt.post_excluding_binding == receipt.baseline
+    assert not Path(str(p.vault.path) + '-wal').exists()
+    assert not Path(str(p.vault.path) + '-shm').exists()
+    before = frozen(p.vault.path)
+    # The existing no-sidecar-creation custody guard is unchanged for later reads.
+    with pytest.raises(api().EnrollmentError):
+        api().verify(p.runtime(), p.keys, p.directory / 'verification.json')
+    assert frozen(p.vault.path) == before
+    # Ordinary SQLite ownership supplies sidecars for a subsequent verification.
+    observer = connect(p.vault.path)
+    try:
+        observer.execute('SELECT count(*) FROM records').fetchone()
+        verified = api().verify(p.runtime(), p.keys, p.directory / 'verification.json')
+        assert verified['status'] == 'exact_delta_verified'
+    finally:
+        observer.close()
+
+
+@pytest.mark.parametrize('sidecar', ['-wal', '-shm'])
+@pytest.mark.parametrize('fault', ['symlink', 'hardlink', 'mode', 'missing'])
+def test_wal_unsafe_or_single_missing_sidecar_still_rejects_before_commit(tmp_path, monkeypatch,
+                                                                       sidecar, fault):
+    p = Package(tmp_path, monkeypatch); p.prepare()
+    keeper = sqlite3.connect(p.vault.path)
+    try:
+        keeper.execute('PRAGMA journal_mode=WAL')
+        keeper.execute('SELECT count(*) FROM records').fetchone()
+        path = Path(str(p.vault.path) + sidecar)
+        if fault == 'symlink':
+            original = path.with_name(path.name + '.original')
+            path.rename(original); path.symlink_to(original)
+        elif fault == 'hardlink':
+            os.link(path, path.with_name(path.name + '.alias'))
+        elif fault == 'mode':
+            path.chmod(0o640)
+        else:
+            path.unlink()
+        before = frozen(p.vault.path)
+        with pytest.raises(api().EnrollmentError) as caught:
+            p.apply()
+        assert caught.value.stage == 'apply_precommit'
+        assert frozen(p.vault.path) == before
+        assert keeper.execute("SELECT count(*) FROM records WHERE kind='saas-billing-environment'").fetchone() == (0,)
+        assert not (p.directory / 'receipt.json').exists()
+    finally:
+        keeper.close()
+
+
+@pytest.mark.parametrize('mode', ['ro', 'rw'])
+def test_connection_cleanup_failure_after_receipt_stays_uncertain(tmp_path, monkeypatch, mode):
+    p = Package(tmp_path, monkeypatch); p.prepare()
+    connect = sqlite3.connect
+    class Connection:
+        def __init__(self, connection, selected):
+            self.connection = connection; self.selected = selected
+        def __getattr__(self, name): return getattr(self.connection, name)
+        def close(self):
+            self.connection.close()
+            if self.selected:
+                raise OSError('fictional-private-cleanup-message')
+    def wrapped(path, *args, **kwargs):
+        selected = ('mode=ro' in str(path)) == (mode == 'ro')
+        return Connection(connect(path, *args, **kwargs), selected)
+    monkeypatch.setattr(api().sqlite3, 'connect', wrapped)
+    assert p.apply() == {'status': 'uncertain', 'diagnostic': {
+        'stage': 'apply_cleanup', 'error_code': 'completion_unverified'}}
+    monkeypatch.setattr(api().sqlite3, 'connect', connect)
+    p.register_receipt()
+    assert api().verify(p.runtime(), p.keys, p.directory / 'verification.json')['status'] == 'exact_delta_verified'
+
+
+def test_postcommit_baseline_mismatch_is_uncertain_not_precommit_rejection(tmp_path, monkeypatch):
+    p = Package(tmp_path, monkeypatch); p.prepare()
+    validate = api().validate_manifest
+    calls = []
+    def mismatch(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 3:  # Independent readback, following pre/post-insert validation.
+            raise api().BaselineMismatch('fictional-private-mismatch-message')
+        return validate(*args, **kwargs)
+    monkeypatch.setattr(api(), 'validate_manifest', mismatch)
+    assert p.apply() == {'status': 'uncertain', 'diagnostic': {
+        'stage': 'apply_readback', 'error_code': 'completion_unverified'}}
+    monkeypatch.setattr(api(), 'validate_manifest', validate)
+    recovered = api().recover(p.runtime(), p.keys, p.directory / 'recovery.json')
+    assert recovered['status'] == 'uncertain' and recovered['delta'] == 'exact_delta_verified'
+    assert not (p.directory / 'receipt.json').exists()

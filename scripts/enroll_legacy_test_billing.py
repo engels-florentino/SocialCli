@@ -5,6 +5,7 @@ if __name__ == '__main__':
         from socialctl.saas.billing_enrollment import main
         result = main()
     except BaseException:
-        print('{"status":"failed","error":"Enrollment operation failed."}')
+        print('{"status":"failed","error":"Enrollment operation failed.",'
+              '"diagnostic":{"stage":"cli_bootstrap","error_code":"bootstrap_failed"}}')
         result = 1
     raise SystemExit(result)

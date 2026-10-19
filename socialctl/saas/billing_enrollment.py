@@ -23,10 +23,34 @@ from . import billing_enrollment_schema as s
 BINDING_KEY = ('saas-billing-environment', 'active')
 ERROR = 'Enrollment operation failed.'
 MAX_ARTIFACT_BYTES = 16 * 1024 * 1024
+# Observation boundaries, never exception messages or inferred root causes.
+_STAGE_CODES = {
+    'cli_arguments': 'invalid_arguments',
+    'runtime_load': 'runtime_load_failed',
+    'cli_preparation': 'operation_preparation_failed',
+    'prepare': 'preparation_failed',
+    'apply_precommit': 'precommit_rejected',
+    'apply_commit': 'commit_outcome_unknown',
+    'apply_postcommit': 'completion_unverified',
+    'apply_readback': 'completion_unverified',
+    'apply_receipt': 'completion_unverified',
+    'apply_cleanup': 'completion_unverified',
+    'verify': 'verification_failed',
+    'recover': 'recovery_failed',
+}
+
+
+def diagnostic(stage, *, baseline_mismatch=False):
+    return {'stage': stage, 'error_code': ('baseline_mismatch' if baseline_mismatch
+                                          else _STAGE_CODES[stage])}
 
 
 class EnrollmentError(ValueError):
     """Fixed diagnostics only; never include source payloads or exceptions."""
+
+    def __init__(self, message=ERROR, *, stage=None):
+        super().__init__(ERROR)
+        self.stage = stage
 
 
 class BaselineMismatch(EnrollmentError):
@@ -1044,8 +1068,8 @@ def final_time_check(runtime, manifest, now):
 def apply(runtime, keys, destination):
     """One uniqueness-enforced INSERT. Acknowledgement failure never replays it."""
     clock = Clock()
-    committed = False
     commit_attempted = False
+    stage = 'apply_precommit'
     try:
         inv._destination(destination)
         runtime = runtime.fresh()
@@ -1072,32 +1096,45 @@ def apply(runtime, keys, destination):
             validate_manifest(runtime, manifest, after, evidence, clock.now(), enrolled=True)
             current.check_identity()
             final_time_check(runtime, manifest, clock.now())
+            stage = 'apply_commit'
             commit_attempted = True
             current.db.execute('COMMIT')
-            committed = True
+            stage = 'apply_postcommit'
             committed_at = clock.now()  # Observed successful COMMIT acknowledgement, not reconstructed history.
             final_time_check(runtime, manifest, committed_at)
-        with database(Path(runtime.policy.target.database_path), keys) as readback:
-            runtime.fresh()
-            validate_manifest(runtime, manifest, readback, evidence, committed_at, enrolled=True)
-            excluding, digest = exact_delta(readback, manifest)
-            require(digest == sha256(ciphertext))
-            receipt = s.Receipt.model_validate({
-                'schema': 'socialcli-legacy-enrollment-receipt/v1', 'nonce': manifest.nonce,
-                'manifest_sha256': manifest_entry.sha256, 'evidence_sha256': manifest.evidence_sha256,
-                'approval_sha256': approvals, 'target': manifest.target.model_dump(),
-                'committed_at': committed_at, 'baseline': manifest.baseline.model_dump(),
-                'post': readback.root.model_dump(), 'post_excluding_binding': excluding.model_dump(),
-                'binding_ciphertext_sha256': digest, 'result': 'one_binding_insert_verified',
-            })
-            readback.check_identity()
-            receipt_digest = write_private(destination, encode(receipt))
+            # Keep the committed connection alive until independent readback
+            # finishes. Closing the last WAL writer can remove its sidecars;
+            # the read-only custody guard must not recreate or bypass them.
+            stage = 'apply_readback'
+            with database(Path(runtime.policy.target.database_path), keys) as readback:
+                runtime.fresh()
+                validate_manifest(runtime, manifest, readback, evidence, committed_at, enrolled=True)
+                excluding, digest = exact_delta(readback, manifest)
+                require(digest == sha256(ciphertext))
+                readback.check_identity()
+                stage = 'apply_receipt'
+                receipt = s.Receipt.model_validate({
+                    'schema': 'socialcli-legacy-enrollment-receipt/v1', 'nonce': manifest.nonce,
+                    'manifest_sha256': manifest_entry.sha256, 'evidence_sha256': manifest.evidence_sha256,
+                    'approval_sha256': approvals, 'target': manifest.target.model_dump(),
+                    'committed_at': committed_at, 'baseline': manifest.baseline.model_dump(),
+                    'post': readback.root.model_dump(), 'post_excluding_binding': excluding.model_dump(),
+                    'binding_ciphertext_sha256': digest, 'result': 'one_binding_insert_verified',
+                })
+                readback.check_identity()
+                receipt_digest = write_private(destination, encode(receipt))
+                stage = 'apply_cleanup'
         return {'status': 'one_binding_insert_verified', 'receipt_sha256': receipt_digest,
                 'rows_added': 1, 'post_sha256': receipt.post.state_sha256}
-    except Exception:
-        if committed or commit_attempted:
-            return {'status': 'uncertain'}
-        raise
+    except BaseException as error:
+        # Even a catchable interruption during COMMIT cannot establish rollback.
+        # Process termination/power loss may still prevent any output at all.
+        if commit_attempted:
+            return {'status': 'uncertain', 'diagnostic': diagnostic(stage)}
+        if not isinstance(error, Exception):
+            raise
+        kind = BaselineMismatch if isinstance(error, BaselineMismatch) else EnrollmentError
+        raise kind(stage=stage) from None
 
 
 def verify(runtime, keys, destination):
@@ -1150,6 +1187,7 @@ def recover(runtime, keys, destination):
         runtime.fresh()
         current.check_identity()
         return {'status': 'uncertain', 'delta': 'exact_delta_verified',
+                'diagnostic': {'stage': 'recover', 'error_code': 'receipt_missing'},
                 'manifest_sha256': manifest_entry.sha256, 'post_sha256': current.root.state_sha256,
                 'post_excluding_binding_sha256': excluding.state_sha256,
                 'binding_ciphertext_sha256': digest, 'rows_added': 1}
@@ -1172,19 +1210,28 @@ def runtime_keys():
 def main():
     """Only four commands, protected environment paths, and sanitized statuses."""
     import sys
+    stage = 'cli_arguments'
     try:
         require(len(sys.argv) == 2 and sys.argv[1] in {'prepare', 'apply', 'verify', 'recover'})
+        stage = 'runtime_load'
         runtime = load_runtime(Path(os.environ['SOCIALCLI_BILLING_ENROLLMENT_POLICY']),
                                image_digest=os.environ['SOCIALCLI_BILLING_ENROLLMENT_IMAGE_DIGEST'])
+        stage = 'cli_preparation'
         destination = Path(os.environ['SOCIALCLI_BILLING_ENROLLMENT_DESTINATION'])
         require(destination.parent == Path(runtime.policy.custody_directory))
         operation = {'prepare': prepare, 'apply': apply, 'verify': verify, 'recover': recover}[sys.argv[1]]
-        summary = operation(runtime, runtime_keys(), destination)
+        keys = runtime_keys()
+        stage = sys.argv[1] if sys.argv[1] != 'apply' else 'apply_precommit'
+        summary = operation(runtime, keys, destination)
         print(json.dumps(summary, sort_keys=True))
         return 2 if summary['status'] == 'uncertain' else 0
-    except BaselineMismatch:
-        print('{"status":"baseline_mismatch"}')
-        return 1
-    except Exception:
-        print('{"status":"failed","error":"Enrollment operation failed."}')
+    except Exception as error:
+        if isinstance(error, EnrollmentError) and error.stage in _STAGE_CODES:
+            stage = error.stage
+        mismatch = isinstance(error, BaselineMismatch)
+        summary = {'status': 'baseline_mismatch' if mismatch else 'failed',
+                   'diagnostic': diagnostic(stage, baseline_mismatch=mismatch)}
+        if not mismatch:
+            summary['error'] = ERROR
+        print(json.dumps(summary, sort_keys=True))
         return 1
