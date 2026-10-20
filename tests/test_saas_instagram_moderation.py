@@ -12,7 +12,7 @@ EDIT={'action':'comment-moderate','target_id':'789','comment_id':'800','hide':Tr
 
 class ModerationProvider(MetaProvider):
     def __init__(self):
-        super().__init__();self.hidden=False;self.author='777';self.incomplete=False;self.actor='111'
+        super().__init__();self.hidden=False;self.author='777';self.incomplete=False;self.actor='111';self.comment_media='789'
 
     def __call__(self,request):
         path=request.url.path.removeprefix('/v26.0/')
@@ -20,9 +20,14 @@ class ModerationProvider(MetaProvider):
             return httpx.Response(200,json={'id':self.actor})
         if request.method=='GET' and path=='789/comments':
             assert request.headers['authorization']=='Bearer USER-PRIVATE'
-            result={'data':[{'id':'800','text':'Consenting visitor fixture','from':{'id':self.author},'hidden':self.hidden}]}
+            rows=[] if self.hidden else [{'id':'800','text':'Consenting visitor fixture','from':{'id':self.author},'hidden':False}]
+            result={'data':rows}
             if self.incomplete:result['paging']={'next':'https://graph.facebook.com/next'}
             return httpx.Response(200,json=result)
+        if request.method=='GET' and path=='800':
+            assert request.headers['authorization']=='Bearer USER-PRIVATE'
+            return httpx.Response(200,json={'id':'800','text':'Consenting visitor fixture',
+                'from':{'id':self.author},'hidden':self.hidden,'media':{'id':self.comment_media}})
         if request.method=='POST' and path=='800':
             assert request.headers['authorization']=='Bearer USER-PRIVATE'
             self.writes.append(('POST',path))

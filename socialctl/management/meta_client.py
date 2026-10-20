@@ -529,6 +529,15 @@ class MetaClient:
             result = self.comments(edit.target_id)
             rows = [r for r in result["data"] if r.get("id") == edit.comment_id]
             hidden = "is_hidden" if self.platform is Platform.FACEBOOK else "hidden"
+            if not rows and self.platform is Platform.INSTAGRAM and result["complete"]:
+                # Instagram omits hidden comments from /{media_id}/comments; verify
+                # the hidden comment object and its exact owned media binding.
+                direct = self.request("GET", edit.comment_id,
+                                      params={"fields": "id,text,from,hidden,media{id}"})
+                if (direct.get("id") == edit.comment_id
+                        and (direct.get("media") or {}).get("id") == edit.target_id
+                        and direct.get("hidden") is True):
+                    rows = [direct]
             if len(rows) != 1 or type(rows[0].get(hidden)) is not bool:
                 raise MetaError("comment/moderation status not verified on owned media")
             # New server pilot proposals need visitor eligibility. Historical
