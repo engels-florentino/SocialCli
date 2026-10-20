@@ -1,18 +1,13 @@
-# Current release state — October 20, 2026: SocialCli 0.3.0
+# Current published stable release — October 20, 2026: SocialCli 0.3.0
 
-Source version is bumped to **0.3.0** after closing the October 18–20 audit
-remediation and the complete 197-variant / 87-case QA ledger (including the
-delayed YouTube Reporting `channel_reach_basic_a1` job `4dcf4434-c286-47e1-9f4a-c1606b71ed9a`,
-downloaded, imported, verified, and deleted).
+**SocialCli 0.3.0 (`v0.3.0`, commit `54b5d631a26dfd04922b6a5af97444731e74f5e9`) is published on both TestPyPI and production PyPI** after owner approval of the protected `testpypi` ([Run #39401837350](https://github.com/engels-florentino/SocialCli/actions/runs/39401837350)) and `pypi` ([Run #39401839697](https://github.com/engels-florentino/SocialCli/actions/runs/39401839697)) release workflows, and after closing the October 18–20 audit remediation and the complete 197-variant / 87-case QA ledger (including the delayed YouTube Reporting `channel_reach_basic_a1` job `4dcf4434-c286-47e1-9f4a-c1606b71ed9a`, downloaded, imported, verified, and deleted).
 
 - **Full test suite:** **3,860 passed, 0 failed** (1 upstream Starlette/httpx deprecation warning).
-- **Reviewed `0.3.0` wheel (`socialcli-0.3.0-py3-none-any.whl`):**
+- **Published `0.3.0` wheel (`socialcli-0.3.0-py3-none-any.whl`) on TestPyPI & PyPI:**
   `40cc7410b2321b742a4b2ccdcf29807c9d147fc7656f8981e881021da7512861`
-- **Reviewed `0.3.0` sdist (`socialcli-0.3.0.tar.gz`):**
+- **Published `0.3.0` sdist (`socialcli-0.3.0.tar.gz`) on TestPyPI & PyPI:**
   `1fd12d29de79af84b382d9078469edf4346288b1719e6a8bb89755a79c42d54f`
-- **Packaged source verification:** 219 `socialctl/` files match source byte-for-byte
-  in both wheel and sdist; `scripts/release/check_artifacts.py`, `scripts/build_ui_assets.py --check`,
-  and clean-venv `scripts/release/smoke_installed.py 0.3.0` passed with `0` external calls.
+- **Downloaded PyPI verification:** Both `https://test.pypi.org/pypi/socialcli/0.3.0/json` and `https://pypi.org/pypi/socialcli/0.3.0/json` return HTTP 200 with exact matching SHA256 digests; the production PyPI wheel was downloaded, hash-verified, installed into a clean virtual environment outside the checkout, and passed `scripts/release/smoke_installed.py 0.3.0` with `0` external calls.
 
 The last verified hosted deployment is runtime commit `45fda63` (`socialcli-saas-candidate:45fda63`),
 image `sha256:955269db2fa8d33510839e7ac3f6c9e7b1fb88bc1717e0b5355121864d9c1635`
@@ -21,9 +16,6 @@ retained for rollback), observed healthy on schema10 with all four operational
 timers active, `SOCIALCLI_IG_MODERATION_PILOT` removed and Meta webhook
 subscriptions restored to `[]`.
 
-Previous public candidate **0.3.0rc16 on TestPyPI** remains immutable. Tag `v0.3.0`
-publishes first to `testpypi` and then to `pypi` via the protected `Reviewed Python release`
-workflow (`release.yml`), subject to required owner environment approvals.
 Provider commercial approvals and live Stripe billing cutover remain separate gates;
 see [provider review status](provider-review-status-2026-10-18.md),
 [independent monitoring](independent-monitoring.md) and

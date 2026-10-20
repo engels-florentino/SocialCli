@@ -1,11 +1,10 @@
 # Current rollout status
 
-Verified October 20: source version is bumped to **0.3.0** (**3,860 passed**,
-wheel `40cc7410b2321b742a4b2ccdcf29807c9d147fc7656f8981e881021da7512861`,
-sdist `1fd12d29de79af84b382d9078469edf4346288b1719e6a8bb89755a79c42d54f`)
-after closing all 197 QA variants and 87 audit/QA cases; the previously
-published client on TestPyPI remains `0.3.0rc16`; and the running hosted candidate
-image is `socialcli-saas-candidate:45fda63`
+Verified October 20: **SocialCli `0.3.0` (`v0.3.0`, commit `54b5d63`) is published on both TestPyPI and production PyPI**
+(**3,860 passed**, wheel `40cc7410b2321b742a4b2ccdcf29807c9d147fc7656f8981e881021da7512861`,
+sdist `1fd12d29de79af84b382d9078469edf4346288b1719e6a8bb89755a79c42d54f`,
+downloaded PyPI wheel smoke verified) after closing all 197 QA variants and 87 audit/QA cases;
+and the running hosted candidate image is `socialcli-saas-candidate:45fda63`
 (`sha256:955269db2fa8d33510839e7ac3f6c9e7b1fb88bc1717e0b5355121864d9c1635`),
 observed healthy on schema10 with all four operational timers active,
 `SOCIALCLI_IG_MODERATION_PILOT` removed and Meta webhook subscriptions restored
