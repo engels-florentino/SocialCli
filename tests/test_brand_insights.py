@@ -143,14 +143,18 @@ def test_human_renderer_does_not_emit_terminal_controls(brand):
 
 def test_cli_report_is_offline_and_expires_old_youtube_comparison(brand,tmp_path,monkeypatch):
     import httpx
+    from datetime import datetime, timedelta, timezone
     from socialctl.cli import app
     def forbidden(*a,**kw):raise AssertionError('offline report attempted network access')
     monkeypatch.setattr(httpx.Client,'request',forbidden)
     monkeypatch.setattr('socialctl.youtube_data.MAX_AGE_DAYS',6)
-    baseline=save(brand,'2026-10-06',followers=20)
-    latest=save(brand,'2026-10-13',followers=25)
+    today=datetime.now(timezone.utc).date()
+    latest_day=today.isoformat()
+    baseline_day=(today-timedelta(days=7)).isoformat()
+    baseline=save(brand,baseline_day,followers=20)
+    latest=save(brand,latest_day,followers=25)
     before=latest.read_bytes()
-    argv=['report','--brand','Example','--root',str(tmp_path),'--as-of','2026-10-13']
+    argv=['report','--brand','Example','--root',str(tmp_path),'--as-of',latest_day]
     response=CliRunner().invoke(app,argv+['--json'])
     assert response.exit_code==3,response.output
     payload=json.loads(response.stdout)

@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import json
 import httpx
 import pytest
@@ -7,6 +8,10 @@ from socialctl.cli import app
 from socialctl.inbox import UnifiedInboxStore
 
 runner=CliRunner()
+
+
+def _fresh(hours_ago=2):
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def fixture(tmp_path,monkeypatch):
@@ -26,7 +31,7 @@ def fixture(tmp_path,monkeypatch):
     api.threads[0]['snippet']['topLevelComment']['snippet']['textOriginal']='YouTube question'
     rows=[dict(platform='facebook',account_id='123',media_id='789',comment_id='800',author_id='999',text='Meta question',parent_id=None),
           dict(platform='youtube',account_id='channel-a',media_id='video-1',thread_id='UgxThread',comment_id='UgxTop',author_id='viewer',text='YouTube question',parent_id=None)]
-    UnifiedInboxStore(brand.raiz).observe(rows,observed_at='2026-10-14T00:00:00Z')
+    UnifiedInboxStore(brand.raiz).observe(rows,observed_at=_fresh(2))
     requests=[]
     def handler(request):
         requests.append(request)
@@ -210,7 +215,7 @@ def test_nested_context_requires_explicit_verified_thread_parent_mapping(tmp_pat
             parent_id='800', author_id='998', text='Nested question')
         graph.comments['801'] = graph.row('801', source['text'], author='998')
         graph.comments['801']['parent'] = {'id': '800'}
-    UnifiedInboxStore(brand.raiz).observe([source], observed_at='2026-10-14T01:00:00Z')
+    UnifiedInboxStore(brand.raiz).observe([source], observed_at=_fresh(1))
     selection = {key: source[key] for key in ('platform', 'account_id', 'comment_id')}
     selection.update(text='Explicit thread reply', reply_parent_id=source['parent_id'])
     path.write_text(yaml.safe_dump({'version': 1, 'replies': [selection]}))
@@ -232,7 +237,7 @@ def test_nested_mapping_cannot_silently_choose_an_unrelated_parent(tmp_path, mon
     brand, graph, api, path, replies, requests = fixture(tmp_path, monkeypatch)
     source = dict(platform='youtube', account_id='channel-a', media_id='video-1', thread_id='UgxThread',
         comment_id='UgxNested', parent_id='UgxTop', author_id='viewer-two', text='Nested question')
-    UnifiedInboxStore(brand.raiz).observe([source], observed_at='2026-10-14T01:00:00Z')
+    UnifiedInboxStore(brand.raiz).observe([source], observed_at=_fresh(1))
     path.write_text(yaml.safe_dump({'version': 1, 'replies': [dict(platform='youtube', account_id='channel-a',
         comment_id='UgxNested', reply_parent_id='Unrelated', text='Reply')]}))
     result = invoke(tmp_path, 'inbox-draft', '--file', str(path), '--dry-run')
@@ -247,7 +252,7 @@ def test_mapped_reply_context_change_blocks_write_after_preview(tmp_path, monkey
         parent_id='800', author_id='998', text='Nested question')
     graph.comments['801'] = graph.row('801', source['text'], author='998')
     graph.comments['801']['parent'] = {'id': '800'}
-    UnifiedInboxStore(brand.raiz).observe([source], observed_at='2026-10-14T01:00:00Z')
+    UnifiedInboxStore(brand.raiz).observe([source], observed_at=_fresh(1))
     path.write_text(yaml.safe_dump({'version': 1, 'replies': [dict(platform='facebook', account_id='123',
         comment_id='801', reply_parent_id='800', text='Reply')]}))
     result = invoke(tmp_path, 'inbox-draft', '--file', str(path), '--dry-run')
@@ -275,7 +280,7 @@ def test_instagram_nested_context_maps_explicitly_to_verified_parent_reply_edge(
         author_id='999', text='Root question', parent_id=None),
         dict(platform='instagram', account_id='456', media_id='789', comment_id='801',
         author_id='998', text='Nested question', parent_id='800')]
-    UnifiedInboxStore(brand.raiz).observe(rows, observed_at='2026-10-14T00:00:00Z')
+    UnifiedInboxStore(brand.raiz).observe(rows, observed_at=_fresh(2))
     transport = lambda *args: httpx.Client(transport=httpx.MockTransport(graph))
     monkeypatch.setattr('socialctl.engagement.http_client', transport)
     monkeypatch.setattr('socialctl.management.community_batches.http_client', transport)
