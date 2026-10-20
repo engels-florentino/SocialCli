@@ -8,24 +8,29 @@ Facebook/Instagram connections apply to that published candidate. See
 [playlist verification](qa-playlist-localizations-2026-10-18.md). No later source
 changes have been added to those immutable archives.
 
-The current tested source checkpoint is `77a04a7`: **3,842 tests passed**, with
-one existing Starlette/httpx deprecation warning. Internal wheel and sdist
-validation for that exact commit passed, including packaged-source byte comparisons,
-artifact allowlist and UI asset checks, and clean installations on Linux and macOS.
-These internal artifacts retain version `0.3.0rc16` but are unpublished and are
-not the public rc16 archives. Their validation does not establish deployment,
-provider approval or stable-release certification.
+The current tested source checkpoint is `01647ed` (test-only timestamp alignment over
+runtime commit `45fda63`): **3,860 tests passed**, with one existing Starlette/httpx
+deprecation warning. Internal wheel (`243822de90fd09e5cac71745367a55d46e91e779d505fa419acd0ab3968cd7ce`)
+and sdist (`b7265a5bcfdc634c59a6943682ddc90d684e9706c75c8aacb5724edc2ca8a5da`)
+validation for that exact commit passed, including packaged-source byte comparisons
+across all 219 `socialctl/` files, artifact allowlist and UI asset checks, and clean
+installation smoke outside the checkout. These internal artifacts retain version
+`0.3.0rc16` but are unpublished and are not the public rc16 archives. Their validation
+does not establish package-index publication, provider approval or stable-release
+certification.
 
-The last verified hosted deployment is source `b2c227f`, image
-`sha256:d230667a3c9681b47ad1c86d80456152376e1b16f54448d90060cc04c39a4ad2`.
-The October 19, 00:33 UTC verification recorded healthy service, running Auth,
-public HTTP 200 responses, all four operational timers active and no maintenance
-hold. This is the last recorded observation; the service was not queried for this
-documentation update. Source `77a04a7` and its internal artifacts have not been deployed.
+The last verified hosted deployment is runtime commit `45fda63` (`socialcli-saas-candidate:45fda63`),
+image `sha256:955269db2fa8d33510839e7ac3f6c9e7b1fb88bc1717e0b5355121864d9c1635`
+(with previous image `b2c227f`, `sha256:d230667a3c9681b47ad1c86d80456152376e1b16f54448d90060cc04c39a4ad2`
+retained for rollback). The October 19 post-pilot verification recorded healthy
+service, running Auth, public HTTP 200 responses, all four operational timers active,
+temporary pilot flag `SOCIALCLI_IG_MODERATION_PILOT` removed and Meta webhook
+subscriptions restored to `[]`. Test-only commit `01647ed` leaves packaged `socialctl/`
+runtime bytes unchanged from `45fda63`.
 
-October 18 audit work remains separate from the published client candidate.
-Independent Google availability/verified-backup monitoring was deployed and its
-isolated notification/recovery drill passed. See
+October 18–19 audit remediation and the 197-variant QA ledger remain separate from the
+published TestPyPI client candidate. Independent Google availability/verified-backup
+monitoring was deployed and its isolated notification/recovery drill passed. See
 [provider review status](provider-review-status-2026-10-18.md),
 [independent monitoring](independent-monitoring.md) and
 [billing cutover](billing-cutover.md). Changing test billing configuration alone

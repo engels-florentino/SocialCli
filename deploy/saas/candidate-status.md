@@ -1,10 +1,15 @@
 # Current rollout status
 
-Verified October 18: the published client is rc16 on TestPyPI; the compatible
-hosted runtime is rc15 with rc16 installation guides. The running image is
-`socialcli-saas-candidate:rc16-guides-14da67a`, observed healthy. Schema10,
-maintenance and backup checks are recorded in [release.md](release.md).
-Package publication, running code and guide updates are separate facts.
+Verified October 19: the published client on TestPyPI remains `0.3.0rc16`; the
+tested source checkout is `01647ed` (**3,860 passed**, packaged `socialctl/`
+bytes identical to runtime commit `45fda63`); and the running hosted candidate
+image is `socialcli-saas-candidate:45fda63`
+(`sha256:955269db2fa8d33510839e7ac3f6c9e7b1fb88bc1717e0b5355121864d9c1635`),
+observed healthy on schema10 with all four operational timers active,
+`SOCIALCLI_IG_MODERATION_PILOT` removed and Meta webhook subscriptions restored
+to `[]`. Schema10, maintenance, backup and artifact checks are recorded in
+[release.md](release.md). Package publication, running code and guide updates
+are separate facts.
 
 ## Previous status and historical checkpoints
 
