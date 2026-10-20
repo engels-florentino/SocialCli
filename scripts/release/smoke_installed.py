@@ -41,7 +41,7 @@ def main():
         assert secret.encode() not in (private/'capabilities.json').read_bytes()
         keychain.delete(brand,Slot.ACCOUNT,metadata)
         from importlib.resources import files
-        assert 'Candidate' in files('socialctl.ui').joinpath('assets/agents.md').read_text()
+        assert 'SocialCli for AI agents — ' + expected in files('socialctl.ui').joinpath('assets/agents.md').read_text()
         assert 'SocialCli' in files('socialctl.ui').joinpath('email/trial.html').read_text()
     print(json.dumps({'installed_version':expected,'platform':sys.platform,'help':True,
         'workspace':True,'encrypted_credentials':True,'packaged_instructions':True,'external_calls':0}))

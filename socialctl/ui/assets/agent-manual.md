@@ -1,6 +1,6 @@
-# SocialCli for AI agents — Candidate 0.3.0rc16
+# SocialCli for AI agents — 0.3.0
 
-Candidate setup instructions. Require published metadata before installing;
+Setup instructions for SocialCli 0.3.0. Require published metadata before installing;
 do not replace an existing 0.2.6 installation or migrate its credentials silently.
 Stripe remains in test mode. Google is External / In production with verified branding, but sensitive YouTube scopes remain unverified, with an unverified-app warning and user cap.
 Real-agent acceptance is performed by the owner; do not claim it from installation.
@@ -10,19 +10,19 @@ You need a persistent shell workspace, Python 3.11+, macOS or Linux, and protect
 credential storage. SocialCli does not include a model or MCP server. Provider
 availability depends on account eligibility; Google sensitive-scope verification is still pending.
 
-## Install the reviewed candidate
+## Install the reviewed release
 
-Use the official TestPyPI release metadata:
-https://test.pypi.org/pypi/socialcli/0.3.0rc16/json
+Use the official PyPI release metadata (or TestPyPI `https://test.pypi.org/pypi/socialcli/0.3.0/json` during pre-PyPI verification):
+https://pypi.org/pypi/socialcli/0.3.0/json
 
-1. Require HTTP 200 and package name `socialcli`, version `0.3.0rc16`. If this
+1. Require HTTP 200 and package name `socialcli`, version `0.3.0`. If this
    release is unavailable, stop and report it; do not install a similarly named package.
-2. Select exactly `socialcli-0.3.0rc16-py3-none-any.whl` from `urls`. Download its
+2. Select exactly `socialcli-0.3.0-py3-none-any.whl` from `urls`. Download its
    HTTPS `url` and verify the file against that entry's `digests.sha256`.
 3. Install that verified local wheel into an isolated environment. Resolve
    dependencies from normal PyPI, not TestPyPI. For example:
 
-       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0rc16-py3-none-any.whl[headless-credentials]'
+       uv tool install --python 3.12 '/absolute/path/socialcli-0.3.0-py3-none-any.whl[headless-credentials]'
        socialcli --version
        socialcli agent-guide
 
@@ -31,8 +31,8 @@ https://test.pypi.org/pypi/socialcli/0.3.0rc16/json
    If an existing SocialCli tool is installed, use a separate virtual environment
    for this pilot and its absolute executable; do not upgrade it automatically.
 
-Verify the installed version is exactly 0.3.0rc16 before continuing. The stable
-`uv tool install socialcli` command is not the installation path for this pilot.
+Verify the installed version is exactly 0.3.0 before continuing. Verify the
+wheel's SHA256 before installing rather than running an unverified `uv tool install socialcli`.
 
 For headless agents, configure encrypted-file storage with an external key file with mode `0600` in
 a directory with mode `0700` before login. Keep the key outside the workspace and preserve both

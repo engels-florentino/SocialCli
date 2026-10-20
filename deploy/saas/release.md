@@ -1,47 +1,33 @@
-# Current release state — October 19, 2026
+# Current release state — October 20, 2026: SocialCli 0.3.0
 
-The public client candidate remains **0.3.0rc16 on TestPyPI**. Its published
-playlist verification fix, matching downloaded archives and Linux/macOS installation
-checks remain the recorded release evidence. Muse's previously confirmed rc16
-adoption, dependency integrity, corrected comparison and healthy existing
-Facebook/Instagram connections apply to that published candidate. See
-[playlist verification](qa-playlist-localizations-2026-10-18.md). No later source
-changes have been added to those immutable archives.
+Source version is bumped to **0.3.0** after closing the October 18–20 audit
+remediation and the complete 197-variant / 87-case QA ledger (including the
+delayed YouTube Reporting `channel_reach_basic_a1` job `4dcf4434-c286-47e1-9f4a-c1606b71ed9a`,
+downloaded, imported, verified, and deleted).
 
-The current tested source checkpoint is `01647ed` (test-only timestamp alignment over
-runtime commit `45fda63`): **3,860 tests passed**, with one existing Starlette/httpx
-deprecation warning. Internal wheel (`243822de90fd09e5cac71745367a55d46e91e779d505fa419acd0ab3968cd7ce`)
-and sdist (`b7265a5bcfdc634c59a6943682ddc90d684e9706c75c8aacb5724edc2ca8a5da`)
-validation for that exact commit passed, including packaged-source byte comparisons
-across all 219 `socialctl/` files, artifact allowlist and UI asset checks, and clean
-installation smoke outside the checkout. These internal artifacts retain version
-`0.3.0rc16` but are unpublished and are not the public rc16 archives. Their validation
-does not establish package-index publication, provider approval or stable-release
-certification.
+- **Full test suite:** **3,860 passed, 0 failed** (1 upstream Starlette/httpx deprecation warning).
+- **Reviewed `0.3.0` wheel (`socialcli-0.3.0-py3-none-any.whl`):**
+  `40cc7410b2321b742a4b2ccdcf29807c9d147fc7656f8981e881021da7512861`
+- **Reviewed `0.3.0` sdist (`socialcli-0.3.0.tar.gz`):**
+  `1fd12d29de79af84b382d9078469edf4346288b1719e6a8bb89755a79c42d54f`
+- **Packaged source verification:** 219 `socialctl/` files match source byte-for-byte
+  in both wheel and sdist; `scripts/release/check_artifacts.py`, `scripts/build_ui_assets.py --check`,
+  and clean-venv `scripts/release/smoke_installed.py 0.3.0` passed with `0` external calls.
 
 The last verified hosted deployment is runtime commit `45fda63` (`socialcli-saas-candidate:45fda63`),
 image `sha256:955269db2fa8d33510839e7ac3f6c9e7b1fb88bc1717e0b5355121864d9c1635`
 (with previous image `b2c227f`, `sha256:d230667a3c9681b47ad1c86d80456152376e1b16f54448d90060cc04c39a4ad2`
-retained for rollback). The October 19 post-pilot verification recorded healthy
-service, running Auth, public HTTP 200 responses, all four operational timers active,
-temporary pilot flag `SOCIALCLI_IG_MODERATION_PILOT` removed and Meta webhook
-subscriptions restored to `[]`. Test-only commit `01647ed` leaves packaged `socialctl/`
-runtime bytes unchanged from `45fda63`.
+retained for rollback), observed healthy on schema10 with all four operational
+timers active, `SOCIALCLI_IG_MODERATION_PILOT` removed and Meta webhook
+subscriptions restored to `[]`.
 
-October 18–19 audit remediation and the 197-variant QA ledger remain separate from the
-published TestPyPI client candidate. Independent Google availability/verified-backup
-monitoring was deployed and its isolated notification/recovery drill passed. See
-[provider review status](provider-review-status-2026-10-18.md),
+Previous public candidate **0.3.0rc16 on TestPyPI** remains immutable. Tag `v0.3.0`
+publishes first to `testpypi` and then to `pypi` via the protected `Reviewed Python release`
+workflow (`release.yml`), subject to required owner environment approvals.
+Provider commercial approvals and live Stripe billing cutover remain separate gates;
+see [provider review status](provider-review-status-2026-10-18.md),
 [independent monitoring](independent-monitoring.md) and
-[billing cutover](billing-cutover.md). Changing test billing configuration alone
-does not migrate customer pointers or paid access to live mode.
-
-A new unique candidate version and its final reviewed artifacts are still required
-before publishing the later source changes; never overwrite published rc16.
-Candidate publication, stable PyPI publication, hosted deployment and adoption of
-a later client each retain their separate approval and validation gates. The
-historical checkpoints below describe their recorded releases, not the current
-source or hosted state.
+[billing cutover](billing-cutover.md).
 
 # Previous public candidate: 0.3.0rc15
 

@@ -2,7 +2,7 @@
 
 # SocialCli
 
-**Current source version: 0.3.0rc16 (validation candidate).** SocialCli SaaS is the current SocialCli
+**Current source version: 0.3.0.** SocialCli SaaS is the current SocialCli
 product. The repository root on `main` is its single development workspace;
 the CLI, hosted connection service and account/billing components live together
 here. Earlier versions remain in Git history for reference and migration.
@@ -38,11 +38,13 @@ Stripe uses test mode. Planned access costs
 USD 10/month after 14 free days from the first successful connection. No real
 subscriptions are collected in this pilot.
 
-The published client candidate is **0.3.0rc16 on TestPyPI**. The compatible hosted
-runtime is **0.3.0rc15**, with rc16 installation guides. The client's wheel and
-source archive were downloaded and verified against the
-reviewed build hashes. Stable 0.3.0 production publication remains separate from
-this pilot. See the [release record](deploy/saas/release.md).
+The current client release target is **0.3.0** (published first to TestPyPI and
+then to PyPI through the reviewed release workflow). The compatible hosted
+runtime is `socialcli-saas-candidate:45fda63`. The client's wheel and
+source archive are verified against the
+reviewed build hashes before publication. Provider commercial approvals and live
+billing cutover remain separate from package publication. See the
+[release record](deploy/saas/release.md).
 The [stable release scope](docs/stable-scope.md) excludes unsupported automatic
 operations; disabled research catalogue entries are not offered features.
 
